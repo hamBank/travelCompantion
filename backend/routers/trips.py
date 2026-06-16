@@ -51,6 +51,11 @@ def delete_trip(trip_id: int, session: Session = Depends(get_session)):
     trip = session.get(Trip, trip_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
+    for stop in stops:
+        for item in session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop.id)).all():
+            session.delete(item)
+        session.delete(stop)
     session.delete(trip)
     session.commit()
 

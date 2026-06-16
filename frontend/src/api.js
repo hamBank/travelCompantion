@@ -4,7 +4,11 @@ async function req(path, opts = {}) {
     ...opts,
   })
   if (r.status === 204) return null
-  const body = await r.json()
+  const text = await r.text()
+  if (!text) return null
+  let body
+  try { body = JSON.parse(text) }
+  catch { throw new Error(`Server error ${r.status}`) }
   if (!r.ok) throw new Error(body.detail ?? r.statusText)
   return body
 }

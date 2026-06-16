@@ -3,7 +3,7 @@ from sqlmodel import Session, select
 from typing import List
 from ..database import get_session
 from sqlmodel import SQLModel as _SQLModel
-from ..models import Stop, StopCreate, StopRead, StopUpdate, Trip
+from ..models import Stop, StopCreate, StopRead, StopUpdate, Trip, ItineraryItem
 
 router = APIRouter()
 
@@ -54,6 +54,8 @@ def delete_stop(stop_id: int, session: Session = Depends(get_session)):
     stop = session.get(Stop, stop_id)
     if not stop:
         raise HTTPException(status_code=404, detail="Stop not found")
+    for item in session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop_id)).all():
+        session.delete(item)
     session.delete(stop)
     session.commit()
 
