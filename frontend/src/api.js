@@ -11,10 +11,26 @@ async function req(path, opts = {}) {
 
 export const getTrips = () => req('/trips/')
 export const deleteTrip = (id) => req(`/trips/${id}`, { method: 'DELETE' })
+export const updateTrip = (id, data) =>
+  req(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+
 export const getTripTimeline = (id) => req(`/trips/${id}/timeline`)
+
 export const importFromSheets = (trip_name) =>
   req('/import/sheets', { method: 'POST', body: JSON.stringify({ trip_name }) })
-export const updateItemStatus = (id, status) =>
-  req(`/items/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) })
-export const updateStopStatus = (id, status) =>
-  req(`/stops/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) })
+
+export const createStop = (tripId, data) =>
+  req(`/trips/${tripId}/stops`, { method: 'POST', body: JSON.stringify(data) })
+export const updateStop = (id, data) =>
+  req(`/stops/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const deleteStop = (id) => req(`/stops/${id}`, { method: 'DELETE' })
+
+export const createItem = (stopId, data) =>
+  req(`/stops/${stopId}/items`, { method: 'POST', body: JSON.stringify(data) })
+export const updateItem = (id, data) =>
+  req(`/items/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const deleteItem = (id) => req(`/items/${id}`, { method: 'DELETE' })
+
+// Convenience aliases
+export const updateItemStatus = (id, status) => updateItem(id, { status })
+export const updateStopStatus = (id, status) => updateStop(id, { status })
