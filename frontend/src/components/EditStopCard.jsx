@@ -127,8 +127,8 @@ export default function EditStopCard({ stop, index, onRefresh, onDelete }) {
               <Field label="Name" value={fields.accommodation} onChange={v => set('accommodation', v)} placeholder="Hotel name" span={2} />
               <Field label="Link" value={fields.accommodation_link} onChange={v => set('accommodation_link', v)} placeholder="https://…" span={2} />
               <Field label="Notes" value={fields.accommodation_notes} onChange={v => set('accommodation_notes', v)} placeholder="Any notes" span={2} />
-              <Field label="Check-in time" value={fields.check_in} onChange={v => set('check_in', v)} placeholder="14:00" />
-              <Field label="Check-out time" value={fields.check_out} onChange={v => set('check_out', v)} placeholder="11:00" />
+              <Field label="Check-in time" type="time" value={fields.check_in} onChange={v => set('check_in', v)} />
+              <Field label="Check-out time" type="time" value={fields.check_out} onChange={v => set('check_out', v)} />
             </div>
           </div>
 

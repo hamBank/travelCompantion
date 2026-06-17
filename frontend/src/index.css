@@ -8,8 +8,9 @@ body {
   font-family: system-ui, -apple-system, sans-serif;
 }
 
-/* Make datetime-local calendar/clock icon visible on dark backgrounds */
-input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+/* Make date/time picker icons visible on dark backgrounds */
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
   filter: invert(0.8);
   cursor: pointer;
 }
