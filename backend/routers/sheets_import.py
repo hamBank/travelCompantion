@@ -175,3 +175,66 @@ def enrich_accommodation_details(trip_id: int, session: Session = Depends(get_se
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return result
+
+
+@router.post("/import/backfill-accommodations/{trip_id}", status_code=200)
+def backfill_accommodation_items(trip_id: int, session: Session = Depends(get_session)):
+    """
+    For trips imported with older code, create ItineraryItem(kind=accommodation)
+    rows from the Stop-level accommodation fields (stop.accommodation,
+    stop.accommodation_link, stop.accommodation_notes, stop.check_in,
+    stop.check_out) where no accommodation item already exists.
+
+    Safe to call multiple times — skips stops that already have an item.
+    After running this, call /import/enrich-accommodations/{trip_id} to fill
+    in missing addresses and contact details.
+    """
+    from ..importer import ItemKind, ItemStatus, _combine_checkinout
+    from ..models import ItineraryItem as Item
+
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
+    if not stops:
+        raise HTTPException(status_code=404, detail=f"No stops found for trip {trip_id}")
+
+    created, skipped, detail = 0, 0, []
+    for stop in stops:
+        if not stop.accommodation:
+            continue
+
+        existing = session.exec(
+            select(Item)
+            .where(Item.stop_id == stop.id)
+            .where(Item.kind == ItemKind.accommodation)
+        ).first()
+
+        if existing:
+            skipped += 1
+            detail.append({"stop": stop.location, "status": "skipped (item exists)"})
+            continue
+
+        details = {}
+        if stop.accommodation_notes:
+            details["description"] = stop.accommodation_notes
+        if stop.check_in:
+            ci = _combine_checkinout(stop.arrive, stop.check_in)
+            if ci:
+                details["checkin"] = ci
+        if stop.check_out:
+            co = _combine_checkinout(stop.depart, stop.check_out)
+            if co:
+                details["checkout"] = co
+
+        session.add(Item(
+            stop_id=stop.id,
+            kind=ItemKind.accommodation,
+            name=stop.accommodation,
+            link=stop.accommodation_link or "",
+            scheduled_at=stop.arrive,
+            status=ItemStatus.pending,
+            details=details or None,
+        ))
+        created += 1
+        detail.append({"stop": stop.location, "name": stop.accommodation, "status": "created"})
+
+    session.commit()
+    return {"created": created, "skipped": skipped, "detail": detail}
