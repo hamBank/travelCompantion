@@ -564,14 +564,18 @@ def _assign_flights_to_stops(
     """
     Assign each flight to a stop using a chain-aware strategy.
 
-    Flights are processed in departure-time order. When a flight departs
-    from a city where a previous flight just landed (a connecting leg),
-    it is assigned to the *same stop* as that preceding flight — keeping
-    multi-leg journeys together and preventing arrival flights from
-    appearing on the arrival stop.
+    Flights are processed in departure-time order. When a flight lands at
+    a transit city (not an itinerary stop), the next flight departing from
+    that city is chained to the same stop — keeping multi-leg journeys
+    together and preventing arrival flights from appearing on the arrival
+    stop.
+
+    The chain is BROKEN when a flight lands at an actual itinerary stop
+    (e.g. Paris), so the next flight *departing* from that stop gets a
+    fresh date-range match and can correctly resolve Paris-1 vs Paris-2.
 
     Priority:
-    1. Chain match  — previous flight landed at this flight's origin
+    1. Chain match  — previous flight landed at this flight's origin (transit)
     2. Standard match — _find_stop_for_flight (date-range / IATA / name)
     """
     sorted_flights = sorted(
@@ -579,7 +583,10 @@ def _assign_flights_to_stops(
         key=lambda f: (f.get("details") or {}).get("depart_time", "") or "9999",
     )
 
-    # city_key → stop: tracks where each city was most recently "delivered to"
+    # Pre-compute normalised city keys for all itinerary stops
+    stop_city_keys = {_city_key(s.location) for s in stops}
+
+    # city_key → stop: tracks transit cities only (not itinerary stops)
     dest_map: dict[str, Stop] = {}
 
     assignments: list[tuple[dict, Optional[Stop]]] = []
@@ -589,7 +596,7 @@ def _assign_flights_to_stops(
         destination_key = _city_key(details.get("destination", ""))
         depart_iso = details.get("depart_time", "")
 
-        # 1. Chain: previous flight landed at our origin
+        # 1. Chain: previous flight landed at our origin via a transit city
         stop = dest_map.get(origin_key)
 
         # 2. Standard matching as fallback
@@ -600,10 +607,12 @@ def _assign_flights_to_stops(
 
         assignments.append((flight, stop))
 
-        # Record this flight's destination so the next connecting leg chains to it
-        if destination_key and stop:
+        # Chain forward only if the destination is a TRANSIT city (not an itinerary stop).
+        # Landing at an itinerary stop (e.g. Paris) breaks the chain so the next
+        # departure from there gets a fresh date-range match (Paris-1 vs Paris-2).
+        destination_is_stop = destination_key in stop_city_keys
+        if destination_key and stop and not destination_is_stop:
             dest_map[destination_key] = stop
-            # Also index any IATA codes for this city
             for iata in _CITY_IATA.get(destination_key, []):
                 dest_map[iata] = stop
 
