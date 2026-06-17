@@ -119,6 +119,18 @@ function AppShell({ user, onLogout }) {
           : <TripList onOpen={openTrip} />
         }
       </main>
+
+      <footer
+        className="max-w-2xl mx-auto px-4 pb-8 flex gap-4 justify-center"
+        style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+      >
+        <a href="/privacy.html" style={{ color: 'var(--text-faint)' }} className="hover:underline">
+          Privacy Policy
+        </a>
+        <a href="/tos.html" style={{ color: 'var(--text-faint)' }} className="hover:underline">
+          Terms of Service
+        </a>
+      </footer>
     </div>
   )
 }
