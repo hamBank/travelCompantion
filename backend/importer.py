@@ -252,8 +252,18 @@ def _parse_date(s: str) -> Optional[datetime]:
         except ValueError:
             continue
     # Short date formats with no year — infer year from proximity to today
-    # e.g. "Wed 22/7", "22/7", "22 Jul", "Wed 22 Jul"
-    for fmt in ("%a %d/%m", "%d/%m", "%a %d %b", "%d %b", "%b %d", "%a %b %d"):
+    # e.g. "Wed 22/7", "Wednesday 22 Jul 22:05", "22 Jul"
+    for fmt in (
+        "%A %d %b %H:%M",   # "Wednesday 22 Jul 22:05"
+        "%A %d %b",          # "Wednesday 22 Jul"
+        "%a %d %b %H:%M",   # "Wed 22 Jul 22:05"
+        "%a %d/%m",          # "Wed 22/7"
+        "%d/%m",             # "22/7"
+        "%a %d %b",          # "Wed 22 Jul"
+        "%d %b",             # "22 Jul"
+        "%b %d",             # "Jul 22"
+        "%a %b %d",          # "Wed Jul 22"
+    ):
         try:
             dt = datetime.strptime(s, fmt)
             return dt.replace(year=_infer_year(dt.month, dt.day))
