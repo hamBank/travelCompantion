@@ -1,0 +1,195 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Catppuccin Mocha (default dark) ─────────────────────────── */
+:root, [data-theme="mocha"] {
+  --bg:          #1e1e2e;
+  --surface:     #2a2a3e;
+  --surface-2:   #181825;
+  --modal-bg:    #1e1e2e;
+  --border:      #313244;
+  --text:        #cdd6f4;
+  --text-muted:  #9399b2;
+  --text-faint:  #6c7086;
+  --accent:      #cba6f7;
+  --accent-fg:   #1e1e2e;
+  --accent-alt:  #89dceb;
+  --success:     #a6e3a1;
+  --error:       #f38ba8;
+  --warning:     #fab387;
+  --overlay:     rgba(0,0,0,0.7);
+  --status-planned:   #9399b2;
+  --status-confirmed: #89dceb;
+  --status-completed: #a6e3a1;
+  --status-cancelled: #f38ba8;
+  --kind-activity:      #89b4fa;
+  --kind-restaurant:    #a6e3a1;
+  --kind-note:          #f9e2af;
+  --kind-accommodation: #cba6f7;
+  --kind-flight:        #89dceb;
+  --input-icon-filter: invert(0.8);
+}
+
+/* ─── Catppuccin Macchiato ─────────────────────────────────────── */
+[data-theme="macchiato"] {
+  --bg:          #24273a;
+  --surface:     #1e2030;
+  --surface-2:   #181926;
+  --modal-bg:    #24273a;
+  --border:      #363a4f;
+  --text:        #cad3f5;
+  --text-muted:  #939ab7;
+  --text-faint:  #6e738d;
+  --accent:      #c6a0f6;
+  --accent-fg:   #181926;
+  --accent-alt:  #8bd5ca;
+  --success:     #a6da95;
+  --error:       #ed8796;
+  --warning:     #f5a97f;
+  --overlay:     rgba(0,0,0,0.7);
+  --status-planned:   #939ab7;
+  --status-confirmed: #8bd5ca;
+  --status-completed: #a6da95;
+  --status-cancelled: #ed8796;
+  --kind-activity:      #8aadf4;
+  --kind-restaurant:    #a6da95;
+  --kind-note:          #eed49f;
+  --kind-accommodation: #c6a0f6;
+  --kind-flight:        #8bd5ca;
+  --input-icon-filter: invert(0.8);
+}
+
+/* ─── Catppuccin Latte (light) ─────────────────────────────────── */
+[data-theme="latte"] {
+  --bg:          #eff1f5;
+  --surface:     #ffffff;
+  --surface-2:   #e6e9ef;
+  --modal-bg:    #ffffff;
+  --border:      #ccd0da;
+  --text:        #4c4f69;
+  --text-muted:  #7c7f93;
+  --text-faint:  #8c8fa1;
+  --accent:      #8839ef;
+  --accent-fg:   #ffffff;
+  --accent-alt:  #04a5e5;
+  --success:     #40a02b;
+  --error:       #d20f39;
+  --warning:     #fe640b;
+  --overlay:     rgba(76,79,105,0.45);
+  --status-planned:   #7c7f93;
+  --status-confirmed: #04a5e5;
+  --status-completed: #40a02b;
+  --status-cancelled: #d20f39;
+  --kind-activity:      #1e66f5;
+  --kind-restaurant:    #40a02b;
+  --kind-note:          #df8e1d;
+  --kind-accommodation: #8839ef;
+  --kind-flight:        #04a5e5;
+  --input-icon-filter: none;
+}
+
+/* ─── Nord ─────────────────────────────────────────────────────── */
+[data-theme="nord"] {
+  --bg:          #2e3440;
+  --surface:     #3b4252;
+  --surface-2:   #2e3440;
+  --modal-bg:    #2e3440;
+  --border:      #434c5e;
+  --text:        #eceff4;
+  --text-muted:  #d8dee9;
+  --text-faint:  #616e88;
+  --accent:      #88c0d0;
+  --accent-fg:   #2e3440;
+  --accent-alt:  #81a1c1;
+  --success:     #a3be8c;
+  --error:       #bf616a;
+  --warning:     #ebcb8b;
+  --overlay:     rgba(0,0,0,0.7);
+  --status-planned:   #616e88;
+  --status-confirmed: #88c0d0;
+  --status-completed: #a3be8c;
+  --status-cancelled: #bf616a;
+  --kind-activity:      #81a1c1;
+  --kind-restaurant:    #a3be8c;
+  --kind-note:          #ebcb8b;
+  --kind-accommodation: #b48ead;
+  --kind-flight:        #88c0d0;
+  --input-icon-filter: invert(0.8);
+}
+
+/* ─── Rosé Pine ─────────────────────────────────────────────────── */
+[data-theme="rose-pine"] {
+  --bg:          #191724;
+  --surface:     #1f1d2e;
+  --surface-2:   #26233a;
+  --modal-bg:    #191724;
+  --border:      #403d52;
+  --text:        #e0def4;
+  --text-muted:  #908caa;
+  --text-faint:  #6e6a86;
+  --accent:      #c4a7e7;
+  --accent-fg:   #191724;
+  --accent-alt:  #9ccfd8;
+  --success:     #9ccfd8;
+  --error:       #eb6f92;
+  --warning:     #f6c177;
+  --overlay:     rgba(0,0,0,0.7);
+  --status-planned:   #908caa;
+  --status-confirmed: #9ccfd8;
+  --status-completed: #31748f;
+  --status-cancelled: #eb6f92;
+  --kind-activity:      #9ccfd8;
+  --kind-restaurant:    #31748f;
+  --kind-note:          #f6c177;
+  --kind-accommodation: #c4a7e7;
+  --kind-flight:        #ebbcba;
+  --input-icon-filter: invert(0.8);
+}
+
+/* ─── Global ────────────────────────────────────────────────────── */
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+::placeholder {
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: var(--input-icon-filter);
+  cursor: pointer;
+}
+
+/* ─── Timeline connector ────────────────────────────────────────── */
+.timeline-line {
+  position: absolute;
+  left: 0.875rem;
+  top: 2.25rem;
+  bottom: 1.5rem;
+  width: 1px;
+  background: var(--border);
+}
+
+.timeline-dot {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  z-index: 10;
+  margin-top: 0.75rem;
+  background: var(--bg);
+  border: 2px solid;
+}

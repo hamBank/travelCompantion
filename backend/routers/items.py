@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
+from sqlalchemy import nullslast
 from typing import List
 from ..database import get_session
 from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, Stop
@@ -14,7 +15,7 @@ def list_items(stop_id: int, session: Session = Depends(get_session)):
     return session.exec(
         select(ItineraryItem)
         .where(ItineraryItem.stop_id == stop_id)
-        .order_by(ItineraryItem.scheduled_at)
+        .order_by(nullslast(ItineraryItem.scheduled_at))
     ).all()
 
 

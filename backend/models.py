@@ -2,6 +2,7 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import Column, JSON
 
 
 class StopStatus(str, Enum):
@@ -15,6 +16,8 @@ class ItemKind(str, Enum):
     activity = "activity"
     restaurant = "restaurant"
     note = "note"
+    accommodation = "accommodation"
+    flight = "flight"
 
 
 class ItemStatus(str, Enum):
@@ -27,6 +30,8 @@ class ItemStatus(str, Enum):
 
 class TripBase(SQLModel):
     name: str
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
 
 
 class Trip(TripBase, table=True):
@@ -41,6 +46,8 @@ class TripCreate(TripBase):
 
 class TripUpdate(SQLModel):
     name: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
 
 
 class TripRead(TripBase):
@@ -55,11 +62,6 @@ class StopBase(SQLModel):
     country: str = ""
     arrive: Optional[datetime] = None
     depart: Optional[datetime] = None
-    accommodation: str = ""
-    accommodation_link: str = ""
-    accommodation_notes: str = ""
-    check_in: str = ""
-    check_out: str = ""
     timezone: str = "0"
     lat: str = ""
     lng: str = ""
@@ -72,6 +74,12 @@ class Stop(StopBase, table=True):
     trip_id: int = Field(foreign_key="trip.id")
     trip: Optional[Trip] = Relationship(back_populates="stops")
     items: List["ItineraryItem"] = Relationship(back_populates="stop")
+    # Legacy columns kept in DB; data is migrated to ItineraryItem on startup
+    accommodation: str = Field(default="")
+    accommodation_link: str = Field(default="")
+    accommodation_notes: str = Field(default="")
+    check_in: str = Field(default="")
+    check_out: str = Field(default="")
 
 
 class StopCreate(StopBase):
@@ -83,11 +91,6 @@ class StopUpdate(SQLModel):
     country: Optional[str] = None
     arrive: Optional[datetime] = None
     depart: Optional[datetime] = None
-    accommodation: Optional[str] = None
-    accommodation_link: Optional[str] = None
-    accommodation_notes: Optional[str] = None
-    check_in: Optional[str] = None
-    check_out: Optional[str] = None
     timezone: Optional[str] = None
     lat: Optional[str] = None
     lng: Optional[str] = None
@@ -116,10 +119,11 @@ class ItineraryItem(ItemBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     stop_id: int = Field(foreign_key="stop.id")
     stop: Optional[Stop] = Relationship(back_populates="items")
+    details: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 
 
 class ItemCreate(ItemBase):
-    pass
+    details: Optional[dict] = None
 
 
 class ItemUpdate(SQLModel):
@@ -130,8 +134,10 @@ class ItemUpdate(SQLModel):
     cost: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[ItemStatus] = None
+    details: Optional[dict] = None
 
 
 class ItemRead(ItemBase):
     id: int
     stop_id: int
+    details: Optional[dict] = None
