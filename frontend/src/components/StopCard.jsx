@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { updateStopStatus } from '../api.js'
 import ItemRow from './ItemRow.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
+import ItemDetailModal from './ItemDetailModal.jsx'
 import { countryFlag } from '../countryFlag.js'
 
 const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 'planned', cancelled: 'planned' }
@@ -79,36 +80,7 @@ export default function StopCard({ stop, index, onUpdate }) {
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
           {accom && (
             <Section label="Accommodation">
-              <div className="text-sm">
-                {accom.link
-                  ? <a href={accom.link} target="_blank" rel="noreferrer"
-                      style={{ color: 'var(--accent)' }} className="hover:underline">{accom.name}</a>
-                  : <span>{accom.name}</span>
-                }
-              </div>
-              {accom.details?.location && (
-                <p style={{ color: 'var(--text-muted)' }} className="text-xs mt-0.5">{accom.details.location}</p>
-              )}
-              {(accom.details?.checkin || accom.details?.checkout) && (
-                <p style={{ color: 'var(--text-muted)' }} className="text-xs mt-1">
-                  {[accom.details.checkin && `In: ${fmtDateTime(accom.details.checkin)}`,
-                    accom.details.checkout && `Out: ${fmtDateTime(accom.details.checkout)}`]
-                    .filter(Boolean).join('  ·  ')}
-                </p>
-              )}
-              {accom.details?.booking_ref && (
-                <p style={{ color: 'var(--text-faint)' }} className="text-xs mt-0.5">Ref: {accom.details.booking_ref}</p>
-              )}
-              {(accom.cost || accom.details?.amount_paid) && (
-                <p style={{ color: 'var(--text-faint)' }} className="text-xs mt-0.5">
-                  {[accom.cost && `Cost: ${accom.cost}`,
-                    accom.details?.amount_paid && `Paid: ${accom.details.amount_paid}`]
-                    .filter(Boolean).join('  ·  ')}
-                </p>
-              )}
-              {accom.details?.description && (
-                <p style={{ color: 'var(--text-faint)' }} className="text-xs mt-1">{accom.details.description}</p>
-              )}
+              <AccomCard item={accom} />
             </Section>
           )}
 
@@ -195,6 +167,47 @@ function FlightCard({ item }) {
         </div>
       </button>
       {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} />}
+    </>
+  )
+}
+
+function AccomCard({ item }) {
+  const [showDetail, setShowDetail] = useState(false)
+  const d = item.details ?? {}
+
+  return (
+    <>
+      <button
+        onClick={() => setShowDetail(true)}
+        className="w-full text-left hover:opacity-80 transition-opacity"
+        style={{
+          background: 'var(--surface-2)',
+          border: '1px solid color-mix(in srgb, var(--kind-accommodation) 30%, transparent)',
+          borderRadius: '0.5rem',
+          padding: '0.75rem',
+        }}
+      >
+        <div className="space-y-1">
+          <div className="font-medium text-sm">{item.name}</div>
+          {d.location && (
+            <div style={{ color: 'var(--text-muted)' }} className="text-xs">{d.location}</div>
+          )}
+          {(d.checkin || d.checkout) && (
+            <div style={{ color: 'var(--text-faint)' }} className="text-xs">
+              {[d.checkin && `In: ${fmtDateTime(d.checkin)}`,
+                d.checkout && `Out: ${fmtDateTime(d.checkout)}`]
+                .filter(Boolean).join('  ·  ')}
+            </div>
+          )}
+          {(d.booking_ref || item.cost) && (
+            <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
+              {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
+              {item.cost && <span>{item.cost}</span>}
+            </div>
+          )}
+        </div>
+      </button>
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
     </>
   )
 }
