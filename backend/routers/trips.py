@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
+from sqlalchemy import nullslast
 from typing import List
 from ..database import get_session
 from ..models import (
@@ -87,7 +88,7 @@ def trip_timeline(trip_id: int, session: Session = Depends(get_session)):
         raw_items = session.exec(
             select(ItineraryItem)
             .where(ItineraryItem.stop_id == stop.id)
-            .order_by(ItineraryItem.scheduled_at)
+            .order_by(nullslast(ItineraryItem.scheduled_at))
         ).all()
         stops_with_items.append(
             StopWithItems(**stop.model_dump(), items=[ItemRead(**i.model_dump()) for i in raw_items])
