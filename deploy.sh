@@ -21,7 +21,7 @@ set -euo pipefail
 APP_USER="travelcomp"
 APP_DIR="/opt/travelcomp"
 REPO_URL="https://github.com/hamBank/travelCompantion.git"
-REPO_BRANCH="claude/elegant-hopper-x82z32"
+REPO_BRANCH="main"
 SERVICE_NAME="travelcomp"
 VHOST_CONF="/etc/apache2/sites-available/tripplan.hups.club.conf"
 BIND_PORT="8000"
