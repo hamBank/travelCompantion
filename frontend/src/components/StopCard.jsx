@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { updateStopStatus } from '../api.js'
 import ItemRow from './ItemRow.jsx'
+import FlightDetailModal from './FlightDetailModal.jsx'
 
 const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 'planned', cancelled: 'planned' }
 const STATUS_COLOR = { planned: '#9399b2', confirmed: '#89dceb', completed: '#a6e3a1', cancelled: '#f38ba8' }
@@ -143,62 +144,49 @@ function Section({ label, children }) {
 }
 
 function FlightCard({ item }) {
+  const [showDetail, setShowDetail] = useState(false)
   const d = item.details ?? {}
   const route = [d.origin, d.destination].filter(Boolean).join(' → ')
 
   return (
-    <div style={{ background: '#181825', border: '1px solid #89dceb30' }} className="rounded-lg p-3 space-y-1.5">
-      {/* Route + airline */}
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="font-medium text-sm">{route || item.name}</span>
-        <span style={{ color: '#89dceb' }} className="text-xs shrink-0">
-          {[d.flight_number, d.airline].filter(Boolean).join(' · ')}
-        </span>
-      </div>
+    <>
+      <button
+        onClick={() => setShowDetail(true)}
+        className="w-full text-left hover:opacity-80 transition-opacity"
+        style={{ background: '#181825', border: '1px solid #89dceb30', borderRadius: '0.5rem', padding: '0.75rem' }}
+      >
+        <div className="space-y-1.5">
+          {/* Route + airline */}
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="font-medium text-sm">{route || item.name}</span>
+            <span style={{ color: '#89dceb' }} className="text-xs shrink-0">
+              {[d.flight_number, d.airline].filter(Boolean).join(' · ')}
+            </span>
+          </div>
 
-      {/* Times */}
-      {(d.depart_time || d.arrive_time) && (
-        <div style={{ color: '#9399b2' }} className="text-xs">
-          {[d.depart_time && fmtDateTime(d.depart_time) + (d.depart_tz ? ` ${d.depart_tz}` : ''),
-            d.arrive_time && fmtDateTime(d.arrive_time) + (d.arrive_tz ? ` ${d.arrive_tz}` : '')]
-            .filter(Boolean).join(' → ')}
-          {d.duration && <span style={{ color: '#6c7086' }}> · {d.duration}</span>}
-        </div>
-      )}
-
-      {/* Class / seats / stops */}
-      {(d.fare_class || d.seats || d.stops) && (
-        <div style={{ color: '#6c7086' }} className="text-xs flex gap-3">
-          {d.fare_class && <span>{d.fare_class}</span>}
-          {d.seats && <span>Seats: {d.seats}</span>}
-          {d.stops && <span>{d.stops}</span>}
-        </div>
-      )}
-
-      {/* Layover */}
-      {(d.layover || d.connects_to) && (
-        <div style={{ color: '#6c7086' }} className="text-xs">
-          Layover: {[d.layover, d.connects_to && `→ ${d.connects_to}`].filter(Boolean).join(' ')}
-        </div>
-      )}
-
-      {/* Booking ref + cost */}
-      {(d.booking_ref || item.cost) && (
-        <div style={{ color: '#6c7086' }} className="text-xs flex gap-3">
-          {d.booking_ref && (
-            item.link
-              ? <a href={item.link} target="_blank" rel="noreferrer"
-                  style={{ color: '#cba6f7' }} className="hover:underline">Ref: {d.booking_ref}</a>
-              : <span>Ref: {d.booking_ref}</span>
+          {/* Times */}
+          {(d.depart_time || d.arrive_time) && (
+            <div style={{ color: '#9399b2' }} className="text-xs">
+              {[d.depart_time && fmtDateTime(d.depart_time) + (d.depart_tz ? ` ${d.depart_tz}` : ''),
+                d.arrive_time && fmtDateTime(d.arrive_time) + (d.arrive_tz ? ` ${d.arrive_tz}` : '')]
+                .filter(Boolean).join(' → ')}
+              {d.duration && <span style={{ color: '#6c7086' }}> · {d.duration}</span>}
+            </div>
           )}
-          {item.cost && <span>{item.cost}</span>}
-        </div>
-      )}
 
-      {/* Passengers */}
-      {d.passengers && (
-        <div style={{ color: '#6c7086' }} className="text-xs">{d.passengers}</div>
+          {/* Class / seats */}
+          {(d.fare_class || d.seats) && (
+            <div style={{ color: '#6c7086' }} className="text-xs flex gap-3">
+              {d.fare_class && <span>{d.fare_class}</span>}
+              {d.seats && <span>Seats: {d.seats}</span>}
+            </div>
+          )}
+        </div>
+      </button>
+
+      {showDetail && (
+        <FlightDetailModal item={item} onClose={() => setShowDetail(false)} />
       )}
-    </div>
+    </>
   )
 }
