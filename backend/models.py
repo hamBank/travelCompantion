@@ -27,6 +27,8 @@ class ItemStatus(str, Enum):
 
 class TripBase(SQLModel):
     name: str
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
 
 
 class Trip(TripBase, table=True):
@@ -41,6 +43,8 @@ class TripCreate(TripBase):
 
 class TripUpdate(SQLModel):
     name: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
 
 
 class TripRead(TripBase):

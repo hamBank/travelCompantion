@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import { getTrips, importFromSheets, deleteTrip } from '../api.js'
 
+function fmtDate(iso) {
+  if (!iso) return null
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 export default function TripList({ onOpen }) {
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
@@ -78,33 +83,38 @@ export default function TripList({ onOpen }) {
         </p>
       ) : (
         <div className="space-y-2">
-          {trips.map(trip => (
-            <div
-              key={trip.id}
-              onClick={() => onOpen(trip)}
-              style={{ background: '#2a2a3e' }}
-              className="rounded-xl px-5 py-4 cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-between group"
-            >
-              <div>
-                <div className="font-medium">{trip.name}</div>
-                <div style={{ color: '#6c7086' }} className="text-xs mt-0.5">
-                  {new Date(trip.created_at).toLocaleDateString('en-GB', {
-                    day: 'numeric', month: 'short', year: 'numeric'
-                  })}
+          {trips.map(trip => {
+            const dateRange = trip.start_date || trip.end_date
+              ? [fmtDate(trip.start_date), fmtDate(trip.end_date)].filter(Boolean).join(' → ')
+              : null
+            return (
+              <div
+                key={trip.id}
+                onClick={() => onOpen(trip)}
+                style={{ background: '#2a2a3e' }}
+                className="rounded-xl px-5 py-4 cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-between group"
+              >
+                <div>
+                  <div className="font-medium">{trip.name}</div>
+                  <div style={{ color: '#6c7086' }} className="text-xs mt-0.5">
+                    {dateRange ?? `Added ${new Date(trip.created_at).toLocaleDateString('en-GB', {
+                      day: 'numeric', month: 'short', year: 'numeric'
+                    })}`}
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span style={{ color: '#6c7086' }}>→</span>
+                  <button
+                    onClick={e => handleDelete(e, trip.id)}
+                    style={{ color: '#6c7086' }}
+                    className="text-xs opacity-0 group-hover:opacity-100 hover:text-[#f38ba8] transition-all"
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <span style={{ color: '#6c7086' }}>→</span>
-                <button
-                  onClick={e => handleDelete(e, trip.id)}
-                  style={{ color: '#6c7086' }}
-                  className="text-xs opacity-0 group-hover:opacity-100 hover:text-[#f38ba8] transition-all"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
