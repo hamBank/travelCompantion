@@ -1,6 +1,12 @@
+function getToken() { return localStorage.getItem('tc-token') }
+
 async function req(path, opts = {}) {
+  const token = getToken()
   const r = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     ...opts,
   })
   if (r.status === 204) return null
@@ -13,15 +19,19 @@ async function req(path, opts = {}) {
   return body
 }
 
-export const getTrips = () => req('/trips/')
+export const getAuthConfig  = ()       => req('/auth/config')
+export const loginWithGoogle = (credential) =>
+  req('/auth/google', { method: 'POST', body: JSON.stringify({ credential }) })
+
+export const getTrips   = () => req('/trips/')
 export const deleteTrip = (id) => req(`/trips/${id}`, { method: 'DELETE' })
 export const updateTrip = (id, data) =>
   req(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 
+export const getTripTimeline = (id) => req(`/trips/${id}/timeline`)
+
 export const backfillAccommodations = (tripId) =>
   req(`/import/backfill-accommodations/${tripId}`, { method: 'POST' })
-
-export const getTripTimeline = (id) => req(`/trips/${id}/timeline`)
 
 export const importFromSheets = (trip_name) =>
   req('/import/sheets', { method: 'POST', body: JSON.stringify({ trip_name }) })
@@ -38,6 +48,5 @@ export const updateItem = (id, data) =>
   req(`/items/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 export const deleteItem = (id) => req(`/items/${id}`, { method: 'DELETE' })
 
-// Convenience aliases
 export const updateItemStatus = (id, status) => updateItem(id, { status })
 export const updateStopStatus = (id, status) => updateStop(id, { status })
