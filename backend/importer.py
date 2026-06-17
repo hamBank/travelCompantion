@@ -230,42 +230,72 @@ def _combine_datetime(date_str: str, time_str: str) -> str:
     return ""
 
 
-def _find_stop_for_flight(stops: list, origin: str, stop_location_hint: str) -> Optional[Stop]:
-    """Return the best Stop to attach a flight to, based on origin city/IATA."""
+def _find_stop_for_flight(stops: list, origin: str, stop_location_hint: str, depart_iso: str = "") -> Optional[Stop]:
+    """Return the best Stop to attach a flight to.
+
+    Priority:
+    1. Explicit stop_location hint column
+    2. Flight departure date falls within stop.arrive … stop.depart
+    3. Flight departure date matches stop.depart (same day)
+    4. Last stop that had already started before the flight departed
+    5. City / IATA name matching
+    6. First stop fallback
+    """
     if not stops:
         return None
 
-    # Explicit stop_location column wins
+    # 1. Explicit stop_location column wins
     if stop_location_hint:
         hint = stop_location_hint.lower()
         for stop in stops:
             if hint in stop.location.lower() or stop.location.lower() in hint:
                 return stop
 
-    if not origin:
-        return stops[0]
+    # Date-based strategies
+    if depart_iso:
+        try:
+            flight_dt = datetime.fromisoformat(depart_iso)
+            flight_date = flight_dt.date()
 
-    origin_lower = origin.lower().strip()
+            # 2. Exact date-range: arrive ≤ flight ≤ depart
+            for stop in stops:
+                if stop.arrive and stop.depart:
+                    if stop.arrive.date() <= flight_date <= stop.depart.date():
+                        return stop
 
-    # Direct location name match
-    for stop in stops:
-        if origin_lower == stop.location.lower():
-            return stop
+            # 3. Same day as stop departure (flight out on check-out day)
+            for stop in stops:
+                if stop.depart and stop.depart.date() == flight_date:
+                    return stop
 
-    # Partial name match
-    for stop in stops:
-        loc = stop.location.lower()
-        if loc in origin_lower or origin_lower in loc:
-            return stop
+            # 4. Last stop that had already started (arrive ≤ flight)
+            candidates = [s for s in stops if s.arrive and s.arrive.date() <= flight_date]
+            if candidates:
+                return max(candidates, key=lambda s: s.arrive)
 
-    # IATA code → city lookup
-    city = _IATA_CITY.get(origin_lower, "")
-    if city:
+        except (ValueError, TypeError, AttributeError):
+            pass
+
+    # 5. City / IATA name matching
+    if origin:
+        origin_lower = origin.lower().strip()
+
         for stop in stops:
-            if city in stop.location.lower():
+            if origin_lower == stop.location.lower():
                 return stop
 
-    # Default to first stop (flight likely departs at start of trip)
+        for stop in stops:
+            loc = stop.location.lower()
+            if loc in origin_lower or origin_lower in loc:
+                return stop
+
+        city = _IATA_CITY.get(origin_lower, "")
+        if city:
+            for stop in stops:
+                if city in stop.location.lower():
+                    return stop
+
+    # 6. Default to first stop
     return stops[0]
 
 
@@ -452,7 +482,10 @@ def import_flights(session: Session, trip_id: int, sheets_raw: dict[str, str]) -
         if sheet_name.lower() not in FLIGHT_SHEET_NAMES:
             continue
         for flight in _parse_flights_sheet(csv_text):
-            stop = _find_stop_for_flight(stops, flight["origin"], flight["stop_location"])
+            stop = _find_stop_for_flight(
+                stops, flight["origin"], flight["stop_location"],
+                flight["details"].get("depart_time", "") if flight["details"] else "",
+            )
             if stop is None:
                 continue
             session.add(ItineraryItem(
@@ -537,7 +570,10 @@ def import_sheets(session: Session, trip_name: str, sheets_raw: dict[str, str]) 
             continue
 
         for flight in _parse_flights_sheet(csv_text):
-            stop = _find_stop_for_flight(stops, flight["origin"], flight["stop_location"])
+            stop = _find_stop_for_flight(
+                stops, flight["origin"], flight["stop_location"],
+                flight["details"].get("depart_time", "") if flight["details"] else "",
+            )
             if stop is None:
                 continue
             session.add(ItineraryItem(
