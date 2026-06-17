@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, SQLModel, select
 from ..database import get_session
 from ..sheets import fetch_sheets
-from ..importer import import_sheets, import_flights, update_stop_dates, _parse_flights_sheet, _assign_flights_to_stops, _parse_date, FLIGHT_SHEET_NAMES
+from ..importer import import_sheets, import_flights, update_stop_dates, enrich_accommodations, _parse_flights_sheet, _assign_flights_to_stops, _parse_date, FLIGHT_SHEET_NAMES
 from ..models import TripRead, Stop, ItineraryItem
 
 router = APIRouter(tags=["import"])
@@ -155,3 +155,23 @@ def backfill_scheduled_at(trip_id: int, session: Session = Depends(get_session))
 
     session.commit()
     return {"updated": updated}
+
+
+@router.post("/import/enrich-accommodations/{trip_id}", status_code=200)
+def enrich_accommodation_details(trip_id: int, session: Session = Depends(get_session)):
+    """
+    Look up missing accommodation details (address, phone, website) for all stops
+    in the trip.
+
+    Uses Google Places API if GOOGLE_PLACES_API_KEY env var is set (preferred —
+    returns address, phone number, and website). Falls back to Nominatim
+    (OpenStreetMap) which gives address and coordinates but no phone.
+
+    Only fills gaps — values already present from the sheet are never overwritten.
+    Safe to call multiple times; stops that already have an address are skipped.
+    """
+    try:
+        result = enrich_accommodations(session, trip_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result

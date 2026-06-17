@@ -9,9 +9,14 @@ Usage:
 import csv
 import io
 import re
+import json as _json
+import time
+import os
+import urllib.request
+import urllib.parse as _urlparse
 from datetime import datetime
 from typing import Optional
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 # Matches bare time strings like "21:35", "9:35 PM", "09:35:00"
 _TIME_RE = re.compile(r'^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?$', re.IGNORECASE)
@@ -84,6 +89,22 @@ def _city_key(name: str) -> str:
     lower = name.lower().strip()
     return _IATA_CITY.get(lower, lower)
 
+
+# Maps row-label keys in accommodation context to details field names
+_ACCOM_FIELD_MAP = {
+    "address": "location", "addr": "location", "street": "location",
+    "street address": "location", "location": "location",
+    "phone": "contact_phone", "tel": "contact_phone", "telephone": "contact_phone",
+    "mobile": "contact_phone", "contact": "contact_phone", "contact phone": "contact_phone",
+    "email": "contact_email", "e-mail": "contact_email", "contact email": "contact_email",
+    "booking ref": "booking_ref", "booking reference": "booking_ref",
+    "booking": "booking_ref", "confirmation": "booking_ref",
+    "confirmation no": "booking_ref", "ref": "booking_ref", "conf": "booking_ref",
+    "cost": "cost", "total cost": "cost", "price": "cost", "total": "cost",
+    "paid": "amount_paid", "amount paid": "amount_paid", "deposit": "amount_paid",
+    "website": "website", "web": "website",
+    "notes": "description", "description": "description", "info": "description",
+}
 
 # Maps lowercase column header variants to canonical field names
 _HEADER_MAP = {
@@ -630,14 +651,17 @@ def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
         "country": _cell(rows, 0, 1),
         "arrive": None, "depart": None,
         "accommodation": "", "accommodation_link": "", "accommodation_notes": "",
+        "accommodation_details": {},
         "check_in": "", "check_out": "",
         "timezone": "0", "lat": "", "lng": "",
         "activities": [], "restaurants": [],
     }
 
     in_activities = in_restaurants = rest_header = False
+    accom_row_idx = -1
     FOOTER = {"local", "tz corrected", "lattitude", "latitude",
               "longatude", "longitude", "timezone", "weather"}
+    SECTION_STOPS = FOOTER | {"arrive", "depart", "sunrise"}
 
     for i, row in enumerate(rows):
         if not row:
@@ -654,11 +678,19 @@ def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
             data["depart"] = _parse_date(c1)
         elif lc0 in ("accomodation", "accommodation"):
             data["accommodation"] = c1
-            data["accommodation_link"] = c2
-            if i + 1 < len(rows):
-                data["accommodation_notes"] = "  ·  ".join(
-                    x.strip() for x in rows[i + 1] if x.strip()
-                )
+            # c2 is the link if it looks like a URL; otherwise treat as extra detail
+            if c2.startswith("http") or "." in c2.split("/")[0]:
+                data["accommodation_link"] = c2
+            else:
+                data["accommodation_link"] = ""
+                if c2:
+                    data["accommodation_details"]["_extra"] = c2
+            # Extra inline columns (c3 onwards: address, phone, ref, cost …)
+            for j in range(3, min(len(row), 9)):
+                val = row[j].strip() if j < len(row) else ""
+                if val:
+                    data["accommodation_details"][f"_col{j}"] = val
+            accom_row_idx = i
         elif lc0 == "timezone":
             data["timezone"] = c1
         elif "latitude" in lc0 or "lattitude" in lc0:
@@ -674,6 +706,19 @@ def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
                     data["check_in"] = row[j + 1].strip()
                 if "check-out" in lc and j + 1 < len(row):
                     data["check_out"] = row[j + 1].strip()
+        elif accom_row_idx >= 0 and i > accom_row_idx and i <= accom_row_idx + 8:
+            # Rows immediately following the accommodation row — scan for field: value pairs
+            if lc0 in SECTION_STOPS or (c0 == "" and c1.lower() == "activity"):
+                accom_row_idx = -1  # left the accommodation block
+            else:
+                field = _ACCOM_FIELD_MAP.get(lc0)
+                if field and c1 and field not in data["accommodation_details"]:
+                    data["accommodation_details"][field] = c1
+                elif not field and i == accom_row_idx + 1 and (c0 or c1):
+                    # First unlabelled row after accommodation = notes
+                    parts = [x.strip() for x in row if x.strip()]
+                    if parts and not data["accommodation_notes"]:
+                        data["accommodation_notes"] = "  ·  ".join(parts)
 
         if lc0 in FOOTER or c1.lower() in ("utc", "local"):
             in_activities = in_restaurants = False
@@ -704,7 +749,156 @@ def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
             ]))
             data["restaurants"].append({"name": c1, "notes": notes})
 
+    # Promote any unclassified inline extra columns from the accommodation row.
+    # If a value looks like a URL, treat as link; otherwise append to notes.
+    for key in list(data["accommodation_details"]):
+        if key.startswith("_"):
+            val = data["accommodation_details"].pop(key)
+            if val.startswith("http") and not data["accommodation_link"]:
+                data["accommodation_link"] = val
+            elif val and not data["accommodation_notes"]:
+                data["accommodation_notes"] = val
+
     return data
+
+
+def _combine_checkinout(base_date: Optional[datetime], time_str: str) -> str:
+    """Return an ISO datetime string by combining a date with a time-string (e.g. '15:00')."""
+    if not time_str:
+        return ""
+    dt = _parse_date(time_str)
+    if dt:
+        return dt.strftime("%Y-%m-%dT%H:%M")
+    if base_date:
+        overlaid = _overlay_time(base_date, time_str)
+        if overlaid != base_date:
+            return overlaid.strftime("%Y-%m-%dT%H:%M")
+    return ""
+
+
+def _lookup_nominatim(name: str, city: str, country: str) -> dict:
+    """Query Nominatim (OpenStreetMap) for address and coordinates. Returns details dict."""
+    query = ", ".join(x for x in [name, city, country] if x)
+    url = (
+        "https://nominatim.openstreetmap.org/search"
+        f"?q={_urlparse.quote(query)}"
+        "&format=json&addressdetails=1&limit=1"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "TravelCompanion/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            results = _json.loads(resp.read().decode())
+        if not results:
+            return {}
+        r = results[0]
+        addr = r.get("address", {})
+        road = " ".join(filter(None, [addr.get("house_number", ""), addr.get("road", "")]))
+        suburb = addr.get("suburb", "")
+        city_name = addr.get("city") or addr.get("town") or addr.get("village") or ""
+        postcode = addr.get("postcode", "")
+        country_name = addr.get("country", "")
+        location = ", ".join(x for x in [road, suburb, city_name, postcode, country_name] if x)
+        return {
+            "location": location or r.get("display_name", ""),
+            "_lat": r.get("lat", ""),
+            "_lng": r.get("lon", ""),
+        }
+    except Exception:
+        return {}
+
+
+def _lookup_places(name: str, city: str, country: str, api_key: str) -> dict:
+    """Query Google Places API for address, phone, and website."""
+    query = ", ".join(x for x in [name, city, country] if x)
+    search_url = (
+        "https://maps.googleapis.com/maps/api/place/textsearch/json"
+        f"?query={_urlparse.quote(query)}&type=lodging&key={api_key}"
+    )
+    try:
+        with urllib.request.urlopen(search_url, timeout=8) as resp:
+            search_data = _json.loads(resp.read().decode())
+        places = search_data.get("results", [])
+        if not places:
+            return {}
+        place_id = places[0]["place_id"]
+        fields = "formatted_address,formatted_phone_number,international_phone_number,website,geometry"
+        detail_url = (
+            "https://maps.googleapis.com/maps/api/place/details/json"
+            f"?place_id={_urlparse.quote(place_id)}&fields={fields}&key={api_key}"
+        )
+        with urllib.request.urlopen(detail_url, timeout=8) as resp:
+            detail_data = _json.loads(resp.read().decode())
+        r = detail_data.get("result", {})
+        geo = r.get("geometry", {}).get("location", {})
+        return {
+            "location": r.get("formatted_address", ""),
+            "contact_phone": r.get("formatted_phone_number") or r.get("international_phone_number", ""),
+            "website": r.get("website", ""),
+            "_lat": str(geo.get("lat", "")),
+            "_lng": str(geo.get("lng", "")),
+        }
+    except Exception:
+        return {}
+
+
+def enrich_accommodations(session: Session, trip_id: int) -> dict:
+    """
+    For each stop that has an accommodation item without an address, look up details
+    via Google Places API (if GOOGLE_PLACES_API_KEY is set) or Nominatim.
+    Only fills gaps — never overwrites values already present from the sheet.
+    """
+    api_key = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+    stops = list(session.exec(select(Stop).where(Stop.trip_id == trip_id)).all())
+    if not stops:
+        raise ValueError(f"No stops found for trip {trip_id}")
+
+    updated, skipped, detail = 0, 0, []
+    for stop in stops:
+        item = session.exec(
+            select(ItineraryItem)
+            .where(ItineraryItem.stop_id == stop.id)
+            .where(ItineraryItem.kind == ItemKind.accommodation)
+        ).first()
+        if not item:
+            continue
+        existing = item.details or {}
+        if existing.get("location"):
+            skipped += 1
+            detail.append({"stop": stop.location, "status": "skipped (already has address)"})
+            continue
+
+        if api_key:
+            enriched = _lookup_places(item.name, stop.location, stop.country, api_key)
+        else:
+            time.sleep(1)  # Nominatim rate limit: 1 req/s
+            enriched = _lookup_nominatim(item.name, stop.location, stop.country)
+
+        if not enriched:
+            detail.append({"stop": stop.location, "name": item.name, "status": "not found"})
+            continue
+
+        # Extract stop-level fields before merging into item details
+        lat = enriched.pop("_lat", "")
+        lng = enriched.pop("_lng", "")
+        if lat and not stop.lat:
+            stop.lat = lat
+            stop.lng = lng
+            session.add(stop)
+        # website goes to item.link
+        website = enriched.pop("website", "")
+        if website and not item.link:
+            item.link = website
+
+        # Merge: existing sheet values win, enrichment fills gaps
+        merged = {**enriched, **{k: v for k, v in existing.items() if v}}
+        item.details = {k: v for k, v in merged.items() if v} or None
+        session.add(item)
+        updated += 1
+        source = "google_places" if api_key else "nominatim"
+        detail.append({"stop": stop.location, "name": item.name, "status": "enriched", "source": source})
+
+    session.commit()
+    return {"updated": updated, "skipped": skipped, "detail": detail}
 
 
 def import_flights(session: Session, trip_id: int, sheets_raw: dict[str, str]) -> int:
@@ -782,6 +976,34 @@ def import_sheets(session: Session, trip_name: str, sheets_raw: dict[str, str]) 
         session.add(stop)
         session.flush()
         stops.append(stop)
+
+        # Accommodation item
+        if data["accommodation"]:
+            ad = {k: v for k, v in data["accommodation_details"].items() if v}
+            # Check-in/out: combine arrive/depart date with the time strings from the Sunrise row
+            if "checkin" not in ad:
+                ci = _combine_checkinout(data["arrive"], data["check_in"])
+                if ci:
+                    ad["checkin"] = ci
+            if "checkout" not in ad:
+                co = _combine_checkinout(data["depart"], data["check_out"])
+                if co:
+                    ad["checkout"] = co
+            # Description from notes row
+            if data["accommodation_notes"] and "description" not in ad:
+                ad["description"] = data["accommodation_notes"]
+            # Cost may have come from an inline column — pull it out to item.cost
+            accom_cost = ad.pop("cost", "")
+            session.add(ItineraryItem(
+                stop_id=stop.id,
+                kind=ItemKind.accommodation,
+                name=data["accommodation"],
+                link=data["accommodation_link"],
+                cost=accom_cost,
+                scheduled_at=data["arrive"],
+                status=ItemStatus.pending,
+                details=ad or None,
+            ))
 
         for act in data["activities"]:
             session.add(ItineraryItem(
