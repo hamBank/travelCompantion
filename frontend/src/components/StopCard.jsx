@@ -10,13 +10,22 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
+function fmtDateTime(val) {
+  if (!val) return null
+  const [datePart, timePart] = val.split('T')
+  const dateStr = new Date(datePart).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return timePart ? `${dateStr} ${timePart}` : dateStr
+}
+
 export default function StopCard({ stop, index, onUpdate }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
 
+  const accom = stop.items.find(i => i.kind === 'accommodation')
   const activities = stop.items.filter(i => i.kind === 'activity')
   const restaurants = stop.items.filter(i => i.kind === 'restaurant')
+  const notes = stop.items.filter(i => i.kind === 'note')
 
   async function cycleStatus(e) {
     e.stopPropagation()
@@ -55,23 +64,37 @@ export default function StopCard({ stop, index, onUpdate }) {
 
       {open && (
         <div style={{ borderTop: '1px solid #313244' }} className="px-5 py-4 space-y-4">
-          {stop.accommodation && (
+          {accom && (
             <Section label="Accommodation">
               <div className="text-sm">
-                {stop.accommodation_link
-                  ? <a href={stop.accommodation_link} target="_blank" rel="noreferrer"
-                      style={{ color: '#cba6f7' }} className="hover:underline">{stop.accommodation}</a>
-                  : <span>{stop.accommodation}</span>
+                {accom.link
+                  ? <a href={accom.link} target="_blank" rel="noreferrer"
+                      style={{ color: '#cba6f7' }} className="hover:underline">{accom.name}</a>
+                  : <span>{accom.name}</span>
                 }
               </div>
-              {stop.accommodation_notes && (
-                <p style={{ color: '#6c7086' }} className="text-xs mt-1">{stop.accommodation_notes}</p>
+              {accom.details?.location && (
+                <p style={{ color: '#9399b2' }} className="text-xs mt-0.5">{accom.details.location}</p>
               )}
-              {(stop.check_in || stop.check_out) && (
+              {(accom.details?.checkin || accom.details?.checkout) && (
                 <p style={{ color: '#9399b2' }} className="text-xs mt-1">
-                  {[stop.check_in && `In: ${stop.check_in}`, stop.check_out && `Out: ${stop.check_out}`]
+                  {[accom.details.checkin && `In: ${fmtDateTime(accom.details.checkin)}`,
+                    accom.details.checkout && `Out: ${fmtDateTime(accom.details.checkout)}`]
                     .filter(Boolean).join('  ·  ')}
                 </p>
+              )}
+              {accom.details?.booking_ref && (
+                <p style={{ color: '#6c7086' }} className="text-xs mt-0.5">Ref: {accom.details.booking_ref}</p>
+              )}
+              {(accom.cost || accom.details?.amount_paid) && (
+                <p style={{ color: '#6c7086' }} className="text-xs mt-0.5">
+                  {[accom.cost && `Cost: ${accom.cost}`,
+                    accom.details?.amount_paid && `Paid: ${accom.details.amount_paid}`]
+                    .filter(Boolean).join('  ·  ')}
+                </p>
+              )}
+              {accom.details?.description && (
+                <p style={{ color: '#6c7086' }} className="text-xs mt-1">{accom.details.description}</p>
               )}
             </Section>
           )}
@@ -88,7 +111,13 @@ export default function StopCard({ stop, index, onUpdate }) {
             </Section>
           )}
 
-          {!stop.accommodation && activities.length === 0 && restaurants.length === 0 && (
+          {notes.length > 0 && (
+            <Section label="Notes">
+              {notes.map(item => <ItemRow key={item.id} item={item} />)}
+            </Section>
+          )}
+
+          {!accom && activities.length === 0 && restaurants.length === 0 && notes.length === 0 && (
             <p style={{ color: '#6c7086' }} className="text-xs">No details recorded.</p>
           )}
         </div>

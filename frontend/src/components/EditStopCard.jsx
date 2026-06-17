@@ -36,11 +36,6 @@ export default function EditStopCard({ stop, index, onRefresh, onDelete }) {
     country: stop.country ?? '',
     arrive: toDateInput(stop.arrive),
     depart: toDateInput(stop.depart),
-    accommodation: stop.accommodation ?? '',
-    accommodation_link: stop.accommodation_link ?? '',
-    accommodation_notes: stop.accommodation_notes ?? '',
-    check_in: stop.check_in ?? '',
-    check_out: stop.check_out ?? '',
     timezone: stop.timezone ?? '0',
     lat: stop.lat ?? '',
     lng: stop.lng ?? '',
@@ -117,18 +112,6 @@ export default function EditStopCard({ stop, index, onRefresh, onDelete }) {
             <div className="grid grid-cols-2 gap-3">
               <Field label="Arrive" value={fields.arrive} onChange={v => set('arrive', v)} type="date" />
               <Field label="Depart" value={fields.depart} onChange={v => set('depart', v)} type="date" />
-            </div>
-          </div>
-
-          {/* Accommodation */}
-          <div>
-            <p style={{ color: '#6c7086' }} className="text-xs uppercase tracking-wide mb-2">Accommodation</p>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Name" value={fields.accommodation} onChange={v => set('accommodation', v)} placeholder="Hotel name" span={2} />
-              <Field label="Link" value={fields.accommodation_link} onChange={v => set('accommodation_link', v)} placeholder="https://…" span={2} />
-              <Field label="Notes" value={fields.accommodation_notes} onChange={v => set('accommodation_notes', v)} placeholder="Any notes" span={2} />
-              <Field label="Check-in time" type="time" value={fields.check_in} onChange={v => set('check_in', v)} />
-              <Field label="Check-out time" type="time" value={fields.check_out} onChange={v => set('check_out', v)} />
             </div>
           </div>
 
