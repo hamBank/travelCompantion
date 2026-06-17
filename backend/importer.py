@@ -156,6 +156,13 @@ _HEADER_MAP = {
     "contact phone": "booking_phone",
     "phone": "booking_phone",
     "distance": "distance",
+    "date": "depart_date",
+    "departure": "depart_time_raw",
+    "arrival": "arrive_time_raw",
+    "status": "flight_status",
+    "checkin": "checkin",
+    "lounge": "lounge",
+    "food": "meal",
     "baggage": "baggage",
     "bags": "baggage",
     "baggage allowance": "baggage",
@@ -205,18 +212,21 @@ def _parse_date(s: str) -> Optional[datetime]:
 
 def _combine_datetime(date_str: str, time_str: str) -> str:
     """Parse date + time strings and return ISO 'YYYY-MM-DDTHH:MM' or ''."""
-    if not date_str:
-        return ""
-    # Try combining date + time first
+    # Try time_str as a standalone datetime first (e.g. "24/07/2025 21:35")
     if time_str:
-        combined = f"{date_str} {time_str}"
-        dt = _parse_date(combined)
+        dt = _parse_date(time_str)
+        if dt:
+            return dt.strftime("%Y-%m-%dT%H:%M")
+    # Try combining date + time
+    if date_str and time_str:
+        dt = _parse_date(f"{date_str} {time_str}")
         if dt:
             return dt.strftime("%Y-%m-%dT%H:%M")
     # Try date alone
-    dt = _parse_date(date_str)
-    if dt:
-        return dt.strftime("%Y-%m-%dT%H:%M")
+    if date_str:
+        dt = _parse_date(date_str)
+        if dt:
+            return dt.strftime("%Y-%m-%dT%H:%M")
     return ""
 
 
@@ -292,11 +302,25 @@ def _parse_flights_sheet(csv_text: str) -> list[dict]:
         if not origin and not destination:
             continue
 
-        depart_iso = _combine_datetime(get(row, "depart_date"), get(row, "depart_time_raw"))
-        arrive_iso = _combine_datetime(get(row, "arrive_date"), get(row, "arrive_time_raw"))
+        depart_date = get(row, "depart_date")
+        depart_iso = _combine_datetime(depart_date, get(row, "depart_time_raw"))
+        # Use depart_date as fallback arrive_date (no separate arrive_date column)
+        arrive_iso = _combine_datetime(
+            get(row, "arrive_date") or depart_date,
+            get(row, "arrive_time_raw"),
+        )
 
-        flight_number = get(row, "flight_number")
-        airline = get(row, "airline")
+        # Detect overnight flights: if arrival parses earlier than departure, add 1 day
+        if depart_iso and arrive_iso:
+            try:
+                from datetime import timedelta
+                d_dt = datetime.fromisoformat(depart_iso)
+                a_dt = datetime.fromisoformat(arrive_iso)
+                if a_dt < d_dt:
+                    arrive_iso = (a_dt + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")
+            except ValueError:
+                pass
+
         label = get(row, "label") or f"{origin} → {destination}"
 
         details = {}
@@ -306,6 +330,7 @@ def _parse_flights_sheet(csv_text: str) -> list[dict]:
             "fare_class", "seats", "aircraft", "booking_ref", "booking_airline",
             "booking_phone", "passengers", "loyalty_info", "layover", "connects_to",
             "distance", "baggage", "meal", "entertainment", "notes",
+            "flight_status", "checkin", "lounge",
         ):
             val = get(row, field)
             if val:
