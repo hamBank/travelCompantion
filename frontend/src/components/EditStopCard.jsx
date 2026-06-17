@@ -7,29 +7,23 @@ const STATUS_OPTIONS = ['planned', 'confirmed', 'completed', 'cancelled']
 function Field({ label, value, onChange, placeholder, type = 'text', span = 1 }) {
   return (
     <div className={span === 2 ? 'col-span-2' : ''}>
-      <label style={{ color: '#6c7086' }} className="block text-xs mb-0.5">{label}</label>
+      <label style={{ color: 'var(--text-faint)' }} className="block text-xs mb-0.5">{label}</label>
       <input
         type={type}
         value={value ?? ''}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        style={{ background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #313244' }}
-        className="w-full rounded px-2 py-1.5 text-sm outline-none focus:border-[#cba6f7]"
+        style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        className="w-full rounded px-2 py-1.5 text-sm outline-none focus:border-[var(--accent)]"
       />
     </div>
   )
 }
 
-function toDateInput(iso) {
-  if (!iso) return ''
-  return iso.split('T')[0]
-}
+function toDateInput(iso) { return iso ? iso.split('T')[0] : '' }
+function fromDateInput(val) { return val ? val + 'T00:00:00' : null }
 
-function fromDateInput(val) {
-  return val ? val + 'T00:00:00' : null
-}
-
-export default function EditStopCard({ stop, index, onRefresh, onDelete }) {
+export default function EditStopCard({ stop, index, onRefresh }) {
   const [open, setOpen] = useState(false)
   const [fields, setFields] = useState({
     location: stop.location,
@@ -45,10 +39,7 @@ export default function EditStopCard({ stop, index, onRefresh, onDelete }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(null)
 
-  function set(key, val) {
-    setFields(f => ({ ...f, [key]: val }))
-    setSaved(false)
-  }
+  function set(key, val) { setFields(f => ({ ...f, [key]: val })); setSaved(false) }
 
   async function save() {
     setSaving(true); setError(null)
@@ -74,29 +65,29 @@ export default function EditStopCard({ stop, index, onRefresh, onDelete }) {
   }
 
   return (
-    <div style={{ background: '#2a2a3e', borderRadius: '0.75rem', overflow: 'hidden' }}>
-      {/* Header */}
+    <div style={{ background: 'var(--surface)', borderRadius: '0.75rem', overflow: 'hidden' }}>
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full px-5 py-4 flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
       >
-        <span style={{ color: '#6c7086', fontSize: '0.7rem', minWidth: '1.2rem' }}>{index + 1}</span>
+        <span style={{ color: 'var(--text-faint)', fontSize: '0.7rem', minWidth: '1.2rem' }}>{index + 1}</span>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm">{fields.location || <span style={{ color: '#6c7086' }}>Untitled stop</span>}</div>
+          <div className="font-medium text-sm">
+            {fields.location || <span style={{ color: 'var(--text-faint)' }}>Untitled stop</span>}
+          </div>
           {(fields.arrive || fields.depart) && (
-            <div style={{ color: '#6c7086' }} className="text-xs mt-0.5">
+            <div style={{ color: 'var(--text-faint)' }} className="text-xs mt-0.5">
               {fields.arrive}{fields.depart ? ` → ${fields.depart}` : ''}
             </div>
           )}
         </div>
-        <span style={{ color: '#6c7086', fontSize: '0.65rem' }}>{open ? '▲' : '▼'}</span>
+        <span style={{ color: 'var(--text-faint)', fontSize: '0.65rem' }}>{open ? '▲' : '▼'}</span>
       </button>
 
       {open && (
-        <div style={{ borderTop: '1px solid #313244' }} className="px-5 py-4 space-y-5">
-          {/* Location */}
+        <div style={{ borderTop: '1px solid var(--border)' }} className="px-5 py-4 space-y-5">
           <div>
-            <p style={{ color: '#6c7086' }} className="text-xs uppercase tracking-wide mb-2">Location</p>
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Location</p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="City / location" value={fields.location} onChange={v => set('location', v)} placeholder="Paris" span={2} />
               <Field label="Country" value={fields.country} onChange={v => set('country', v)} placeholder="France" />
@@ -106,24 +97,22 @@ export default function EditStopCard({ stop, index, onRefresh, onDelete }) {
             </div>
           </div>
 
-          {/* Dates */}
           <div>
-            <p style={{ color: '#6c7086' }} className="text-xs uppercase tracking-wide mb-2">Dates</p>
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Dates</p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Arrive" value={fields.arrive} onChange={v => set('arrive', v)} type="date" />
               <Field label="Depart" value={fields.depart} onChange={v => set('depart', v)} type="date" />
             </div>
           </div>
 
-          {/* Status + actions */}
           <div className="flex items-center gap-4 pt-1">
             <div>
-              <label style={{ color: '#6c7086' }} className="block text-xs mb-0.5">Status</label>
+              <label style={{ color: 'var(--text-faint)' }} className="block text-xs mb-0.5">Status</label>
               <select
                 value={fields.status}
                 onChange={e => set('status', e.target.value)}
-                style={{ background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #313244' }}
-                className="rounded px-2 py-1.5 text-sm outline-none focus:border-[#cba6f7]"
+                style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                className="rounded px-2 py-1.5 text-sm outline-none focus:border-[var(--accent)]"
               >
                 {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -131,26 +120,27 @@ export default function EditStopCard({ stop, index, onRefresh, onDelete }) {
             <div className="flex-1" />
             <button
               onClick={handleDelete}
-              style={{ color: '#6c7086' }}
-              className="text-xs hover:text-[#f38ba8] transition-colors"
+              style={{ color: 'var(--text-faint)' }}
+              className="text-xs hover:opacity-70 transition-opacity"
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--error)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-faint)'}
             >
               Delete stop
             </button>
             <button
               onClick={save}
               disabled={saving}
-              style={{ background: '#cba6f7', color: '#1e1e2e' }}
+              style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
               className="px-4 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
             >
               {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save stop'}
             </button>
           </div>
 
-          {error && <p style={{ color: '#f38ba8' }} className="text-xs">{error}</p>}
+          {error && <p style={{ color: 'var(--error)' }} className="text-xs">{error}</p>}
 
-          {/* Items */}
           <div>
-            <p style={{ color: '#6c7086' }} className="text-xs uppercase tracking-wide mb-2">
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">
               Activities &amp; Restaurants
             </p>
             <EditItemsSection stopId={stop.id} items={stop.items ?? []} onRefresh={onRefresh} />

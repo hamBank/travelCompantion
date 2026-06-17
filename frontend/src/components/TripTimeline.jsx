@@ -16,31 +16,50 @@ export default function TripTimeline({ tripId }) {
     finally { setLoading(false) }
   }
 
-  if (loading) return <p style={{ color: '#6c7086' }} className="text-center py-12 text-sm">Loading timeline…</p>
-  if (error) return <p style={{ color: '#f38ba8' }} className="text-center py-12 text-sm">{error}</p>
-  if (!timeline?.stops?.length) return <p style={{ color: '#6c7086' }} className="text-center py-12 text-sm">No stops yet.</p>
+  if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading timeline…</p>
+  if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
+  if (!timeline?.stops?.length) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">No stops yet.</p>
 
   const completed = timeline.stops.filter(s => s.status === 'completed').length
   const total = timeline.stops.length
 
   return (
-    <div className="space-y-3">
+    <div>
       {total > 0 && (
-        <div className="flex items-center justify-between mb-4">
-          <p style={{ color: '#9399b2' }} className="text-xs">
+        <div className="flex items-center justify-between mb-5">
+          <p style={{ color: 'var(--text-faint)' }} className="text-xs">
             {total} stops · {completed} completed
           </p>
-          <div style={{ background: '#313244' }} className="rounded-full h-1.5 w-32 overflow-hidden">
+          <div style={{ background: 'var(--border)' }} className="rounded-full h-1.5 w-32 overflow-hidden">
             <div
-              style={{ background: '#a6e3a1', width: `${(completed / total) * 100}%` }}
+              style={{ background: 'var(--success)', width: `${(completed / total) * 100}%` }}
               className="h-full rounded-full transition-all"
             />
           </div>
         </div>
       )}
-      {timeline.stops.map((stop, i) => (
-        <StopCard key={stop.id} stop={stop} index={i} onUpdate={load} />
-      ))}
+
+      <div className="relative">
+        {total > 1 && <div className="timeline-line" />}
+        <div className="space-y-3">
+          {timeline.stops.map((stop, i) => (
+            <div key={stop.id} className="relative flex items-start gap-4">
+              <div
+                className="timeline-dot shrink-0"
+                style={{
+                  borderColor: `var(--status-${stop.status || 'planned'})`,
+                  color: `var(--status-${stop.status || 'planned'})`,
+                }}
+              >
+                {i + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <StopCard stop={stop} index={i} onUpdate={load} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

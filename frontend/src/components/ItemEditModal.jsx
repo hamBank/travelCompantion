@@ -1,25 +1,25 @@
 import { useState } from 'react'
 import { updateItem } from '../api.js'
 
-const INPUT = {
-  background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #313244',
-}
-
-const SUBSECTION = {
-  background: '#181825', border: '1px solid #313244',
+const KIND_VAR = {
+  activity:      'var(--kind-activity)',
+  restaurant:    'var(--kind-restaurant)',
+  note:          'var(--kind-note)',
+  accommodation: 'var(--kind-accommodation)',
+  flight:        'var(--kind-flight)',
 }
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <label style={{ color: '#6c7086' }} className="text-xs uppercase tracking-wide">{label}</label>
+      <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">{label}</label>
       <input
         type={type}
         value={value ?? ''}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        style={INPUT}
-        className="rounded-lg px-3 py-2 text-sm outline-none focus:border-[#cba6f7]"
+        style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        className="rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
       />
     </div>
   )
@@ -28,14 +28,14 @@ function Field({ label, value, onChange, placeholder, type = 'text' }) {
 function TextArea({ label, value, onChange, placeholder, rows = 2 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <label style={{ color: '#6c7086' }} className="text-xs uppercase tracking-wide">{label}</label>
+      <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">{label}</label>
       <textarea
         value={value ?? ''}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         rows={rows}
-        style={{ ...INPUT, resize: 'vertical' }}
-        className="rounded-lg px-3 py-2 text-sm outline-none focus:border-[#cba6f7]"
+        style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)', resize: 'vertical' }}
+        className="rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
       />
     </div>
   )
@@ -44,56 +44,44 @@ function TextArea({ label, value, onChange, placeholder, rows = 2 }) {
 function SectionBox({ label, children }) {
   return (
     <div>
-      <p style={{ color: '#6c7086' }} className="text-xs uppercase tracking-wide mb-2">{label}</p>
-      <div style={SUBSECTION} className="rounded-lg p-3 space-y-3">{children}</div>
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">{label}</p>
+      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }} className="rounded-lg p-3 space-y-3">{children}</div>
     </div>
   )
 }
 
-// ── Accommodation ────────────────────────────────────────────────────────────
-
 function AccommodationForm({ core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
-
   return (
     <div className="space-y-4">
       <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Hotel Roma" />
       <Field label="Location / Address" value={d('location')} onChange={v => setD('location', v)} placeholder="Via Nazionale 7, Rome" />
-
       <div className="grid grid-cols-2 gap-3">
         <Field label="Check-in" type="datetime-local" value={d('checkin')} onChange={v => setD('checkin', v)} />
         <Field label="Check-out" type="datetime-local" value={d('checkout')} onChange={v => setD('checkout', v)} />
       </div>
-
       <div className="grid grid-cols-2 gap-3">
         <Field label="Total cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€450" />
         <Field label="Amount paid" value={d('amount_paid')} onChange={v => setD('amount_paid', v)} placeholder="€225" />
       </div>
-
       <Field label="Booking confirmation" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="ABC123XYZ" />
-
       <SectionBox label="Contact">
         <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+39 06 123456" />
         <Field label="Website" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
         <Field label="Email" value={d('contact_email')} onChange={v => setD('contact_email', v)} placeholder="info@hotel.com" />
       </SectionBox>
-
       <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="Breakfast included, rooftop terrace…" />
     </div>
   )
 }
 
-// ── Flight ───────────────────────────────────────────────────────────────────
-
 function FlightForm({ core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
-
   return (
     <div className="space-y-4">
       <Field label="Label" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="SIN → HEL" />
-
       <SectionBox label="Route">
         <div className="grid grid-cols-2 gap-3">
           <Field label="From (IATA)" value={d('origin')} onChange={v => setD('origin', v)} placeholder="SIN" />
@@ -104,7 +92,6 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Airline" value={d('airline')} onChange={v => setD('airline', v)} placeholder="Finnair" />
         </div>
       </SectionBox>
-
       <SectionBox label="Schedule">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setD('depart_time', v)} />
@@ -120,14 +107,12 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Seats" value={d('seats')} onChange={v => setD('seats', v)} placeholder="12A, 12B" />
         </div>
       </SectionBox>
-
       <SectionBox label="Connection">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Layover" value={d('layover')} onChange={v => setD('layover', v)} placeholder="1h 35m" />
           <Field label="Connects to" value={d('connects_to')} onChange={v => setD('connects_to', v)} placeholder="AY 1571" />
         </div>
       </SectionBox>
-
       <SectionBox label="Aircraft & Service">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Aircraft" value={d('aircraft')} onChange={v => setD('aircraft', v)} placeholder="Airbus A350-900" />
@@ -143,12 +128,10 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Entertainment" value={d('entertainment')} onChange={v => setD('entertainment', v)} placeholder="Yes / IFE" />
         </div>
       </SectionBox>
-
       <SectionBox label="Passengers">
         <TextArea label="Names" value={d('passengers')} onChange={v => setD('passengers', v)} placeholder="Antony Wuth, Nicole Wuth" />
-        <TextArea label="Loyalty numbers" value={d('loyalty_info')} onChange={v => setD('loyalty_info', v)} placeholder="Antony (Loyalty 9657053), Nicole (Loyalty 4419892)" />
+        <TextArea label="Loyalty numbers" value={d('loyalty_info')} onChange={v => setD('loyalty_info', v)} placeholder="Antony (Loyalty …), Nicole (Loyalty …)" />
       </SectionBox>
-
       <SectionBox label="Booking">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="DYL7CY" />
@@ -164,8 +147,6 @@ function FlightForm({ core, details, setCore, setDetails }) {
   )
 }
 
-// ── Generic ──────────────────────────────────────────────────────────────────
-
 function GenericForm({ core, setCore }) {
   return (
     <div className="space-y-3">
@@ -177,25 +158,10 @@ function GenericForm({ core, setCore }) {
   )
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
 export const KIND_LABEL = {
-  activity: 'Activity',
-  restaurant: 'Restaurant',
-  note: 'Note',
-  accommodation: 'Accommodation',
-  flight: 'Flight',
+  activity: 'Activity', restaurant: 'Restaurant', note: 'Note',
+  accommodation: 'Accommodation', flight: 'Flight',
 }
-
-export const KIND_COLOR = {
-  activity: '#89b4fa',
-  restaurant: '#a6e3a1',
-  note: '#f9e2af',
-  accommodation: '#cba6f7',
-  flight: '#89dceb',
-}
-
-// ── Modal ────────────────────────────────────────────────────────────────────
 
 export default function ItemEditModal({ item, onSave, onClose }) {
   const [core, setCore] = useState({
@@ -211,8 +177,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
 
   async function save() {
     if (saving) return
-    setSaving(true)
-    setError(null)
+    setSaving(true); setError(null)
     try {
       const updated = await updateItem(item.id, { ...core, details })
       onSave(updated)
@@ -223,43 +188,46 @@ export default function ItemEditModal({ item, onSave, onClose }) {
     }
   }
 
-  const color = KIND_COLOR[core.kind] ?? '#9399b2'
+  const color = KIND_VAR[core.kind] ?? 'var(--text-muted)'
 
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-50 p-4"
-      style={{ background: 'rgba(0,0,0,0.65)' }}
+      style={{ background: 'var(--overlay)' }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div
-        style={{ background: '#1e1e2e', border: '1px solid #313244', maxHeight: '90vh' }}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border)', maxHeight: '90vh' }}
         className="w-full max-w-lg rounded-2xl flex flex-col overflow-hidden"
       >
         {/* Header */}
-        <div style={{ borderBottom: '1px solid #313244' }} className="flex items-center gap-3 px-5 py-4">
+        <div style={{ borderBottom: '1px solid var(--border)' }} className="flex items-center gap-3 px-5 py-4">
           <select
             value={core.kind}
             onChange={e => setCore(c => ({ ...c, kind: e.target.value }))}
-            style={{ color, background: `${color}18`, border: `1px solid ${color}40` }}
+            style={{
+              color,
+              background: `color-mix(in srgb, ${color} 12%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${color} 28%, transparent)`,
+            }}
             className="text-xs px-2 py-1 rounded-full font-medium outline-none cursor-pointer"
           >
             {Object.keys(KIND_LABEL).map(k => (
-              <option key={k} value={k} style={{ background: '#1e1e2e', color: '#cdd6f4' }}>
+              <option key={k} value={k} style={{ background: 'var(--modal-bg)', color: 'var(--text)' }}>
                 {KIND_LABEL[k]}
               </option>
             ))}
           </select>
-          <span className="flex-1 text-sm font-medium truncate">{core.name || item.name}</span>
+          <span style={{ color: 'var(--text)' }} className="flex-1 text-sm font-medium truncate">{core.name || item.name}</span>
           <button
             onClick={onClose}
-            style={{ color: '#6c7086' }}
-            className="hover:text-[#cdd6f4] transition-colors text-lg leading-none shrink-0"
+            style={{ color: 'var(--text-faint)' }}
+            className="hover:opacity-70 transition-opacity text-lg leading-none shrink-0"
           >
             ✕
           </button>
         </div>
 
-        {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto p-5">
           {core.kind === 'accommodation' ? (
             <AccommodationForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
@@ -268,22 +236,21 @@ export default function ItemEditModal({ item, onSave, onClose }) {
           ) : (
             <GenericForm core={core} setCore={setCore} />
           )}
-          {error && <p style={{ color: '#f38ba8' }} className="text-xs mt-3">{error}</p>}
+          {error && <p style={{ color: 'var(--error)' }} className="text-xs mt-3">{error}</p>}
         </div>
 
-        {/* Footer */}
-        <div style={{ borderTop: '1px solid #313244' }} className="flex items-center justify-end gap-3 px-5 py-4">
+        <div style={{ borderTop: '1px solid var(--border)' }} className="flex items-center justify-end gap-3 px-5 py-4">
           <button
             onClick={onClose}
-            style={{ color: '#6c7086' }}
-            className="text-sm hover:text-[#cdd6f4] transition-colors"
+            style={{ color: 'var(--text-faint)' }}
+            className="text-sm hover:opacity-70 transition-opacity"
           >
             Cancel
           </button>
           <button
             onClick={save}
             disabled={saving}
-            style={{ background: '#cba6f7', color: '#1e1e2e' }}
+            style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
             className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
           >
             {saving ? 'Saving…' : 'Save'}
