@@ -78,9 +78,9 @@ export default function StopCard({ stop, index, onUpdate }) {
 
       {open && (
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
-          {accom && (
+          {(accom || stop.accommodation) && (
             <Section label="Accommodation">
-              <AccomCard item={accom} />
+              <AccomCard item={accom} stop={stop} />
             </Section>
           )}
 
@@ -171,9 +171,24 @@ function FlightCard({ item }) {
   )
 }
 
-function AccomCard({ item }) {
+function AccomCard({ item, stop }) {
   const [showDetail, setShowDetail] = useState(false)
-  const d = item.details ?? {}
+
+  // If we have a proper ItineraryItem use it; otherwise build a lightweight
+  // fallback from the stop-level accommodation fields so older imports still show.
+  const effectiveItem = item ?? {
+    id: null,
+    kind: 'accommodation',
+    name: stop.accommodation,
+    link: stop.accommodation_link ?? '',
+    cost: '',
+    notes: stop.accommodation_notes ?? '',
+    status: 'pending',
+    details: {
+      description: stop.accommodation_notes || undefined,
+    },
+  }
+  const d = effectiveItem.details ?? {}
 
   return (
     <>
@@ -188,7 +203,7 @@ function AccomCard({ item }) {
         }}
       >
         <div className="space-y-1">
-          <div className="font-medium text-sm">{item.name}</div>
+          <div className="font-medium text-sm">{effectiveItem.name}</div>
           {d.location && (
             <div style={{ color: 'var(--text-muted)' }} className="text-xs">{d.location}</div>
           )}
@@ -199,15 +214,22 @@ function AccomCard({ item }) {
                 .filter(Boolean).join('  ·  ')}
             </div>
           )}
-          {(d.booking_ref || item.cost) && (
+          {(d.booking_ref || effectiveItem.cost) && (
             <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
               {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
-              {item.cost && <span>{item.cost}</span>}
+              {effectiveItem.cost && <span>{effectiveItem.cost}</span>}
+            </div>
+          )}
+          {!item && (
+            <div style={{ color: 'var(--text-faint)' }} className="text-xs opacity-50">
+              {stop.check_in && `In: ${stop.check_in}`}
+              {stop.check_in && stop.check_out && '  ·  '}
+              {stop.check_out && `Out: ${stop.check_out}`}
             </div>
           )}
         </div>
       </button>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showDetail && <ItemDetailModal item={effectiveItem} onClose={() => setShowDetail(false)} />}
     </>
   )
 }
