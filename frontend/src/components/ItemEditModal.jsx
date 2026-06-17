@@ -47,8 +47,8 @@ function AccommodationForm({ core, details, setCore, setDetails }) {
       <Field label="Location / Address" value={d('location')} onChange={v => setD('location', v)} placeholder="Via Nazionale 7, Rome" />
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Check-in" value={d('checkin')} onChange={v => setD('checkin', v)} placeholder="15 Jul, 14:00" />
-        <Field label="Check-out" value={d('checkout')} onChange={v => setD('checkout', v)} placeholder="18 Jul, 11:00" />
+        <Field label="Check-in" type="datetime-local" value={d('checkin')} onChange={v => setD('checkin', v)} />
+        <Field label="Check-out" type="datetime-local" value={d('checkout')} onChange={v => setD('checkout', v)} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
