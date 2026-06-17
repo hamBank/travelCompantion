@@ -46,6 +46,17 @@ export default function LoginPage({ onLogin }) {
           size="large"
         />
       </div>
+
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs text-center">
+        By signing in you agree to our{' '}
+        <a href="/tos.html" style={{ color: 'var(--accent-alt)' }} className="hover:underline">
+          Terms of Service
+        </a>
+        {' '}and{' '}
+        <a href="/privacy.html" style={{ color: 'var(--accent-alt)' }} className="hover:underline">
+          Privacy Policy
+        </a>
+      </p>
     </div>
   )
 }
