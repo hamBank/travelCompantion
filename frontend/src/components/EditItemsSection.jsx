@@ -2,19 +2,24 @@ import { useState } from 'react'
 import { deleteItem, createItem } from '../api.js'
 import ItemEditModal from './ItemEditModal.jsx'
 
-const KIND_OPTIONS = ['activity', 'restaurant', 'note', 'accommodation']
+const KIND_OPTIONS = ['activity', 'restaurant', 'note', 'accommodation', 'flight']
 
 const KIND_COLOR = {
   activity: '#89b4fa',
   restaurant: '#a6e3a1',
   note: '#f9e2af',
   accommodation: '#cba6f7',
+  flight: '#89dceb',
 }
 
 function itemSummary(item) {
   if (item.kind === 'accommodation') {
     const parts = [item.details?.checkin, item.details?.checkout].filter(Boolean)
     return parts.length ? parts.join(' → ') : (item.details?.location ?? '')
+  }
+  if (item.kind === 'flight') {
+    const route = [item.details?.origin, item.details?.destination].filter(Boolean).join(' → ')
+    return route || item.details?.flight_number || ''
   }
   return item.notes || item.cost || ''
 }

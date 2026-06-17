@@ -23,6 +23,7 @@ export default function StopCard({ stop, index, onUpdate }) {
   const [busy, setBusy] = useState(false)
 
   const accom = stop.items.find(i => i.kind === 'accommodation')
+  const flights = stop.items.filter(i => i.kind === 'flight')
   const activities = stop.items.filter(i => i.kind === 'activity')
   const restaurants = stop.items.filter(i => i.kind === 'restaurant')
   const notes = stop.items.filter(i => i.kind === 'note')
@@ -99,6 +100,12 @@ export default function StopCard({ stop, index, onUpdate }) {
             </Section>
           )}
 
+          {flights.length > 0 && (
+            <Section label="Flights">
+              {flights.map(item => <FlightCard key={item.id} item={item} />)}
+            </Section>
+          )}
+
           {activities.length > 0 && (
             <Section label="Activities">
               {activities.map(item => <ItemRow key={item.id} item={item} />)}
@@ -117,7 +124,7 @@ export default function StopCard({ stop, index, onUpdate }) {
             </Section>
           )}
 
-          {!accom && activities.length === 0 && restaurants.length === 0 && notes.length === 0 && (
+          {!accom && flights.length === 0 && activities.length === 0 && restaurants.length === 0 && notes.length === 0 && (
             <p style={{ color: '#6c7086' }} className="text-xs">No details recorded.</p>
           )}
         </div>
@@ -131,6 +138,67 @@ function Section({ label, children }) {
     <div>
       <p style={{ color: '#6c7086' }} className="text-xs uppercase tracking-wide mb-2">{label}</p>
       <div className="space-y-1">{children}</div>
+    </div>
+  )
+}
+
+function FlightCard({ item }) {
+  const d = item.details ?? {}
+  const route = [d.origin, d.destination].filter(Boolean).join(' → ')
+
+  return (
+    <div style={{ background: '#181825', border: '1px solid #89dceb30' }} className="rounded-lg p-3 space-y-1.5">
+      {/* Route + airline */}
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-medium text-sm">{route || item.name}</span>
+        <span style={{ color: '#89dceb' }} className="text-xs shrink-0">
+          {[d.flight_number, d.airline].filter(Boolean).join(' · ')}
+        </span>
+      </div>
+
+      {/* Times */}
+      {(d.depart_time || d.arrive_time) && (
+        <div style={{ color: '#9399b2' }} className="text-xs">
+          {[d.depart_time && fmtDateTime(d.depart_time) + (d.depart_tz ? ` ${d.depart_tz}` : ''),
+            d.arrive_time && fmtDateTime(d.arrive_time) + (d.arrive_tz ? ` ${d.arrive_tz}` : '')]
+            .filter(Boolean).join(' → ')}
+          {d.duration && <span style={{ color: '#6c7086' }}> · {d.duration}</span>}
+        </div>
+      )}
+
+      {/* Class / seats / stops */}
+      {(d.fare_class || d.seats || d.stops) && (
+        <div style={{ color: '#6c7086' }} className="text-xs flex gap-3">
+          {d.fare_class && <span>{d.fare_class}</span>}
+          {d.seats && <span>Seats: {d.seats}</span>}
+          {d.stops && <span>{d.stops}</span>}
+        </div>
+      )}
+
+      {/* Layover */}
+      {(d.layover || d.connects_to) && (
+        <div style={{ color: '#6c7086' }} className="text-xs">
+          Layover: {[d.layover, d.connects_to && `→ ${d.connects_to}`].filter(Boolean).join(' ')}
+        </div>
+      )}
+
+      {/* Booking ref + cost */}
+      {(d.booking_ref || item.cost) && (
+        <div style={{ color: '#6c7086' }} className="text-xs flex gap-3">
+          {d.booking_ref && (
+            item.link
+              ? <a href={item.link} target="_blank" rel="noreferrer"
+                  style={{ color: '#cba6f7' }} className="hover:underline">Ref: {d.booking_ref}</a>
+              : <span>Ref: {d.booking_ref}</span>
+          )}
+          {item.cost && <span>{item.cost}</span>}
+        </div>
+      )}
+
+      {/* Passengers */}
+      {d.passengers && (
+        <div style={{ color: '#6c7086' }} className="text-xs">{d.passengers}</div>
+      )}
     </div>
   )
 }

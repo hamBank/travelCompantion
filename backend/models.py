@@ -17,6 +17,7 @@ class ItemKind(str, Enum):
     restaurant = "restaurant"
     note = "note"
     accommodation = "accommodation"
+    flight = "flight"
 
 
 class ItemStatus(str, Enum):
