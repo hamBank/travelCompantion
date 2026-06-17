@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getTripTimeline } from '../api.js'
+import { getTripTimeline, backfillAccommodations } from '../api.js'
 import StopCard from './StopCard.jsx'
 
 export default function TripTimeline({ tripId }) {
@@ -11,7 +11,10 @@ export default function TripTimeline({ tripId }) {
 
   async function load() {
     setLoading(true)
-    try { setTimeline(await getTripTimeline(tripId)) }
+    try {
+      try { await backfillAccommodations(tripId) } catch (_) {}
+      setTimeline(await getTripTimeline(tripId))
+    }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }

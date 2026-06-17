@@ -35,44 +35,48 @@ def _migrate():
 
 def _backfill_accommodations():
     """One-time data migration: move legacy stop.accommodation fields to ItineraryItem records."""
-    from .models import Stop, ItineraryItem, ItemKind, ItemStatus
-    from .importer import _combine_checkinout
-    from sqlmodel import select
+    try:
+        from .models import Stop, ItineraryItem, ItemKind, ItemStatus
+        from .importer import _combine_checkinout
+        from sqlmodel import select
 
-    with Session(engine) as session:
-        stops = session.exec(select(Stop)).all()
-        created = 0
-        for stop in stops:
-            if not stop.accommodation:
-                continue
-            existing = session.exec(
-                select(ItineraryItem)
-                .where(ItineraryItem.stop_id == stop.id)
-                .where(ItineraryItem.kind == ItemKind.accommodation)
-            ).first()
-            if existing:
-                continue
+        with Session(engine) as session:
+            stops = session.exec(select(Stop)).all()
+            created = 0
+            for stop in stops:
+                if not stop.accommodation:
+                    continue
+                existing = session.exec(
+                    select(ItineraryItem)
+                    .where(ItineraryItem.stop_id == stop.id)
+                    .where(ItineraryItem.kind == ItemKind.accommodation)
+                ).first()
+                if existing:
+                    continue
 
-            details: dict = {}
-            if stop.accommodation_notes:
-                details["description"] = stop.accommodation_notes
-            ci = _combine_checkinout(stop.arrive, stop.check_in)
-            if ci:
-                details["checkin"] = ci
-            co = _combine_checkinout(stop.depart, stop.check_out)
-            if co:
-                details["checkout"] = co
+                details: dict = {}
+                if stop.accommodation_notes:
+                    details["description"] = stop.accommodation_notes
+                ci = _combine_checkinout(stop.arrive, stop.check_in)
+                if ci:
+                    details["checkin"] = ci
+                co = _combine_checkinout(stop.depart, stop.check_out)
+                if co:
+                    details["checkout"] = co
 
-            session.add(ItineraryItem(
-                stop_id=stop.id,
-                kind=ItemKind.accommodation,
-                name=stop.accommodation,
-                link=stop.accommodation_link or "",
-                scheduled_at=stop.arrive,
-                status=ItemStatus.pending,
-                details=details or None,
-            ))
-            created += 1
+                session.add(ItineraryItem(
+                    stop_id=stop.id,
+                    kind=ItemKind.accommodation,
+                    name=stop.accommodation,
+                    link=stop.accommodation_link or "",
+                    scheduled_at=stop.arrive,
+                    status=ItemStatus.pending,
+                    details=details or None,
+                ))
+                created += 1
 
-        if created:
-            session.commit()
+            if created:
+                session.commit()
+                print(f"[migrate] created {created} accommodation item(s) from legacy stop fields")
+    except Exception as e:
+        print(f"[migrate] _backfill_accommodations failed: {e}")

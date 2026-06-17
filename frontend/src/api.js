@@ -18,6 +18,9 @@ export const deleteTrip = (id) => req(`/trips/${id}`, { method: 'DELETE' })
 export const updateTrip = (id, data) =>
   req(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 
+export const backfillAccommodations = (tripId) =>
+  req(`/import/backfill-accommodations/${tripId}`, { method: 'POST' })
+
 export const getTripTimeline = (id) => req(`/trips/${id}/timeline`)
 
 export const importFromSheets = (trip_name) =>
