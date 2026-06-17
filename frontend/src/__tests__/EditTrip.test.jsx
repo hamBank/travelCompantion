@@ -42,7 +42,14 @@ describe('EditTrip', () => {
     })
   })
 
-  it('calls updateTrip with new name on blur', async () => {
+  it('renders Save trip button', async () => {
+    render(<EditTrip trip={TRIP} />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /save trip/i })).toBeInTheDocument()
+    })
+  })
+
+  it('calls updateTrip with new name on Save click', async () => {
     const user = userEvent.setup()
     render(<EditTrip trip={TRIP} />)
     await waitFor(() => screen.getByDisplayValue('Euro Trip'))
@@ -50,22 +57,24 @@ describe('EditTrip', () => {
     const input = screen.getByDisplayValue('Euro Trip')
     await user.clear(input)
     await user.type(input, 'Asia Tour')
-    await user.tab()
+    await user.click(screen.getByRole('button', { name: /save trip/i }))
 
-    expect(api.updateTrip).toHaveBeenCalledWith(
-      1,
-      expect.objectContaining({ name: 'Asia Tour' })
-    )
+    await waitFor(() => {
+      expect(api.updateTrip).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ name: 'Asia Tour' })
+      )
+    })
   })
 
-  it('calls updateTrip with start_date on blur', async () => {
+  it('calls updateTrip with start_date on Save click', async () => {
     const user = userEvent.setup()
     render(<EditTrip trip={TRIP} />)
     await waitFor(() => screen.getByLabelText(/start date/i))
 
     const dateInput = screen.getByLabelText(/start date/i)
     await user.type(dateInput, '2026-08-01')
-    await user.tab()
+    await user.click(screen.getByRole('button', { name: /save trip/i }))
 
     await waitFor(() => {
       expect(api.updateTrip).toHaveBeenCalledWith(

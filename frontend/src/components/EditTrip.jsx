@@ -21,6 +21,7 @@ export default function EditTrip({ trip, onTripRenamed }) {
     end_date: toDateInput(trip.end_date),
   })
   const [saved, setSaved] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [addingStop, setAddingStop] = useState(false)
 
   useEffect(() => { load() }, [trip.id])
@@ -38,6 +39,7 @@ export default function EditTrip({ trip, onTripRenamed }) {
 
   async function save() {
     if (saved) return
+    setSaving(true)
     try {
       await updateTrip(trip.id, {
         name: fields.name,
@@ -47,6 +49,7 @@ export default function EditTrip({ trip, onTripRenamed }) {
       setSaved(true)
       onTripRenamed?.(fields.name)
     } catch (e) { setError(e.message) }
+    finally { setSaving(false) }
   }
 
   async function addStop() {
@@ -76,7 +79,6 @@ export default function EditTrip({ trip, onTripRenamed }) {
           <input
             value={fields.name}
             onChange={e => set('name', e.target.value)}
-            onBlur={save}
             onKeyDown={e => e.key === 'Enter' && save()}
             style={{ background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #313244' }}
             className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[#cba6f7]"
@@ -93,7 +95,6 @@ export default function EditTrip({ trip, onTripRenamed }) {
               type="date"
               value={fields.start_date}
               onChange={e => set('start_date', e.target.value)}
-              onBlur={save}
               style={{ background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #313244' }}
               className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[#cba6f7]"
             />
@@ -107,17 +108,27 @@ export default function EditTrip({ trip, onTripRenamed }) {
               type="date"
               value={fields.end_date}
               onChange={e => set('end_date', e.target.value)}
-              onBlur={save}
               style={{ background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #313244' }}
               className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[#cba6f7]"
             />
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-3">
           <span style={{ color: saved ? '#6c7086' : '#cba6f7' }} className="text-xs">
             {saved ? 'Saved ✓' : 'Unsaved changes'}
           </span>
+          <button
+            onClick={save}
+            disabled={saved || saving}
+            style={{
+              background: saved ? '#313244' : '#cba6f7',
+              color: saved ? '#6c7086' : '#1e1e2e',
+            }}
+            className="px-4 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Saving…' : 'Save trip'}
+          </button>
         </div>
       </div>
 
