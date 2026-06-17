@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, SQLModel, select
 from ..database import get_session
 from ..sheets import fetch_sheets
-from ..importer import import_sheets, import_flights
+from ..importer import import_sheets, import_flights, _parse_flights_sheet, _find_stop_for_flight, FLIGHT_SHEET_NAMES
 from ..models import TripRead, Stop
 
 router = APIRouter(tags=["import"])
@@ -49,6 +49,39 @@ def import_flights_only(trip_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail=str(e))
 
     return {"flights_imported": count}
+
+
+@router.get("/import/sheets/flights/{trip_id}/preview")
+def preview_flight_assignments(trip_id: int, session: Session = Depends(get_session)):
+    """
+    Dry-run: show which stop each flight would be assigned to, without importing.
+    Useful for diagnosing stop-matching issues.
+    """
+    try:
+        sheets_raw = fetch_sheets()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    stops = list(session.exec(select(Stop).where(Stop.trip_id == trip_id)).all())
+    if not stops:
+        raise HTTPException(status_code=404, detail=f"No stops found for trip {trip_id}")
+
+    results = []
+    for sheet_name, csv_text in sheets_raw.items():
+        if sheet_name.lower() not in FLIGHT_SHEET_NAMES:
+            continue
+        for flight in _parse_flights_sheet(csv_text):
+            depart_iso = flight["details"].get("depart_time", "") if flight["details"] else ""
+            stop = _find_stop_for_flight(stops, flight["origin"], flight["stop_location"], depart_iso)
+            results.append({
+                "flight": flight["label"],
+                "origin": flight["origin"],
+                "depart_time": depart_iso,
+                "assigned_stop": stop.location if stop else None,
+                "stop_arrive": stop.arrive.isoformat() if stop and stop.arrive else None,
+                "stop_depart": stop.depart.isoformat() if stop and stop.depart else None,
+            })
+    return results
 
 
 @router.get("/import/sheets/preview")

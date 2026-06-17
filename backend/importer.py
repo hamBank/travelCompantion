@@ -8,9 +8,13 @@ Usage:
 
 import csv
 import io
+import re
 from datetime import datetime
 from typing import Optional
 from sqlmodel import Session
+
+# Matches bare time strings like "21:35", "9:35 PM", "09:35:00"
+_TIME_RE = re.compile(r'^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?$', re.IGNORECASE)
 
 from .models import Trip, Stop, ItineraryItem, StopStatus, ItemKind, ItemStatus
 
@@ -258,22 +262,39 @@ def _parse_date(s: str) -> Optional[datetime]:
     return None
 
 
+def _overlay_time(dt: datetime, time_str: str) -> datetime:
+    """Overlay an HH:MM (or H:MM AM/PM) string onto an existing datetime."""
+    if not time_str:
+        return dt
+    m = _TIME_RE.match(time_str.strip())
+    if not m:
+        return dt
+    h, mi = int(m.group(1)), int(m.group(2))
+    meridiem = (m.group(3) or '').upper()
+    if meridiem == 'PM' and h < 12:
+        h += 12
+    elif meridiem == 'AM' and h == 12:
+        h = 0
+    return dt.replace(hour=h, minute=mi, second=0, microsecond=0)
+
+
 def _combine_datetime(date_str: str, time_str: str) -> str:
     """Parse date + time strings and return ISO 'YYYY-MM-DDTHH:MM' or ''."""
-    # Try time_str as a standalone datetime first (e.g. "24/07/2025 21:35")
+    # Try time_str as a standalone datetime (e.g. "24/07/2025 21:35")
     if time_str:
         dt = _parse_date(time_str)
         if dt:
             return dt.strftime("%Y-%m-%dT%H:%M")
-    # Try combining date + time
+    # Try the combined string (works when both are full date+time components)
     if date_str and time_str:
         dt = _parse_date(f"{date_str} {time_str}")
         if dt:
             return dt.strftime("%Y-%m-%dT%H:%M")
-    # Try date alone
+    # Parse date alone, then overlay the bare time (e.g. "Wed 22/7" + "21:35")
     if date_str:
         dt = _parse_date(date_str)
         if dt:
+            dt = _overlay_time(dt, time_str)
             return dt.strftime("%Y-%m-%dT%H:%M")
     return ""
 
