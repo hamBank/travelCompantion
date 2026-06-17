@@ -97,8 +97,11 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setD('depart_time', v)} />
           <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setD('arrive_time', v)} />
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Terminal" value={d('origin_terminal')} onChange={v => setD('origin_terminal', v)} placeholder="T1" />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Dep terminal" value={d('origin_terminal')} onChange={v => setD('origin_terminal', v)} placeholder="T1" />
+          <Field label="Arr terminal" value={d('arrive_terminal')} onChange={v => setD('arrive_terminal', v)} placeholder="T2" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <Field label="Depart TZ" value={d('depart_tz')} onChange={v => setD('depart_tz', v)} placeholder="GMT+8" />
           <Field label="Arrive TZ" value={d('arrive_tz')} onChange={v => setD('arrive_tz', v)} placeholder="GMT+3" />
         </div>
