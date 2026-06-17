@@ -6,24 +6,24 @@
 #   Update only:   sudo ./deploy.sh --update
 #
 # What it does:
-#   - Installs system packages (Python 3, Node.js 20, nginx)
+#   - Installs system packages (Python 3, Node.js 20)
 #   - Creates a dedicated 'travelcomp' system user and /opt/travelcomp
 #   - Clones (or pulls) the repo, builds the frontend, installs Python deps
 #   - Writes a .env file the first time (you fill in secrets afterwards)
 #   - Creates and enables a systemd service (uvicorn on 127.0.0.1:8000)
-#   - Configures nginx to reverse-proxy port 80 → uvicorn
+#   - Installs the Apache VirtualHost and enables required modules
 #
 # Re-running is safe — all steps are idempotent.
 
 set -euo pipefail
 
-# ── Config — edit these ────────────────────────────────────────────────────────
+# ── Config ─────────────────────────────────────────────────────────────────────
 APP_USER="travelcomp"
 APP_DIR="/opt/travelcomp"
 REPO_URL="https://github.com/hamBank/travelCompantion.git"
 REPO_BRANCH="claude/elegant-hopper-x82z32"
 SERVICE_NAME="travelcomp"
-NGINX_HOST="_"          # set to your domain, e.g. travel.example.com
+VHOST_CONF="/etc/apache2/sites-available/tripplan.hups.club.conf"
 BIND_PORT="8000"
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -37,6 +37,7 @@ warn()  { echo -e "\033[1;33m⚠\033[0m $*"; }
 die()   { echo -e "\033[1;31m✗\033[0m $*" >&2; exit 1; }
 
 [[ $EUID -ne 0 ]] && die "Run as root: sudo $0 $*"
+command -v apache2 &>/dev/null || die "apache2 not found — is it installed?"
 
 # ── 1. System packages ─────────────────────────────────────────────────────────
 if ! $UPDATE_ONLY; then
@@ -46,16 +47,29 @@ if ! $UPDATE_ONLY; then
   # Python
   apt-get install -y -qq python3 python3-pip python3-venv
 
-  # Node.js 20 (via NodeSource)
-  if ! command -v node &>/dev/null || [[ "$(node -e 'process.exit(parseInt(process.version.slice(1))>=20?0:1)' ; echo $?)" != "0" ]]; then
+  # Node.js 20 (via NodeSource) — skip if already at v20+
+  if ! command -v node &>/dev/null; then
+    info "Installing Node.js 20"
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - &>/dev/null
     apt-get install -y -qq nodejs
+  else
+    NODE_MAJOR=$(node -e "process.stdout.write(String(parseInt(process.version.slice(1))))")
+    if [[ "$NODE_MAJOR" -lt 20 ]]; then
+      info "Upgrading Node.js to v20"
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash - &>/dev/null
+      apt-get install -y -qq nodejs
+    fi
   fi
 
-  # nginx, git
-  apt-get install -y -qq nginx git
+  # git (Apache already present)
+  apt-get install -y -qq git
 
-  ok "System packages ready (python $(python3 --version | cut -d' ' -f2), node $(node -v), nginx)"
+  ok "System packages ready  python=$(python3 --version | cut -d' ' -f2)  node=$(node -v)"
+
+  # ── Apache modules ─────────────────────────────────────────────────────────
+  info "Enabling Apache modules (proxy, headers)"
+  a2enmod proxy proxy_http headers rewrite &>/dev/null
+  ok "Apache modules enabled"
 fi
 
 # ── 2. App user & directory ────────────────────────────────────────────────────
@@ -65,10 +79,7 @@ if ! $UPDATE_ONLY; then
     useradd --system --no-create-home --shell /usr/sbin/nologin "$APP_USER"
   fi
 
-  if [[ ! -d "$APP_DIR" ]]; then
-    info "Creating app directory $APP_DIR"
-    mkdir -p "$APP_DIR"
-  fi
+  mkdir -p "$APP_DIR"
   chown "$APP_USER:$APP_USER" "$APP_DIR"
 fi
 
@@ -108,7 +119,7 @@ ok "Frontend built → backend/static"
 ENV_FILE="$APP_DIR/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
   info "Creating $ENV_FILE (fill in secrets before starting)"
-  cat > "$ENV_FILE" <<EOF
+  cat > "$ENV_FILE" <<ENVEOF
 # Google OAuth (required for authentication)
 # See .env.example for setup instructions
 GOOGLE_CLIENT_ID=
@@ -124,10 +135,10 @@ SHEET_NAMES=
 
 # JWT session lifetime in days (default 30)
 # JWT_EXPIRE_DAYS=30
-EOF
+ENVEOF
   chown "$APP_USER:$APP_USER" "$ENV_FILE"
   chmod 600 "$ENV_FILE"
-  warn "Edit $ENV_FILE and add your secrets, then: sudo systemctl start $SERVICE_NAME"
+  warn "Edit $ENV_FILE and add your secrets before starting the service"
 else
   ok ".env already exists — not overwritten"
 fi
@@ -135,7 +146,7 @@ fi
 # ── 7. Systemd service ─────────────────────────────────────────────────────────
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 info "Writing systemd service → $SERVICE_FILE"
-cat > "$SERVICE_FILE" <<EOF
+cat > "$SERVICE_FILE" <<SVCEOF
 [Unit]
 Description=Travel Companion API
 After=network.target
@@ -157,55 +168,50 @@ ReadWritePaths=$APP_DIR
 
 [Install]
 WantedBy=multi-user.target
-EOF
+SVCEOF
 
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 ok "Systemd service enabled"
 
-# ── 8. nginx reverse proxy ─────────────────────────────────────────────────────
-NGINX_CONF="/etc/nginx/sites-available/$SERVICE_NAME"
-if [[ ! -f "$NGINX_CONF" ]] || ! $UPDATE_ONLY; then
-  info "Writing nginx config"
-  cat > "$NGINX_CONF" <<EOF
-server {
-    listen 80;
-    server_name $NGINX_HOST;
+# ── 8. Apache VirtualHost ──────────────────────────────────────────────────────
+info "Writing Apache VirtualHost → $VHOST_CONF"
+cat > "$VHOST_CONF" <<'VHEOF'
+<VirtualHost *:80>
+    ServerName tripplan.hups.club
+    ServerAlias www.tripplan.hups.club
+
+    ErrorLog  ${APACHE_LOG_DIR}/travelcomp_error.log
+    CustomLog ${APACHE_LOG_DIR}/travelcomp_access.log combined
 
     # Security headers
-    add_header X-Content-Type-Options nosniff;
-    add_header X-Frame-Options DENY;
-    add_header Referrer-Policy strict-origin-when-cross-origin;
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
 
-    # Proxy all requests to uvicorn
-    location / {
-        proxy_pass         http://127.0.0.1:$BIND_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header   Host \$host;
-        proxy_set_header   X-Real-IP \$remote_addr;
-        proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 60s;
+    # Proxy everything to uvicorn
+    ProxyPreserveHost On
+    ProxyPass        / http://127.0.0.1:8000/
+    ProxyPassReverse / http://127.0.0.1:8000/
 
-        # WebSocket support (if needed in future)
-        proxy_set_header   Upgrade \$http_upgrade;
-        proxy_set_header   Connection "upgrade";
-    }
+    # Forward real client IP to FastAPI
+    RequestHeader set X-Forwarded-Proto "http"
+    RequestHeader set X-Real-IP "%{REMOTE_ADDR}s"
 
-    # Cache static assets aggressively (they are content-hashed by Vite)
-    location ~* ^/assets/ {
-        proxy_pass http://127.0.0.1:$BIND_PORT;
-        proxy_cache_valid 200 365d;
-        add_header Cache-Control "public, max-age=31536000, immutable";
-    }
-}
-EOF
+    # Aggressive caching for Vite content-hashed assets
+    <LocationMatch "^/assets/">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </LocationMatch>
+</VirtualHost>
+VHEOF
 
-  ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/
-  # Remove default site if still present
-  rm -f /etc/nginx/sites-enabled/default
-  nginx -t && systemctl reload nginx
-  ok "nginx configured"
+a2ensite "$(basename "$VHOST_CONF")" &>/dev/null
+apache2ctl configtest 2>&1 | grep -v "^Syntax OK" || true
+if apache2ctl configtest &>/dev/null; then
+  systemctl reload apache2
+  ok "Apache VirtualHost enabled and reloaded"
+else
+  warn "Apache config test failed — check: apache2ctl configtest"
 fi
 
 # ── 9. (Re)start service ───────────────────────────────────────────────────────
@@ -213,19 +219,19 @@ if $UPDATE_ONLY; then
   info "Restarting $SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
   sleep 2
-  systemctl is-active --quiet "$SERVICE_NAME" && ok "Service running" || {
-    warn "Service failed to start — check: journalctl -u $SERVICE_NAME -n 40"
-  }
+  systemctl is-active --quiet "$SERVICE_NAME" \
+    && ok "Service running" \
+    || warn "Service failed — check: journalctl -u $SERVICE_NAME -n 40"
 else
-  # Don't auto-start on first deploy until .env is filled in
   warn "First deploy complete. Next steps:"
-  echo "  1. Edit secrets:  nano $ENV_FILE"
-  echo "  2. Start service: sudo systemctl start $SERVICE_NAME"
-  echo "  3. View logs:     sudo journalctl -u $SERVICE_NAME -f"
+  echo ""
+  echo "  1. Fill in secrets:    sudo nano $ENV_FILE"
+  echo "  2. Start the service:  sudo systemctl start $SERVICE_NAME"
+  echo "  3. Tail logs:          sudo journalctl -u $SERVICE_NAME -f"
   echo ""
   echo "  Optional — enable HTTPS with Let's Encrypt:"
-  echo "    sudo apt install certbot python3-certbot-nginx"
-  echo "    sudo certbot --nginx -d your-domain.com"
+  echo "    sudo apt install certbot python3-certbot-apache"
+  echo "    sudo certbot --apache -d tripplan.hups.club"
 fi
 
 ok "Done"
