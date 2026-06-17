@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, SQLModel, select
 from ..database import get_session
 from ..sheets import fetch_sheets
-from ..importer import import_sheets, import_flights, update_stop_dates, _parse_flights_sheet, _find_stop_for_flight, FLIGHT_SHEET_NAMES
+from ..importer import import_sheets, import_flights, update_stop_dates, _parse_flights_sheet, _assign_flights_to_stops, FLIGHT_SHEET_NAMES
 from ..models import TripRead, Stop
 
 router = APIRouter(tags=["import"])
@@ -85,21 +85,22 @@ def preview_flight_assignments(trip_id: int, session: Session = Depends(get_sess
     if not stops:
         raise HTTPException(status_code=404, detail=f"No stops found for trip {trip_id}")
 
-    results = []
+    all_flights = []
     for sheet_name, csv_text in sheets_raw.items():
-        if sheet_name.lower() not in FLIGHT_SHEET_NAMES:
-            continue
-        for flight in _parse_flights_sheet(csv_text):
-            depart_iso = flight["details"].get("depart_time", "") if flight["details"] else ""
-            stop = _find_stop_for_flight(stops, flight["origin"], flight["stop_location"], depart_iso)
-            results.append({
-                "flight": flight["label"],
-                "origin": flight["origin"],
-                "depart_time": depart_iso,
-                "assigned_stop": stop.location if stop else None,
-                "stop_arrive": stop.arrive.isoformat() if stop and stop.arrive else None,
-                "stop_depart": stop.depart.isoformat() if stop and stop.depart else None,
-            })
+        if sheet_name.lower() in FLIGHT_SHEET_NAMES:
+            all_flights.extend(_parse_flights_sheet(csv_text))
+
+    results = []
+    for flight, stop in _assign_flights_to_stops(all_flights, stops):
+        depart_iso = (flight.get("details") or {}).get("depart_time", "")
+        results.append({
+            "flight": flight["label"],
+            "origin": flight["origin"],
+            "depart_time": depart_iso,
+            "assigned_stop": stop.location if stop else None,
+            "stop_arrive": stop.arrive.isoformat() if stop and stop.arrive else None,
+            "stop_depart": stop.depart.isoformat() if stop and stop.depart else None,
+        })
     return results
 
 

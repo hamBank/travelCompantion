@@ -27,6 +27,7 @@ _IATA_CITY = {
     "cdg": "paris", "ory": "paris",
     "fco": "rome", "cia": "rome",
     "bri": "bari",
+    "brr": "brindisi",
     "nap": "naples",
     "gva": "geneva",
     "lys": "lyon",
@@ -55,6 +56,7 @@ _IATA_CITY = {
     "opo": "porto",
     "ath": "athens",
     "ist": "istanbul",
+    "doh": "doha",
     "dxb": "dubai",
     "bkk": "bangkok",
     "hkg": "hong kong",
@@ -65,8 +67,23 @@ _IATA_CITY = {
     "syd": "sydney",
     "mel": "melbourne",
     "per": "perth",
+    "bne": "brisbane",
+    "cbr": "canberra",
+    "adl": "adelaide",
     "auh": "abu dhabi",
 }
+
+# Reverse map: city name → list of IATA codes (for recording destinations)
+_CITY_IATA: dict[str, list[str]] = {}
+for _code, _city in _IATA_CITY.items():
+    _CITY_IATA.setdefault(_city, []).append(_code)
+
+
+def _city_key(name: str) -> str:
+    """Normalise a city name or IATA code to a canonical lowercase city name."""
+    lower = name.lower().strip()
+    return _IATA_CITY.get(lower, lower)
+
 
 # Maps lowercase column header variants to canonical field names
 _HEADER_MAP = {
@@ -541,6 +558,58 @@ def update_stop_dates(session: Session, trip_id: int, sheets_raw: dict[str, str]
     return {"stops_updated": updated, "detail": detail}
 
 
+def _assign_flights_to_stops(
+    flights: list[dict], stops: list[Stop]
+) -> list[tuple[dict, Optional[Stop]]]:
+    """
+    Assign each flight to a stop using a chain-aware strategy.
+
+    Flights are processed in departure-time order. When a flight departs
+    from a city where a previous flight just landed (a connecting leg),
+    it is assigned to the *same stop* as that preceding flight — keeping
+    multi-leg journeys together and preventing arrival flights from
+    appearing on the arrival stop.
+
+    Priority:
+    1. Chain match  — previous flight landed at this flight's origin
+    2. Standard match — _find_stop_for_flight (date-range / IATA / name)
+    """
+    sorted_flights = sorted(
+        flights,
+        key=lambda f: (f.get("details") or {}).get("depart_time", "") or "9999",
+    )
+
+    # city_key → stop: tracks where each city was most recently "delivered to"
+    dest_map: dict[str, Stop] = {}
+
+    assignments: list[tuple[dict, Optional[Stop]]] = []
+    for flight in sorted_flights:
+        origin_key = _city_key(flight["origin"])
+        details = flight.get("details") or {}
+        destination_key = _city_key(details.get("destination", ""))
+        depart_iso = details.get("depart_time", "")
+
+        # 1. Chain: previous flight landed at our origin
+        stop = dest_map.get(origin_key)
+
+        # 2. Standard matching as fallback
+        if stop is None:
+            stop = _find_stop_for_flight(
+                stops, flight["origin"], flight.get("stop_location", ""), depart_iso
+            )
+
+        assignments.append((flight, stop))
+
+        # Record this flight's destination so the next connecting leg chains to it
+        if destination_key and stop:
+            dest_map[destination_key] = stop
+            # Also index any IATA codes for this city
+            for iata in _CITY_IATA.get(destination_key, []):
+                dest_map[iata] = stop
+
+    return assignments
+
+
 def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
     rows = _rows(raw_csv)
     if not rows:
@@ -628,6 +697,7 @@ def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
 def import_flights(session: Session, trip_id: int, sheets_raw: dict[str, str]) -> int:
     """
     Attach flights from the Flights sheet to an existing trip's stops.
+    Uses chain-aware assignment so connecting legs stay together.
     Returns the number of flight items created.
     """
     from sqlmodel import select
@@ -635,27 +705,25 @@ def import_flights(session: Session, trip_id: int, sheets_raw: dict[str, str]) -
     if not stops:
         raise ValueError(f"No stops found for trip {trip_id}")
 
-    count = 0
+    all_flights = []
     for sheet_name, csv_text in sheets_raw.items():
-        if sheet_name.lower() not in FLIGHT_SHEET_NAMES:
+        if sheet_name.lower() in FLIGHT_SHEET_NAMES:
+            all_flights.extend(_parse_flights_sheet(csv_text))
+
+    count = 0
+    for flight, stop in _assign_flights_to_stops(all_flights, stops):
+        if stop is None:
             continue
-        for flight in _parse_flights_sheet(csv_text):
-            stop = _find_stop_for_flight(
-                stops, flight["origin"], flight["stop_location"],
-                flight["details"].get("depart_time", "") if flight["details"] else "",
-            )
-            if stop is None:
-                continue
-            session.add(ItineraryItem(
-                stop_id=stop.id,
-                kind=ItemKind.flight,
-                name=flight["label"],
-                cost=flight["cost"],
-                link=flight["booking_url"],
-                status=ItemStatus.pending,
-                details=flight["details"] or None,
-            ))
-            count += 1
+        session.add(ItineraryItem(
+            stop_id=stop.id,
+            kind=ItemKind.flight,
+            name=flight["label"],
+            cost=flight["cost"],
+            link=flight["booking_url"],
+            status=ItemStatus.pending,
+            details=flight["details"] or None,
+        ))
+        count += 1
 
     session.commit()
     return count
@@ -722,27 +790,24 @@ def import_sheets(session: Session, trip_name: str, sheets_raw: dict[str, str]) 
                 status=ItemStatus.pending,
             ))
 
-    # Second pass: attach flights to the stop they depart from
+    # Second pass: attach flights using chain-aware assignment
+    all_flights = []
     for sheet_name, csv_text in sheets_raw.items():
-        if sheet_name.lower() not in FLIGHT_SHEET_NAMES:
-            continue
+        if sheet_name.lower() in FLIGHT_SHEET_NAMES:
+            all_flights.extend(_parse_flights_sheet(csv_text))
 
-        for flight in _parse_flights_sheet(csv_text):
-            stop = _find_stop_for_flight(
-                stops, flight["origin"], flight["stop_location"],
-                flight["details"].get("depart_time", "") if flight["details"] else "",
-            )
-            if stop is None:
-                continue
-            session.add(ItineraryItem(
-                stop_id=stop.id,
-                kind=ItemKind.flight,
-                name=flight["label"],
-                cost=flight["cost"],
-                link=flight["booking_url"],
-                status=ItemStatus.pending,
-                details=flight["details"] or None,
-            ))
+    for flight, stop in _assign_flights_to_stops(all_flights, stops):
+        if stop is None:
+            continue
+        session.add(ItineraryItem(
+            stop_id=stop.id,
+            kind=ItemKind.flight,
+            name=flight["label"],
+            cost=flight["cost"],
+            link=flight["booking_url"],
+            status=ItemStatus.pending,
+            details=flight["details"] or None,
+        ))
 
     session.commit()
     session.refresh(trip)
