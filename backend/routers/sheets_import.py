@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, SQLModel, select
 from ..database import get_session
 from ..sheets import fetch_sheets
-from ..importer import import_sheets
+from ..importer import import_sheets, import_flights
 from ..models import TripRead, Stop
 
 router = APIRouter(tags=["import"])
@@ -30,6 +30,25 @@ def import_from_sheets(req: SheetsImportRequest, session: Session = Depends(get_
     ).all()
 
     return SheetsImportResult(**trip.model_dump(), stops_imported=len(stop_count))
+
+
+@router.post("/import/sheets/flights/{trip_id}", status_code=200)
+def import_flights_only(trip_id: int, session: Session = Depends(get_session)):
+    """
+    Fetch the Flights sheet and attach flight items to an existing trip's stops.
+    Does not create a new trip or touch existing stops/items.
+    """
+    try:
+        sheets_raw = fetch_sheets()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    try:
+        count = import_flights(session, trip_id, sheets_raw)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"flights_imported": count}
 
 
 @router.get("/import/sheets/preview")

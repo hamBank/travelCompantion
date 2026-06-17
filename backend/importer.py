@@ -437,6 +437,39 @@ def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
     return data
 
 
+def import_flights(session: Session, trip_id: int, sheets_raw: dict[str, str]) -> int:
+    """
+    Attach flights from the Flights sheet to an existing trip's stops.
+    Returns the number of flight items created.
+    """
+    from sqlmodel import select
+    stops = list(session.exec(select(Stop).where(Stop.trip_id == trip_id)).all())
+    if not stops:
+        raise ValueError(f"No stops found for trip {trip_id}")
+
+    count = 0
+    for sheet_name, csv_text in sheets_raw.items():
+        if sheet_name.lower() not in FLIGHT_SHEET_NAMES:
+            continue
+        for flight in _parse_flights_sheet(csv_text):
+            stop = _find_stop_for_flight(stops, flight["origin"], flight["stop_location"])
+            if stop is None:
+                continue
+            session.add(ItineraryItem(
+                stop_id=stop.id,
+                kind=ItemKind.flight,
+                name=flight["label"],
+                cost=flight["cost"],
+                link=flight["booking_url"],
+                status=ItemStatus.pending,
+                details=flight["details"] or None,
+            ))
+            count += 1
+
+    session.commit()
+    return count
+
+
 def import_sheets(session: Session, trip_name: str, sheets_raw: dict[str, str]) -> Trip:
     """
     Create a Trip + Stops + ItineraryItems from {sheet_name: csv_text}.
