@@ -63,11 +63,11 @@ def update_stop_dates_from_sheets(trip_id: int, session: Session = Depends(get_s
         raise HTTPException(status_code=503, detail=str(e))
 
     try:
-        count = update_stop_dates(session, trip_id, sheets_raw)
+        result = update_stop_dates(session, trip_id, sheets_raw)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return {"stops_updated": count}
+    return result
 
 
 @router.get("/import/sheets/flights/{trip_id}/preview")

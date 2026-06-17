@@ -452,44 +452,83 @@ def _parse_flights_sheet(csv_text: str) -> list[dict]:
     return flights
 
 
-def update_stop_dates(session: Session, trip_id: int, sheets_raw: dict[str, str]) -> int:
+def update_stop_dates(session: Session, trip_id: int, sheets_raw: dict[str, str]) -> dict:
     """
     Patch arrive/depart on existing stops from the location sheets.
-    Matches stops by sort_order (same position they were created in).
+    Strategy: sort_order match first, location-name fallback.
     Does not touch items or recreate stops.
-    Returns the number of stops updated.
+    Returns {"stops_updated": N, "detail": [...]} with per-sheet diagnostics.
     """
+    from collections import defaultdict
     from sqlmodel import select
-    stops_by_order = {
-        s.sort_order: s
-        for s in session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
-    }
-    if not stops_by_order:
+
+    all_stops = list(session.exec(select(Stop).where(Stop.trip_id == trip_id)).all())
+    if not all_stops:
         raise ValueError(f"No stops found for trip {trip_id}")
 
+    stops_by_order = {s.sort_order: s for s in all_stops}
+    # location → stops sorted by sort_order (handles duplicate city names like Paris)
+    stops_by_location: dict[str, list] = defaultdict(list)
+    for s in sorted(all_stops, key=lambda x: x.sort_order):
+        stops_by_location[s.location.lower()].append(s)
+    location_usage: dict[str, int] = defaultdict(int)
+
     updated = 0
+    detail = []
     for order, (sheet_name, csv_text) in enumerate(sheets_raw.items()):
         if sheet_name.lower() in FLIGHT_SHEET_NAMES:
             continue
         data = _parse_sheet(sheet_name, csv_text)
-        if not data.get("location"):
+        location = data.get("location", "")
+        if not location:
+            detail.append({"sheet": sheet_name, "status": "skipped — no location in sheet"})
             continue
+
+        # Sort-order match (most reliable when trip was imported with current code)
         stop = stops_by_order.get(order)
+        match_method = "sort_order"
+
+        # Location-name fallback (handles re-imports, order drift)
         if stop is None:
+            candidates = stops_by_location.get(location.lower(), [])
+            idx = location_usage[location.lower()]
+            stop = candidates[idx] if idx < len(candidates) else None
+            match_method = "location_name"
+            if stop:
+                location_usage[location.lower()] += 1
+
+        arrive = data.get("arrive")
+        depart = data.get("depart")
+        row = {
+            "sheet": sheet_name,
+            "location": location,
+            "parsed_arrive": arrive.isoformat() if arrive else None,
+            "parsed_depart": depart.isoformat() if depart else None,
+            "matched_stop_id": stop.id if stop else None,
+            "match_method": match_method if stop else "none",
+        }
+
+        if stop is None:
+            row["status"] = "no matching stop"
+            detail.append(row)
             continue
+
         changed = False
-        if data.get("arrive") is not None:
-            stop.arrive = data["arrive"]
+        if arrive is not None:
+            stop.arrive = arrive
             changed = True
-        if data.get("depart") is not None:
-            stop.depart = data["depart"]
+        if depart is not None:
+            stop.depart = depart
             changed = True
+
+        row["status"] = "updated" if changed else "no dates parsed"
+        detail.append(row)
         if changed:
             session.add(stop)
             updated += 1
 
     session.commit()
-    return updated
+    return {"stops_updated": updated, "detail": detail}
 
 
 def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
