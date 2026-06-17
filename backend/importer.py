@@ -452,6 +452,46 @@ def _parse_flights_sheet(csv_text: str) -> list[dict]:
     return flights
 
 
+def update_stop_dates(session: Session, trip_id: int, sheets_raw: dict[str, str]) -> int:
+    """
+    Patch arrive/depart on existing stops from the location sheets.
+    Matches stops by sort_order (same position they were created in).
+    Does not touch items or recreate stops.
+    Returns the number of stops updated.
+    """
+    from sqlmodel import select
+    stops_by_order = {
+        s.sort_order: s
+        for s in session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
+    }
+    if not stops_by_order:
+        raise ValueError(f"No stops found for trip {trip_id}")
+
+    updated = 0
+    for order, (sheet_name, csv_text) in enumerate(sheets_raw.items()):
+        if sheet_name.lower() in FLIGHT_SHEET_NAMES:
+            continue
+        data = _parse_sheet(sheet_name, csv_text)
+        if not data.get("location"):
+            continue
+        stop = stops_by_order.get(order)
+        if stop is None:
+            continue
+        changed = False
+        if data.get("arrive") is not None:
+            stop.arrive = data["arrive"]
+            changed = True
+        if data.get("depart") is not None:
+            stop.depart = data["depart"]
+            changed = True
+        if changed:
+            session.add(stop)
+            updated += 1
+
+    session.commit()
+    return updated
+
+
 def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
     rows = _rows(raw_csv)
     if not rows:

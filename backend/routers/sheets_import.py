@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, SQLModel, select
 from ..database import get_session
 from ..sheets import fetch_sheets
-from ..importer import import_sheets, import_flights, _parse_flights_sheet, _find_stop_for_flight, FLIGHT_SHEET_NAMES
+from ..importer import import_sheets, import_flights, update_stop_dates, _parse_flights_sheet, _find_stop_for_flight, FLIGHT_SHEET_NAMES
 from ..models import TripRead, Stop
 
 router = APIRouter(tags=["import"])
@@ -49,6 +49,25 @@ def import_flights_only(trip_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail=str(e))
 
     return {"flights_imported": count}
+
+
+@router.post("/import/sheets/update-stop-dates/{trip_id}", status_code=200)
+def update_stop_dates_from_sheets(trip_id: int, session: Session = Depends(get_session)):
+    """
+    Re-read arrive/depart dates from the location sheets and patch existing stops.
+    Safe to call on a trip that already has manually-edited items — only dates change.
+    """
+    try:
+        sheets_raw = fetch_sheets()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    try:
+        count = update_stop_dates(session, trip_id, sheets_raw)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"stops_updated": count}
 
 
 @router.get("/import/sheets/flights/{trip_id}/preview")
