@@ -137,33 +137,36 @@ function FlightCard({ item }) {
         onClick={() => setShowDetail(true)}
         className="w-full text-left hover:opacity-80 transition-opacity"
         style={{
-          background: 'var(--surface-2)',
-          border: '1px solid color-mix(in srgb, var(--accent-alt) 30%, transparent)',
+          background: 'color-mix(in srgb, var(--kind-flight) 6%, var(--surface-2))',
+          border: '1px solid color-mix(in srgb, var(--kind-flight) 35%, transparent)',
           borderRadius: '0.5rem',
           padding: '0.75rem',
         }}
       >
-        <div className="space-y-1.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="font-medium text-sm">{route || item.name}</span>
-            <span style={{ color: 'var(--accent-alt)' }} className="text-xs shrink-0">
-              {[d.flight_number, d.airline].filter(Boolean).join(' · ')}
-            </span>
+        <div className="flex items-start gap-2.5">
+          <span style={{ color: 'var(--kind-flight)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>✈</span>
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-medium text-sm">{route || item.name}</span>
+              <span style={{ color: 'var(--kind-flight)' }} className="text-xs shrink-0 opacity-80">
+                {[d.flight_number, d.airline].filter(Boolean).join(' · ')}
+              </span>
+            </div>
+            {(d.depart_time || d.arrive_time) && (
+              <div style={{ color: 'var(--text-muted)' }} className="text-xs">
+                {[d.depart_time && fmtDateTime(d.depart_time) + (d.depart_tz ? ` ${d.depart_tz}` : ''),
+                  d.arrive_time && fmtDateTime(d.arrive_time) + (d.arrive_tz ? ` ${d.arrive_tz}` : '')]
+                  .filter(Boolean).join(' → ')}
+                {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
+              </div>
+            )}
+            {(d.fare_class || d.seats) && (
+              <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
+                {d.fare_class && <span>{d.fare_class}</span>}
+                {d.seats && <span>Seats: {d.seats}</span>}
+              </div>
+            )}
           </div>
-          {(d.depart_time || d.arrive_time) && (
-            <div style={{ color: 'var(--text-muted)' }} className="text-xs">
-              {[d.depart_time && fmtDateTime(d.depart_time) + (d.depart_tz ? ` ${d.depart_tz}` : ''),
-                d.arrive_time && fmtDateTime(d.arrive_time) + (d.arrive_tz ? ` ${d.arrive_tz}` : '')]
-                .filter(Boolean).join(' → ')}
-              {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
-            </div>
-          )}
-          {(d.fare_class || d.seats) && (
-            <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
-              {d.fare_class && <span>{d.fare_class}</span>}
-              {d.seats && <span>Seats: {d.seats}</span>}
-            </div>
-          )}
         </div>
       </button>
       {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} />}
@@ -181,30 +184,33 @@ function AccomCard({ item }) {
         onClick={() => setShowDetail(true)}
         className="w-full text-left hover:opacity-80 transition-opacity"
         style={{
-          background: 'var(--surface-2)',
-          border: '1px solid color-mix(in srgb, var(--kind-accommodation) 30%, transparent)',
+          background: 'color-mix(in srgb, var(--kind-accommodation) 8%, var(--surface-2))',
+          border: '1px solid color-mix(in srgb, var(--kind-accommodation) 40%, transparent)',
           borderRadius: '0.5rem',
           padding: '0.75rem',
         }}
       >
-        <div className="space-y-1">
-          <div className="font-medium text-sm">{item.name}</div>
-          {d.location && (
-            <div style={{ color: 'var(--text-muted)' }} className="text-xs">{d.location}</div>
-          )}
-          {(d.checkin || d.checkout) && (
-            <div style={{ color: 'var(--text-faint)' }} className="text-xs">
-              {[d.checkin && `In: ${fmtDateTime(d.checkin)}`,
-                d.checkout && `Out: ${fmtDateTime(d.checkout)}`]
-                .filter(Boolean).join('  ·  ')}
-            </div>
-          )}
-          {(d.booking_ref || item.cost) && (
-            <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
-              {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
-              {item.cost && <span>{item.cost}</span>}
-            </div>
-          )}
+        <div className="flex items-start gap-2.5">
+          <span style={{ color: 'var(--kind-accommodation)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>🛏</span>
+          <div className="flex-1 min-w-0 space-y-1">
+            <div className="font-medium text-sm">{item.name}</div>
+            {d.location && (
+              <div style={{ color: 'var(--text-muted)' }} className="text-xs">{d.location}</div>
+            )}
+            {(d.checkin || d.checkout) && (
+              <div style={{ color: 'var(--text-faint)' }} className="text-xs">
+                {[d.checkin && `In: ${fmtDateTime(d.checkin)}`,
+                  d.checkout && `Out: ${fmtDateTime(d.checkout)}`]
+                  .filter(Boolean).join('  ·  ')}
+              </div>
+            )}
+            {(d.booking_ref || item.cost) && (
+              <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
+                {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
+                {item.cost && <span>{item.cost}</span>}
+              </div>
+            )}
+          </div>
         </div>
       </button>
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
