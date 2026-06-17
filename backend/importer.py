@@ -200,11 +200,37 @@ def _cell(rows, r, c, default="") -> str:
 def _parse_date(s: str) -> Optional[datetime]:
     if not s:
         return None
-    for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%Y", "%d %B %Y", "%d %b %Y",
-                "%B %d, %Y", "%b %d, %Y", "%Y-%m-%d", "%Y-%m-%d %H:%M",
-                "%d %b %Y %H:%M", "%d/%m/%Y %I:%M %p", "%d/%m/%Y %H.%M"):
+    s = s.strip()
+    for fmt in (
+        # ISO
+        "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
+        # DD/MM/YYYY
+        "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y %H.%M", "%d/%m/%Y",
+        # MM/DD/YYYY (US)
+        "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M", "%m/%d/%Y",
+        # DD Mon YYYY
+        "%d %B %Y %H:%M", "%d %B %Y",
+        "%d %b %Y %H:%M", "%d %b %Y",
+        "%d-%b-%Y %H:%M", "%d-%b-%Y",
+        "%d %b %y %H:%M", "%d %b %y",
+        # Mon DD, YYYY
+        "%B %d, %Y %H:%M", "%B %d, %Y",
+        "%b %d, %Y %H:%M", "%b %d, %Y",
+    ):
         try:
-            return datetime.strptime(s.strip(), fmt)
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    # AM/PM formats — normalise to uppercase first
+    su = s.upper()
+    for fmt in (
+        "%d/%m/%Y %I:%M %p", "%d/%m/%Y %I:%M%p",
+        "%m/%d/%Y %I:%M %p", "%m/%d/%Y %I:%M%p",
+        "%d %b %Y %I:%M %p", "%d %b %Y %I:%M%p",
+        "%Y-%m-%d %I:%M %p", "%Y-%m-%d %I:%M%p",
+    ):
+        try:
+            return datetime.strptime(su, fmt)
         except ValueError:
             continue
     return None
