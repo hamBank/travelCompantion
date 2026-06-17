@@ -8,6 +8,9 @@ SHEET_NAMES = [
     "Gallipoli", "Otranto", "Lecce", "Geneva", "Lyon", "Cruise", "Djion", "Paris-2",
 ]
 
+# Sheets that contain flight data (tabular format, one flight per row)
+FLIGHT_SHEET_NAMES = ["Flights"]
+
 TOKEN_PATH = pathlib.Path.home() / ".travel_companion_token.json"
 CREDS_PATH = pathlib.Path(__file__).parent.parent / "credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -65,7 +68,7 @@ def fetch_sheets() -> dict[str, str]:
     api = service.spreadsheets()
 
     results = {}
-    for name in SHEET_NAMES:
+    for name in SHEET_NAMES + FLIGHT_SHEET_NAMES:
         try:
             resp = api.values().get(
                 spreadsheetId=SPREADSHEET_ID,

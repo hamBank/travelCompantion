@@ -14,6 +14,170 @@ from sqlmodel import Session
 
 from .models import Trip, Stop, ItineraryItem, StopStatus, ItemKind, ItemStatus
 
+# Sheet names that contain tabular flight data (one row per flight, first row is headers)
+FLIGHT_SHEET_NAMES = frozenset({"flights", "flight"})
+
+# Maps common IATA codes to city name fragments for stop matching
+_IATA_CITY = {
+    "sin": "singapore",
+    "cdg": "paris", "ory": "paris",
+    "fco": "rome", "cia": "rome",
+    "bri": "bari",
+    "nap": "naples",
+    "gva": "geneva",
+    "lys": "lyon",
+    "hel": "helsinki",
+    "mxp": "milan", "lin": "milan",
+    "ams": "amsterdam",
+    "lhr": "london", "lgw": "london", "stn": "london",
+    "bcn": "barcelona",
+    "mad": "madrid",
+    "dub": "dublin",
+    "vie": "vienna",
+    "zrh": "zurich",
+    "fra": "frankfurt",
+    "muc": "munich",
+    "cph": "copenhagen",
+    "arn": "stockholm",
+    "osl": "oslo",
+    "bud": "budapest",
+    "prg": "prague",
+    "waw": "warsaw",
+    "nce": "nice",
+    "mrs": "marseille",
+    "tls": "toulouse",
+    "bod": "bordeaux",
+    "lis": "lisbon",
+    "opo": "porto",
+    "ath": "athens",
+    "ist": "istanbul",
+    "dxb": "dubai",
+    "bkk": "bangkok",
+    "hkg": "hong kong",
+    "nrt": "tokyo", "hnd": "tokyo",
+    "icn": "seoul",
+    "pek": "beijing", "pkx": "beijing",
+    "pvg": "shanghai",
+    "syd": "sydney",
+    "mel": "melbourne",
+    "per": "perth",
+    "auh": "abu dhabi",
+}
+
+# Maps lowercase column header variants to canonical field names
+_HEADER_MAP = {
+    "origin": "origin",
+    "from": "origin",
+    "departure city": "origin",
+    "depart city": "origin",
+    "dep city": "origin",
+    "destination": "destination",
+    "to": "destination",
+    "arrival city": "destination",
+    "arrive city": "destination",
+    "arr city": "destination",
+    "flight": "flight_number",
+    "flight number": "flight_number",
+    "flight no": "flight_number",
+    "flight_number": "flight_number",
+    "flightno": "flight_number",
+    "airline": "airline",
+    "carrier": "airline",
+    "depart date": "depart_date",
+    "departure date": "depart_date",
+    "dep date": "depart_date",
+    "depart_date": "depart_date",
+    "depart time": "depart_time_raw",
+    "departure time": "depart_time_raw",
+    "dep time": "depart_time_raw",
+    "depart_time": "depart_time_raw",
+    "depart tz": "depart_tz",
+    "departure tz": "depart_tz",
+    "dep tz": "depart_tz",
+    "depart timezone": "depart_tz",
+    "arrive date": "arrive_date",
+    "arrival date": "arrive_date",
+    "arr date": "arrive_date",
+    "arrive_date": "arrive_date",
+    "arrive time": "arrive_time_raw",
+    "arrival time": "arrive_time_raw",
+    "arr time": "arrive_time_raw",
+    "arrive_time": "arrive_time_raw",
+    "arrive tz": "arrive_tz",
+    "arrival tz": "arrive_tz",
+    "arr tz": "arrive_tz",
+    "arrive timezone": "arrive_tz",
+    "duration": "duration",
+    "stops": "stops",
+    "terminal": "origin_terminal",
+    "origin terminal": "origin_terminal",
+    "departure terminal": "origin_terminal",
+    "dep terminal": "origin_terminal",
+    "fare class": "fare_class",
+    "class": "fare_class",
+    "cabin class": "fare_class",
+    "cabin": "fare_class",
+    "fare_class": "fare_class",
+    "seats": "seats",
+    "seat": "seats",
+    "seat numbers": "seats",
+    "aircraft": "aircraft",
+    "plane": "aircraft",
+    "aircraft type": "aircraft",
+    "booking ref": "booking_ref",
+    "confirmation": "booking_ref",
+    "confirmation no": "booking_ref",
+    "ref": "booking_ref",
+    "pnr": "booking_ref",
+    "booking_ref": "booking_ref",
+    "cost": "cost",
+    "total cost": "cost",
+    "price": "cost",
+    "amount": "cost",
+    "fare": "cost",
+    "passengers": "passengers",
+    "travellers": "passengers",
+    "traveler names": "passengers",
+    "pax": "passengers",
+    "layover": "layover",
+    "layover time": "layover",
+    "connects to": "connects_to",
+    "connects_to": "connects_to",
+    "connection": "connects_to",
+    "connecting flight": "connects_to",
+    "booking airline": "booking_airline",
+    "booked with": "booking_airline",
+    "booking_airline": "booking_airline",
+    "booked through": "booking_airline",
+    "booking url": "booking_url",
+    "booking link": "booking_url",
+    "url": "booking_url",
+    "booking phone": "booking_phone",
+    "contact phone": "booking_phone",
+    "phone": "booking_phone",
+    "distance": "distance",
+    "baggage": "baggage",
+    "bags": "baggage",
+    "baggage allowance": "baggage",
+    "meal": "meal",
+    "meals": "meal",
+    "entertainment": "entertainment",
+    "ife": "entertainment",
+    "loyalty": "loyalty_info",
+    "loyalty numbers": "loyalty_info",
+    "loyalty_info": "loyalty_info",
+    "frequent flyer": "loyalty_info",
+    "ffn": "loyalty_info",
+    "stop": "stop_location",
+    "location": "stop_location",
+    "stop location": "stop_location",
+    "city": "stop_location",
+    "departure stop": "stop_location",
+    "label": "label",
+    "name": "label",
+    "notes": "notes",
+}
+
 
 def _rows(text: str) -> list:
     return list(csv.reader(io.StringIO(text)))
@@ -30,12 +194,138 @@ def _parse_date(s: str) -> Optional[datetime]:
     if not s:
         return None
     for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%Y", "%d %B %Y", "%d %b %Y",
-                "%B %d, %Y", "%b %d, %Y", "%Y-%m-%d"):
+                "%B %d, %Y", "%b %d, %Y", "%Y-%m-%d", "%Y-%m-%d %H:%M",
+                "%d %b %Y %H:%M", "%d/%m/%Y %I:%M %p", "%d/%m/%Y %H.%M"):
         try:
             return datetime.strptime(s.strip(), fmt)
         except ValueError:
             continue
     return None
+
+
+def _combine_datetime(date_str: str, time_str: str) -> str:
+    """Parse date + time strings and return ISO 'YYYY-MM-DDTHH:MM' or ''."""
+    if not date_str:
+        return ""
+    # Try combining date + time first
+    if time_str:
+        combined = f"{date_str} {time_str}"
+        dt = _parse_date(combined)
+        if dt:
+            return dt.strftime("%Y-%m-%dT%H:%M")
+    # Try date alone
+    dt = _parse_date(date_str)
+    if dt:
+        return dt.strftime("%Y-%m-%dT%H:%M")
+    return ""
+
+
+def _find_stop_for_flight(stops: list, origin: str, stop_location_hint: str) -> Optional[Stop]:
+    """Return the best Stop to attach a flight to, based on origin city/IATA."""
+    if not stops:
+        return None
+
+    # Explicit stop_location column wins
+    if stop_location_hint:
+        hint = stop_location_hint.lower()
+        for stop in stops:
+            if hint in stop.location.lower() or stop.location.lower() in hint:
+                return stop
+
+    if not origin:
+        return stops[0]
+
+    origin_lower = origin.lower().strip()
+
+    # Direct location name match
+    for stop in stops:
+        if origin_lower == stop.location.lower():
+            return stop
+
+    # Partial name match
+    for stop in stops:
+        loc = stop.location.lower()
+        if loc in origin_lower or origin_lower in loc:
+            return stop
+
+    # IATA code → city lookup
+    city = _IATA_CITY.get(origin_lower, "")
+    if city:
+        for stop in stops:
+            if city in stop.location.lower():
+                return stop
+
+    # Default to first stop (flight likely departs at start of trip)
+    return stops[0]
+
+
+def _parse_flights_sheet(csv_text: str) -> list[dict]:
+    """
+    Parse a Flights sheet with header row + one flight per row.
+    Returns a list of flight dicts with canonical field names.
+    """
+    rows = _rows(csv_text)
+    if len(rows) < 2:
+        return []
+
+    # Build column → field mapping from first row
+    raw_headers = [h.lower().strip() for h in rows[0]]
+    col_to_field: dict[int, str] = {}
+    for col_idx, header in enumerate(raw_headers):
+        field = _HEADER_MAP.get(header)
+        if field:
+            col_to_field[col_idx] = field
+
+    def get(row: list, field: str) -> str:
+        for col_idx, f in col_to_field.items():
+            if f == field and col_idx < len(row):
+                return row[col_idx].strip()
+        return ""
+
+    flights = []
+    for row in rows[1:]:
+        if not any(cell.strip() for cell in row):
+            continue
+
+        origin = get(row, "origin")
+        destination = get(row, "destination")
+        if not origin and not destination:
+            continue
+
+        depart_iso = _combine_datetime(get(row, "depart_date"), get(row, "depart_time_raw"))
+        arrive_iso = _combine_datetime(get(row, "arrive_date"), get(row, "arrive_time_raw"))
+
+        flight_number = get(row, "flight_number")
+        airline = get(row, "airline")
+        label = get(row, "label") or f"{origin} → {destination}"
+
+        details = {}
+        for field in (
+            "origin", "destination", "flight_number", "airline",
+            "depart_tz", "arrive_tz", "duration", "stops", "origin_terminal",
+            "fare_class", "seats", "aircraft", "booking_ref", "booking_airline",
+            "booking_phone", "passengers", "loyalty_info", "layover", "connects_to",
+            "distance", "baggage", "meal", "entertainment", "notes",
+        ):
+            val = get(row, field)
+            if val:
+                details[field] = val
+
+        if depart_iso:
+            details["depart_time"] = depart_iso
+        if arrive_iso:
+            details["arrive_time"] = arrive_iso
+
+        flights.append({
+            "label": label,
+            "cost": get(row, "cost"),
+            "booking_url": get(row, "booking_url"),
+            "stop_location": get(row, "stop_location"),
+            "origin": origin,
+            "details": details,
+        })
+
+    return flights
 
 
 def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
@@ -131,7 +421,13 @@ def import_sheets(session: Session, trip_name: str, sheets_raw: dict[str, str]) 
     session.add(trip)
     session.flush()
 
+    stops: list[Stop] = []
+
+    # First pass: create stops from location sheets
     for order, (sheet_name, csv_text) in enumerate(sheets_raw.items()):
+        if sheet_name.lower() in FLIGHT_SHEET_NAMES:
+            continue
+
         data = _parse_sheet(sheet_name, csv_text)
         if not data.get("location"):
             continue
@@ -155,6 +451,7 @@ def import_sheets(session: Session, trip_name: str, sheets_raw: dict[str, str]) 
         )
         session.add(stop)
         session.flush()
+        stops.append(stop)
 
         for act in data["activities"]:
             session.add(ItineraryItem(
@@ -174,6 +471,25 @@ def import_sheets(session: Session, trip_name: str, sheets_raw: dict[str, str]) 
                 name=rest["name"],
                 notes=rest.get("notes", ""),
                 status=ItemStatus.pending,
+            ))
+
+    # Second pass: attach flights to the stop they depart from
+    for sheet_name, csv_text in sheets_raw.items():
+        if sheet_name.lower() not in FLIGHT_SHEET_NAMES:
+            continue
+
+        for flight in _parse_flights_sheet(csv_text):
+            stop = _find_stop_for_flight(stops, flight["origin"], flight["stop_location"])
+            if stop is None:
+                continue
+            session.add(ItineraryItem(
+                stop_id=stop.id,
+                kind=ItemKind.flight,
+                name=flight["label"],
+                cost=flight["cost"],
+                link=flight["booking_url"],
+                status=ItemStatus.pending,
+                details=flight["details"] or None,
             ))
 
     session.commit()
