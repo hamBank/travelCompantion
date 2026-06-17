@@ -99,6 +99,7 @@ const KIND_COLOR = {
 
 export default function ItemEditModal({ item, onSave, onClose }) {
   const [core, setCore] = useState({
+    kind: item.kind ?? 'activity',
     name: item.name ?? '',
     cost: item.cost ?? '',
     link: item.link ?? '',
@@ -122,7 +123,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
     }
   }
 
-  const color = KIND_COLOR[item.kind] ?? '#9399b2'
+  const color = KIND_COLOR[core.kind] ?? '#9399b2'
 
   return (
     <div
@@ -136,13 +137,19 @@ export default function ItemEditModal({ item, onSave, onClose }) {
       >
         {/* Header */}
         <div style={{ borderBottom: '1px solid #313244' }} className="flex items-center gap-3 px-5 py-4">
-          <span
-            style={{ color, background: `${color}20`, border: `1px solid ${color}40` }}
-            className="text-xs px-2 py-0.5 rounded-full font-medium"
+          <select
+            value={core.kind}
+            onChange={e => setCore(c => ({ ...c, kind: e.target.value }))}
+            style={{ color, background: `${color}18`, border: `1px solid ${color}40` }}
+            className="text-xs px-2 py-1 rounded-full font-medium outline-none cursor-pointer"
           >
-            {KIND_LABEL[item.kind] ?? item.kind}
-          </span>
-          <span className="flex-1 text-sm font-medium truncate">{item.name}</span>
+            {Object.keys(KIND_LABEL).map(k => (
+              <option key={k} value={k} style={{ background: '#1e1e2e', color: '#cdd6f4' }}>
+                {KIND_LABEL[k]}
+              </option>
+            ))}
+          </select>
+          <span className="flex-1 text-sm font-medium truncate">{core.name || item.name}</span>
           <button
             onClick={onClose}
             style={{ color: '#6c7086' }}
@@ -154,7 +161,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto p-5">
-          {item.kind === 'accommodation' ? (
+          {core.kind === 'accommodation' ? (
             <AccommodationForm
               core={core} details={details}
               setCore={setCore} setDetails={setDetails}
