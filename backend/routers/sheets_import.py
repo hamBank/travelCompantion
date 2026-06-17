@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, SQLModel, select
 from ..database import get_session
 from ..sheets import fetch_sheets
-from ..importer import import_sheets, import_flights, update_stop_dates, _parse_flights_sheet, _assign_flights_to_stops, FLIGHT_SHEET_NAMES
-from ..models import TripRead, Stop
+from ..importer import import_sheets, import_flights, update_stop_dates, _parse_flights_sheet, _assign_flights_to_stops, _parse_date, FLIGHT_SHEET_NAMES
+from ..models import TripRead, Stop, ItineraryItem
 
 router = APIRouter(tags=["import"])
 
@@ -122,3 +122,36 @@ def preview_sheets():
         rows = list(csv.reader(io.StringIO(csv_text)))
         result[name] = rows[:60]          # cap at 60 rows per sheet
     return result
+
+
+@router.post("/import/backfill-scheduled-at/{trip_id}", status_code=200)
+def backfill_scheduled_at(trip_id: int, session: Session = Depends(get_session)):
+    """
+    For existing activity items that have no scheduled_at but have a date string in
+    their notes field (e.g. "24/7 12:00", "Wednesday 22 Jul 22:05"), parse the notes
+    and write the result to scheduled_at so items sort correctly.
+    Safe to call multiple times — only updates rows where scheduled_at is NULL.
+    """
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
+    if not stops:
+        raise HTTPException(status_code=404, detail=f"No stops found for trip {trip_id}")
+
+    stop_ids = [s.id for s in stops]
+    items = session.exec(
+        select(ItineraryItem)
+        .where(ItineraryItem.stop_id.in_(stop_ids))
+        .where(ItineraryItem.scheduled_at == None)
+        .where(ItineraryItem.notes != None)
+        .where(ItineraryItem.notes != "")
+    ).all()
+
+    updated = 0
+    for item in items:
+        dt = _parse_date(item.notes)
+        if dt:
+            item.scheduled_at = dt
+            session.add(item)
+            updated += 1
+
+    session.commit()
+    return {"updated": updated}

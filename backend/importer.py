@@ -275,6 +275,7 @@ def _parse_date(s: str) -> Optional[datetime]:
         "%A %d %b",          # "Wednesday 22 Jul"
         "%a %d %b %H:%M",   # "Wed 22 Jul 22:05"
         "%a %d/%m",          # "Wed 22/7"
+        "%d/%m %H:%M",       # "24/7 12:00"
         "%d/%m",             # "22/7"
         "%a %d %b",          # "Wed 22 Jul"
         "%d %b",             # "22 Jul"
@@ -688,8 +689,11 @@ def _parse_sheet(sheet_name: str, raw_csv: str) -> dict:
         if in_activities and not in_restaurants and c1 and c1.lower() not in ("activity", "link", "cost"):
             c3 = row[3].strip() if len(row) > 3 else ""
             dt = _parse_date(c0)
-            time_note = f"{dt.day}/{dt.month}" if dt else c0
-            data["activities"].append({"time": time_note, "name": c1, "link": c2, "cost": c3})
+            if dt:
+                time_note = f"{dt.day}/{dt.month} {dt.strftime('%H:%M')}" if (dt.hour or dt.minute) else f"{dt.day}/{dt.month}"
+            else:
+                time_note = c0
+            data["activities"].append({"time": time_note, "name": c1, "link": c2, "cost": c3, "scheduled_at": dt})
 
         if in_restaurants and rest_header and c1 and c1.lower() not in ("restaurant", "type", "walk"):
             notes = "  ·  ".join(filter(None, [
@@ -787,6 +791,7 @@ def import_sheets(session: Session, trip_name: str, sheets_raw: dict[str, str]) 
                 link=act.get("link", ""),
                 cost=act.get("cost", ""),
                 notes=act.get("time", ""),
+                scheduled_at=act.get("scheduled_at"),
                 status=ItemStatus.pending,
             ))
 
