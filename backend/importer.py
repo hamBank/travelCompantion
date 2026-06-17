@@ -197,6 +197,20 @@ def _cell(rows, r, c, default="") -> str:
         return default
 
 
+def _infer_year(month: int, day: int) -> int:
+    """Pick the year (current or ±1) that puts month/day closest to today."""
+    today = datetime.today()
+    best_year, best_delta = today.year, None
+    for year in (today.year - 1, today.year, today.year + 1):
+        try:
+            delta = abs((datetime(year, month, day) - today).days)
+            if best_delta is None or delta < best_delta:
+                best_year, best_delta = year, delta
+        except ValueError:
+            continue
+    return best_year
+
+
 def _parse_date(s: str) -> Optional[datetime]:
     if not s:
         return None
@@ -231,6 +245,14 @@ def _parse_date(s: str) -> Optional[datetime]:
     ):
         try:
             return datetime.strptime(su, fmt)
+        except ValueError:
+            continue
+    # Short date formats with no year — infer year from proximity to today
+    # e.g. "Wed 22/7", "22/7", "22 Jul", "Wed 22 Jul"
+    for fmt in ("%a %d/%m", "%d/%m", "%a %d %b", "%d %b", "%b %d", "%a %b %d"):
+        try:
+            dt = datetime.strptime(s, fmt)
+            return dt.replace(year=_infer_year(dt.month, dt.day))
         except ValueError:
             continue
     return None
