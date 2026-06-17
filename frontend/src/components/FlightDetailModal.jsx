@@ -84,18 +84,24 @@ export default function FlightDetailModal({ item, onClose }) {
               {d.depart_time && (
                 <div className="flex justify-between gap-4 text-sm">
                   <span style={{ color: 'var(--text-faint)' }}>Departs</span>
-                  <span>
+                  <span className="text-right">
                     {fmtDateTime(d.depart_time)}
                     {d.depart_tz && <span style={{ color: 'var(--text-faint)' }} className="ml-1 text-xs">{d.depart_tz}</span>}
+                    {d.origin_terminal && (
+                      <span style={{ color: 'var(--kind-flight)' }} className="ml-2 text-xs">T{d.origin_terminal}</span>
+                    )}
                   </span>
                 </div>
               )}
               {d.arrive_time && (
                 <div className="flex justify-between gap-4 text-sm">
                   <span style={{ color: 'var(--text-faint)' }}>Arrives</span>
-                  <span>
+                  <span className="text-right">
                     {fmtDateTime(d.arrive_time)}
                     {d.arrive_tz && <span style={{ color: 'var(--text-faint)' }} className="ml-1 text-xs">{d.arrive_tz}</span>}
+                    {d.arrive_terminal && (
+                      <span style={{ color: 'var(--kind-flight)' }} className="ml-2 text-xs">T{d.arrive_terminal}</span>
+                    )}
                   </span>
                 </div>
               )}

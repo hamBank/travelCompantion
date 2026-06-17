@@ -155,6 +155,10 @@ _HEADER_MAP = {
     "origin terminal": "origin_terminal",
     "departure terminal": "origin_terminal",
     "dep terminal": "origin_terminal",
+    "arrival terminal": "arrive_terminal",
+    "arrive terminal": "arrive_terminal",
+    "destination terminal": "arrive_terminal",
+    "arr terminal": "arrive_terminal",
     "fare class": "fare_class",
     "class": "fare_class",
     "cabin class": "fare_class",
@@ -474,7 +478,7 @@ def _parse_flights_sheet(csv_text: str) -> list[dict]:
         details = {}
         for field in (
             "origin", "destination", "flight_number", "airline",
-            "depart_tz", "arrive_tz", "duration", "stops", "origin_terminal",
+            "depart_tz", "arrive_tz", "duration", "stops", "origin_terminal", "arrive_terminal",
             "fare_class", "seats", "aircraft", "booking_ref", "booking_airline",
             "booking_phone", "passengers", "loyalty_info", "layover", "connects_to",
             "distance", "baggage", "meal", "entertainment", "notes",

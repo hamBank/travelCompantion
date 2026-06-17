@@ -160,6 +160,12 @@ function FlightCard({ item }) {
                 {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
               </div>
             )}
+            {(d.origin_terminal || d.arrive_terminal) && (
+              <div style={{ color: 'var(--kind-flight)' }} className="text-xs flex gap-3 opacity-80">
+                {d.origin_terminal && <span>Dep T{d.origin_terminal}</span>}
+                {d.arrive_terminal && <span>Arr T{d.arrive_terminal}</span>}
+              </div>
+            )}
             {(d.fare_class || d.seats) && (
               <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
                 {d.fare_class && <span>{d.fare_class}</span>}
