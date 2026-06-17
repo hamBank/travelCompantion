@@ -2,6 +2,7 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import Column, JSON
 
 
 class StopStatus(str, Enum):
@@ -15,6 +16,7 @@ class ItemKind(str, Enum):
     activity = "activity"
     restaurant = "restaurant"
     note = "note"
+    accommodation = "accommodation"
 
 
 class ItemStatus(str, Enum):
@@ -120,10 +122,11 @@ class ItineraryItem(ItemBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     stop_id: int = Field(foreign_key="stop.id")
     stop: Optional[Stop] = Relationship(back_populates="items")
+    details: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 
 
 class ItemCreate(ItemBase):
-    pass
+    details: Optional[dict] = None
 
 
 class ItemUpdate(SQLModel):
@@ -134,8 +137,10 @@ class ItemUpdate(SQLModel):
     cost: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[ItemStatus] = None
+    details: Optional[dict] = None
 
 
 class ItemRead(ItemBase):
     id: int
     stop_id: int
+    details: Optional[dict] = None

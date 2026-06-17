@@ -21,6 +21,7 @@ def _migrate():
     new_columns = [
         "ALTER TABLE trip ADD COLUMN start_date DATETIME",
         "ALTER TABLE trip ADD COLUMN end_date DATETIME",
+        "ALTER TABLE itineraryitem ADD COLUMN details TEXT",
     ]
     with engine.connect() as conn:
         for sql in new_columns:
