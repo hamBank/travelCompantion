@@ -18,11 +18,6 @@ class SheetsImportResult(TripRead):
 
 @router.post("/import/sheets", response_model=SheetsImportResult, status_code=201)
 def import_from_sheets(req: SheetsImportRequest, session: Session = Depends(get_session)):
-    """
-    Fetch all sheets from Google Sheets and seed a new Trip in the database.
-    Opens a browser on first run for OAuth authentication.
-    If ~/.travel_companion_token.json already exists (from the desktop app) it is reused.
-    """
     try:
         sheets_raw = fetch_sheets()
     except RuntimeError as e:
@@ -35,3 +30,23 @@ def import_from_sheets(req: SheetsImportRequest, session: Session = Depends(get_
     ).all()
 
     return SheetsImportResult(**trip.model_dump(), stops_imported=len(stop_count))
+
+
+@router.get("/import/sheets/preview")
+def preview_sheets():
+    """
+    Return the raw rows from every configured sheet (up to 60 rows each).
+    Useful for inspecting the sheet structure before writing parsers.
+    Call this locally: GET http://localhost:8000/import/sheets/preview
+    """
+    try:
+        sheets_raw = fetch_sheets()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    import csv, io
+    result = {}
+    for name, csv_text in sheets_raw.items():
+        rows = list(csv.reader(io.StringIO(csv_text)))
+        result[name] = rows[:60]          # cap at 60 rows per sheet
+    return result
