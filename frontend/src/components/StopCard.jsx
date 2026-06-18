@@ -99,7 +99,7 @@ export default function StopCard({ stop, index, onUpdate }) {
 
           {restaurants.length > 0 && (
             <Section label="Restaurants">
-              {restaurants.map(item => <ItemRow key={item.id} item={item} />)}
+              {restaurants.map(item => <RestaurantCard key={item.id} item={item} />)}
             </Section>
           )}
 
@@ -235,6 +235,72 @@ function AccomCard({ item: initial }) {
               )}
               {(d.booking_ref || item.cost) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
+                  {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
+                  {item.cost && <span>{item.cost}</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+          title="Edit"
+        >
+          ✎
+        </button>
+      </div>
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
+    </>
+  )
+}
+
+const BOOKING_STATUS_COLOR = { planned: 'var(--text-faint)', booked: 'var(--kind-activity)', confirmed: 'var(--success)' }
+
+function RestaurantCard({ item: initial }) {
+  const [item, setItem] = useState(initial)
+  const [showDetail, setShowDetail] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const d = item.details ?? {}
+
+  return (
+    <>
+      <div className="relative group">
+        <button
+          onClick={() => setShowDetail(true)}
+          className="w-full text-left hover:opacity-80 transition-opacity"
+          style={{
+            background: 'color-mix(in srgb, var(--kind-restaurant) 6%, var(--surface-2))',
+            border: '1px solid color-mix(in srgb, var(--kind-restaurant) 35%, transparent)',
+            borderRadius: '0.5rem',
+            padding: '0.75rem',
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            <span style={{ color: 'var(--kind-restaurant)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>🍽</span>
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-sm truncate">{item.name}</span>
+                {d.booking_status && (
+                  <span style={{ color: BOOKING_STATUS_COLOR[d.booking_status] ?? 'var(--text-faint)', fontSize: '0.65rem' }} className="capitalize shrink-0 font-medium">
+                    {d.booking_status}
+                  </span>
+                )}
+              </div>
+              {d.location && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{d.location}</div>
+              )}
+              {(item.notes || d.booking_ref || item.cost) && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                  {item.notes && <span>{item.notes}</span>}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                   {item.cost && <span>{item.cost}</span>}
                 </div>
