@@ -10,7 +10,7 @@ from .routers.auth_router import router as auth_router
 # Paths that never require authentication (static assets + public endpoints)
 _PUBLIC_PREFIXES = ("/auth/", "/health", "/assets/", "/sw.", "/registerSW.", "/manifest.")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
-                    "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"}
+                    "/favicon.ico", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"}
 
 
 @asynccontextmanager
