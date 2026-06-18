@@ -128,12 +128,26 @@ function AccommodationBody({ item }) {
 }
 
 function ActivityBody({ item }) {
+  const d = item.details ?? {}
   return (
     <div className="space-y-0">
       {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
       {item.notes && <Row label="Notes">{item.notes}</Row>}
+      {d.location && (
+        <Row label="Address">
+          <a href={mapsUrl(d.location)} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="hover:underline">{d.location}</a>
+        </Row>
+      )}
+      {d.contact_phone && (
+        <Row label="Phone">
+          <a href={`tel:${d.contact_phone}`} style={{ color: 'var(--accent)' }} className="hover:underline">
+            {d.contact_phone}
+          </a>
+        </Row>
+      )}
       {item.link && (
-        <Row label="Link">
+        <Row label="Website">
           <a href={item.link} target="_blank" rel="noreferrer"
              style={{ color: 'var(--accent)' }} className="hover:underline break-all">{item.link}</a>
         </Row>

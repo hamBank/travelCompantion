@@ -69,7 +69,7 @@ def enrich_item(item_id: int, session: Session = Depends(get_session)):
     if not _PLACES_KEY:
         raise HTTPException(status_code=503, detail="Google Places API not configured")
     item = session.get(ItineraryItem, item_id)
-    if not item or item.kind not in ("accommodation", "restaurant"):
+    if not item or item.kind not in ("accommodation", "restaurant", "activity"):
         raise HTTPException(status_code=404, detail="Item not found or not enrichable")
 
     details = item.details or {}
