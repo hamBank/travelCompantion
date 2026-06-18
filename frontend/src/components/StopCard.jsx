@@ -25,11 +25,17 @@ export default function StopCard({ stop, index, onUpdate }) {
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
 
-  const accom     = stop.items.find(i => i.kind === 'accommodation')
-  const flights   = stop.items.filter(i => i.kind === 'flight')
+  const accom    = stop.items.find(i => i.kind === 'accommodation')
+  const flights  = stop.items.filter(i => i.kind === 'flight')
   const activities = stop.items.filter(i => i.kind === 'activity')
   const restaurants = stop.items.filter(i => i.kind === 'restaurant')
-  const notes     = stop.items.filter(i => i.kind === 'note')
+  const notes    = stop.items.filter(i => i.kind === 'note')
+
+  const sortKey = item => {
+    const dt = item.kind === 'flight' ? item.details?.depart_time : item.scheduled_at
+    return dt ? new Date(dt).getTime() : Infinity
+  }
+  const timeline = [...flights, ...activities, ...restaurants, ...notes].sort((a, b) => sortKey(a) - sortKey(b))
 
   const flag = countryFlag(stop.country)
 
@@ -85,31 +91,17 @@ export default function StopCard({ stop, index, onUpdate }) {
             </Section>
           )}
 
-          {flights.length > 0 && (
-            <Section label="Flights">
-              {flights.map(item => <FlightCard key={item.id} item={item} />)}
-            </Section>
+          {timeline.length > 0 && (
+            <div className="space-y-1">
+              {timeline.map(item => {
+                if (item.kind === 'flight') return <FlightCard key={item.id} item={item} />
+                if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} />
+                return <ItemRow key={item.id} item={item} />
+              })}
+            </div>
           )}
 
-          {activities.length > 0 && (
-            <Section label="Activities">
-              {activities.map(item => <ItemRow key={item.id} item={item} />)}
-            </Section>
-          )}
-
-          {restaurants.length > 0 && (
-            <Section label="Restaurants">
-              {restaurants.map(item => <RestaurantCard key={item.id} item={item} />)}
-            </Section>
-          )}
-
-          {notes.length > 0 && (
-            <Section label="Notes">
-              {notes.map(item => <ItemRow key={item.id} item={item} />)}
-            </Section>
-          )}
-
-          {!accom && flights.length === 0 && activities.length === 0 && restaurants.length === 0 && notes.length === 0 && (
+          {!accom && timeline.length === 0 && (
             <p style={{ color: 'var(--text-faint)' }} className="text-xs">No details recorded.</p>
           )}
         </div>
