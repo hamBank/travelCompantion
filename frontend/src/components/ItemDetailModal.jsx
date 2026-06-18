@@ -148,8 +148,16 @@ function RestaurantBody({ item }) {
   return (
     <>
       <div className="space-y-0">
-        {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
-        {item.notes && <Row label="Time / Notes">{item.notes}</Row>}
+        {(item.scheduled_at || d.reservation_time) && (
+          <Row label="When">{(() => {
+            if (!item.scheduled_at) return d.reservation_time
+            const [dp, tp] = item.scheduled_at.split('T')
+            const date = new Date(dp + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+            const t = tp?.slice(0, 5)
+            return t && t !== '00:00' ? `${date}  ${t}` : date
+          })()}</Row>
+        )}
+        {item.notes && <Row label="Notes">{item.notes}</Row>}
         {d.location && (
           <Row label="Address">
             <a href={mapsUrl(d.location)} target="_blank" rel="noreferrer"

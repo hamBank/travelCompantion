@@ -133,6 +133,30 @@ function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
 
+  // Split scheduled_at into separate date and time inputs
+  const [resDate, setResDate] = useState(() => core.scheduled_at?.split('T')[0] ?? '')
+  const [resTime, setResTime] = useState(() => {
+    const tp = core.scheduled_at?.split('T')[1]?.slice(0, 5)
+    if (tp && tp !== '00:00') return tp
+    return details.reservation_time ?? ''
+  })
+
+  function applyDateTime(date, time) {
+    if (date && time) {
+      setCore(c => ({ ...c, scheduled_at: `${date}T${time}` }))
+      setDetails(({ reservation_time: _, ...rest }) => rest)
+    } else if (date) {
+      setCore(c => ({ ...c, scheduled_at: `${date}T00:00` }))
+      setDetails(({ reservation_time: _, ...rest }) => rest)
+    } else if (time) {
+      setCore(c => ({ ...c, scheduled_at: null }))
+      setD('reservation_time', time)
+    } else {
+      setCore(c => ({ ...c, scheduled_at: null }))
+      setDetails(({ reservation_time: _, ...rest }) => rest)
+    }
+  }
+
   async function autoFill() {
     if (enriching) return
     setEnriching(true)
@@ -182,7 +206,12 @@ function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
           </select>
         </div>
       </div>
-      <Field label="Date & Time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v }))} />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date" type="date" value={resDate}
+          onChange={v => { setResDate(v); applyDateTime(v, resTime) }} />
+        <Field label="Time" type="time" value={resTime}
+          onChange={v => { setResTime(v); applyDateTime(resDate, v) }} />
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€60" />
         <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Dietary needs…" />
@@ -288,7 +317,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
     cost: item.cost ?? '',
     link: item.link ?? '',
     notes: item.notes ?? '',
-    scheduled_at: item.scheduled_at ? item.scheduled_at.slice(0, 16) : '',
+    scheduled_at: item.scheduled_at ? item.scheduled_at.slice(0, 16) : null,
   })
   const [details, setDetails] = useState(item.details ?? {})
   const [saving, setSaving] = useState(false)
@@ -298,7 +327,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
     if (saving) return
     setSaving(true); setError(null)
     try {
-      const updated = await updateItem(item.id, { ...core, details })
+      const updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details })
       onSave(updated)
     } catch (e) {
       setError(e.message)
