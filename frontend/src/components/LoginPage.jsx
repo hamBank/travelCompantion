@@ -29,17 +29,14 @@ export default function LoginPage({ onLogin }) {
       </div>
 
       <div
+        className="px-8 py-6 flex flex-col items-center gap-4 w-full"
         style={{
           background: 'var(--surface)',
           border: '1px solid var(--border)',
           borderRadius: '0.75rem',
+          maxWidth: '22rem',
         }}
-        className="px-8 py-6 flex flex-col items-center gap-4 max-w-xs w-full"
       >
-        <p style={{ color: 'var(--text-muted)' }} className="text-sm text-center">
-          Sign in with your Google account to access your itineraries.
-          Your email address is used only to verify you are an authorised user.
-        </p>
         <GoogleLogin
           onSuccess={handleSuccess}
           onError={() => alert('Google sign-in failed')}
@@ -47,6 +44,28 @@ export default function LoginPage({ onLogin }) {
           shape="pill"
           size="large"
         />
+
+        <div style={{ borderTop: '1px solid var(--border)' }} className="w-full pt-4 space-y-2">
+          <p style={{ color: 'var(--text-faint)' }} className="text-xs font-medium uppercase tracking-wide">
+            Data we request from Google
+          </p>
+          <ul className="space-y-1.5">
+            {[
+              ['Email address', 'To verify you are an authorised user. Access is restricted to specific accounts.'],
+              ['Name', 'Displayed in the app header so you can confirm which account is signed in.'],
+              ['Profile picture', 'Shown as your sign-out button in the app header.'],
+            ].map(([field, reason]) => (
+              <li key={field} className="text-xs" style={{ color: 'var(--text-faint)' }}>
+                <span style={{ color: 'var(--text-muted)' }} className="font-medium">{field}:</span>{' '}{reason}
+              </li>
+            ))}
+          </ul>
+          <p style={{ color: 'var(--text-faint)' }} className="text-xs pt-1">
+            No Google account data is stored beyond your email address.
+            We do not access Google Drive, Gmail, Calendar, or any other Google service.
+            Data is never sold or shared with third parties.
+          </p>
+        </div>
       </div>
 
       <p style={{ color: 'var(--text-faint)' }} className="text-xs text-center">
