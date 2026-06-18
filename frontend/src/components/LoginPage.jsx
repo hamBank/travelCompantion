@@ -22,8 +22,9 @@ export default function LoginPage({ onLogin }) {
         <h1 style={{ color: 'var(--accent)' }} className="text-2xl font-semibold">
           Travel Companion
         </h1>
-        <p style={{ color: 'var(--text-faint)' }} className="text-sm">
-          Sign in to access your itineraries
+        <p style={{ color: 'var(--text-muted)' }} className="text-sm max-w-xs">
+          A private trip-planning tool for managing flight, accommodation,
+          activity, and restaurant itineraries.
         </p>
       </div>
 
@@ -33,10 +34,11 @@ export default function LoginPage({ onLogin }) {
           border: '1px solid var(--border)',
           borderRadius: '0.75rem',
         }}
-        className="px-8 py-6 flex flex-col items-center gap-4"
+        className="px-8 py-6 flex flex-col items-center gap-4 max-w-xs w-full"
       >
-        <p style={{ color: 'var(--text-muted)' }} className="text-sm">
-          Continue with Google
+        <p style={{ color: 'var(--text-muted)' }} className="text-sm text-center">
+          Sign in with your Google account to access your itineraries.
+          Your email address is used only to verify you are an authorised user.
         </p>
         <GoogleLogin
           onSuccess={handleSuccess}
