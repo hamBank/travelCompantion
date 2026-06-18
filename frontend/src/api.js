@@ -15,7 +15,11 @@ async function req(path, opts = {}) {
   let body
   try { body = JSON.parse(text) }
   catch { throw new Error(`Server error ${r.status}`) }
-  if (!r.ok) throw new Error(body.detail ?? r.statusText)
+  if (!r.ok) throw new Error(
+    Array.isArray(body.detail)
+      ? body.detail.map(e => e.msg).join('; ')
+      : (body.detail ?? r.statusText)
+  )
   return body
 }
 
