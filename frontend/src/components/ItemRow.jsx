@@ -41,7 +41,14 @@ export default function ItemRow({ item }) {
           <span className="text-sm" style={{ color: 'var(--text)' }}>
             {current.scheduled_at && (
               <span style={{ color: 'var(--text-faint)' }} className="text-xs mr-2">
-                {new Date(current.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                {(() => {
+                  const [dp, tp] = current.scheduled_at.split('T')
+                  const d = new Date(dp + 'T00:00:00')
+                  const weekday = d.toLocaleDateString('en-GB', { weekday: 'short' })
+                  const day = d.getDate()
+                  const time = tp?.slice(0, 5)
+                  return time ? `${weekday} ${day} ${time}` : `${weekday} ${day}`
+                })()}
               </span>
             )}
             {current.name}
