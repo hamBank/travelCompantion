@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { updateItemStatus } from '../api.js'
 import ItemDetailModal from './ItemDetailModal.jsx'
+import ItemEditModal from './ItemEditModal.jsx'
 
 const CYCLE = { pending: 'done', done: 'skipped', skipped: 'pending' }
 const ICON = { pending: '○', done: '✓', skipped: '—' }
 
 export default function ItemRow({ item }) {
+  const [current, setCurrent] = useState(item)
   const [status, setStatus] = useState(item.status)
   const [showDetail, setShowDetail] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
 
   async function cycle(e) {
     e.stopPropagation()
@@ -22,7 +25,7 @@ export default function ItemRow({ item }) {
 
   return (
     <>
-      <div className="flex items-start gap-3 py-0.5">
+      <div className="flex items-start gap-3 py-0.5 group">
         <button
           onClick={cycle}
           style={{ color: iconColor, marginTop: '1px', minWidth: '1rem' }}
@@ -36,19 +39,34 @@ export default function ItemRow({ item }) {
           style={{ opacity: struck ? 0.4 : 1 }}
         >
           <span className="text-sm" style={{ color: 'var(--text)' }}>
-            {item.scheduled_at && (
+            {current.scheduled_at && (
               <span style={{ color: 'var(--text-faint)' }} className="text-xs mr-2">
-                {new Date(item.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                {new Date(current.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
-            {item.name}
-            {item.cost && (
-              <span style={{ color: 'var(--text-muted)' }} className="text-xs ml-2">{item.cost}</span>
+            {current.name}
+            {current.cost && (
+              <span style={{ color: 'var(--text-muted)' }} className="text-xs ml-2">{current.cost}</span>
             )}
           </span>
         </button>
+        <button
+          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
+          style={{ color: 'var(--text-faint)', fontSize: '0.7rem', marginTop: '2px' }}
+          className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          title="Edit"
+        >
+          ✎
+        </button>
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showDetail && <ItemDetailModal item={current} onClose={() => setShowDetail(false)} />}
+      {showEdit && (
+        <ItemEditModal
+          item={current}
+          onSave={updated => { setCurrent(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
     </>
   )
 }
