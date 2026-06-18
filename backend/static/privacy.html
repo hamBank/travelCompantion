@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Travel Companion</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      line-height: 1.7;
+      padding: 2rem 1rem 4rem;
+    }
+
+    .wrap {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    .back {
+      display: inline-block;
+      margin-bottom: 2rem;
+      color: #6c7086;
+      text-decoration: none;
+      font-size: 0.875rem;
+    }
+    .back:hover { color: #cba6f7; }
+
+    header { margin-bottom: 2.5rem; }
+    header h1 { color: #cba6f7; font-size: 1.75rem; font-weight: 600; }
+    header p  { color: #6c7086; font-size: 0.8rem; margin-top: 0.4rem; }
+
+    h2 {
+      color: #cba6f7;
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 2rem 0 0.6rem;
+    }
+
+    p, li { color: #9399b2; font-size: 0.9rem; }
+    li { margin-left: 1.4rem; margin-bottom: 0.25rem; }
+    ul { margin-bottom: 0.5rem; }
+
+    a { color: #89dceb; }
+    a:hover { text-decoration: underline; }
+
+    hr {
+      border: none;
+      border-top: 1px solid #313244;
+      margin: 2.5rem 0;
+    }
+
+    footer { color: #45475a; font-size: 0.8rem; margin-top: 3rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a href="/" class="back">← Back to Travel Companion</a>
+
+    <header>
+      <h1>Privacy Policy</h1>
+      <p>Effective date: 17 June 2026 &nbsp;·&nbsp; tripplan.hups.club</p>
+    </header>
+
+    <p>
+      Travel Companion is a private, self-hosted trip-planning tool. This policy
+      explains what data is collected, how it is used, and your rights.
+    </p>
+
+    <h2>1. Who operates this service</h2>
+    <p>
+      This instance of Travel Companion is operated privately by the site owner
+      for personal use and by explicitly invited users. It is not a public
+      commercial service.
+    </p>
+
+    <h2>2. Data we collect</h2>
+    <ul>
+      <li>
+        <strong>Google account information</strong> — when you sign in with
+        Google we receive your name, email address, and profile picture URL from
+        Google's OAuth service. We store only the email address to verify you
+        are an authorised user; we do not store your password.
+      </li>
+      <li>
+        <strong>Trip and itinerary data</strong> — any trips, stops, and
+        itinerary items you create or import are stored in the server's SQLite
+        database. This data is yours.
+      </li>
+      <li>
+        <strong>Session token</strong> — after sign-in, a JSON Web Token (JWT)
+        is stored in your browser's <code>localStorage</code>. It is used to
+        authenticate subsequent requests and expires after 30 days by default.
+      </li>
+      <li>
+        <strong>Server logs</strong> — the web server (Apache) writes standard
+        access and error logs containing your IP address, request path, and
+        timestamp. Logs are rotated and not shared.
+      </li>
+    </ul>
+
+    <h2>3. How we use your data</h2>
+    <ul>
+      <li>To authenticate you and restrict access to authorised users only.</li>
+      <li>To store and retrieve your trip itineraries.</li>
+      <li>To diagnose server errors via log files.</li>
+    </ul>
+    <p>We do not sell, share, or transmit your data to third parties.</p>
+
+    <h2>4. Google OAuth</h2>
+    <p>
+      Sign-in is handled by Google's OAuth 2.0 service. When you click
+      "Continue with Google", you are redirected to Google's authentication
+      pages, which are governed by
+      <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer">
+        Google's Privacy Policy
+      </a>. We receive only an ID token from which we extract your name, email,
+      and picture URL; we do not receive your Google password or access to any
+      Google services beyond this.
+    </p>
+
+    <h2>5. Google Sheets import</h2>
+    <p>
+      If the Google Sheets import feature is configured, the server reads data
+      from a specific spreadsheet using a service-account credential stored on
+      the server. No spreadsheet data is shared with third parties.
+    </p>
+
+    <h2>6. Cookies and local storage</h2>
+    <p>
+      This app does not use cookies. A single JWT token is stored in
+      <code>localStorage</code> to maintain your session. You can clear it by
+      signing out or clearing your browser's site data.
+    </p>
+
+    <h2>7. Data retention</h2>
+    <p>
+      Your itinerary data is retained indefinitely on the server until you or
+      the operator deletes it. Server access logs are retained for up to
+      30 days.
+    </p>
+
+    <h2>8. Security</h2>
+    <p>
+      Data is transmitted over HTTPS. The server runs on a hardened systemd
+      service with a restricted system user. JWT secrets are stored in an
+      environment file readable only by the application user.
+    </p>
+
+    <h2>9. Your rights</h2>
+    <p>
+      You may request deletion of your account data by contacting the operator
+      directly. Because this is a private service, formal regulatory data
+      requests should also be directed to the operator.
+    </p>
+
+    <h2>10. Changes to this policy</h2>
+    <p>
+      We may update this policy from time to time. Continued use of the service
+      after changes constitutes acceptance of the updated policy. The effective
+      date at the top of this page reflects the most recent revision.
+    </p>
+
+    <hr />
+
+    <footer>
+      &copy; 2026 Travel Companion &nbsp;·&nbsp;
+      <a href="/tos.html">Terms of Service</a>
+    </footer>
+  </div>
+</body>
+</html>
