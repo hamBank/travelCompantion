@@ -182,9 +182,10 @@ function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
           </select>
         </div>
       </div>
+      <Field label="Date & Time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v }))} />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€60" />
-        <Field label="Time" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="19:30" />
+        <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Dietary needs…" />
       </div>
     </div>
   )
@@ -287,6 +288,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
     cost: item.cost ?? '',
     link: item.link ?? '',
     notes: item.notes ?? '',
+    scheduled_at: item.scheduled_at ? item.scheduled_at.slice(0, 16) : '',
   })
   const [details, setDetails] = useState(item.details ?? {})
   const [saving, setSaving] = useState(false)
