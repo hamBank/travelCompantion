@@ -103,8 +103,8 @@ if [[ ! -d "$VENV" ]]; then
 fi
 
 info "Installing Python dependencies"
-sudo -u "$APP_USER" "$VENV/bin/pip" install -q --upgrade pip
-sudo -u "$APP_USER" "$VENV/bin/pip" install -q -r "$APP_DIR/backend/requirements.txt"
+sudo -u "$APP_USER" "$VENV/bin/pip" install -q --no-cache-dir --upgrade pip
+sudo -u "$APP_USER" "$VENV/bin/pip" install -q --no-cache-dir -r "$APP_DIR/backend/requirements.txt"
 ok "Python dependencies installed"
 
 # ── 5. Frontend build ──────────────────────────────────────────────────────────
