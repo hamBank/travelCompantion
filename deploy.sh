@@ -30,6 +30,10 @@ BIND_PORT="8000"
 UPDATE_ONLY=false
 [[ "${1:-}" == "--update" ]] && UPDATE_ONLY=true
 
+# Remember if the service was already running before we touch anything
+_WAS_RUNNING=false
+systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && _WAS_RUNNING=true
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 info()  { echo -e "\033[1;34m▶\033[0m $*"; }
 ok()    { echo -e "\033[1;32m✓\033[0m $*"; }
@@ -217,7 +221,7 @@ else
 fi
 
 # ── 9. (Re)start service ───────────────────────────────────────────────────────
-if $UPDATE_ONLY; then
+if $UPDATE_ONLY || $_WAS_RUNNING; then
   info "Restarting $SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
   sleep 2
