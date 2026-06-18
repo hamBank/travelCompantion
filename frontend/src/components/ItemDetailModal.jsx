@@ -144,18 +144,61 @@ function ActivityBody({ item }) {
 }
 
 function RestaurantBody({ item }) {
+  const d = item.details ?? {}
   return (
-    <div className="space-y-0">
-      {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
-      {item.notes && <Row label="Notes">{item.notes}</Row>}
-      {item.link && (
-        <Row label="Link">
-          <a href={item.link} target="_blank" rel="noreferrer"
-             style={{ color: 'var(--accent)' }} className="hover:underline break-all">{item.link}</a>
-        </Row>
+    <>
+      <div className="space-y-0">
+        {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
+        {item.notes && <Row label="Time / Notes">{item.notes}</Row>}
+        {d.location && (
+          <Row label="Address">
+            <a href={mapsUrl(d.location)} target="_blank" rel="noreferrer"
+               style={{ color: 'var(--accent)' }} className="hover:underline">
+              {d.location}
+            </a>
+          </Row>
+        )}
+        {d.contact_phone && (
+          <Row label="Phone">
+            <a href={`tel:${d.contact_phone}`} style={{ color: 'var(--accent)' }} className="hover:underline">
+              {d.contact_phone}
+            </a>
+          </Row>
+        )}
+        {item.link && (
+          <Row label="Website">
+            <a href={item.link} target="_blank" rel="noreferrer"
+               style={{ color: 'var(--accent)' }} className="hover:underline break-all">{item.link}</a>
+          </Row>
+        )}
+      </div>
+      {(d.booking_status || d.booking_ref || item.cost) && (
+        <div
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
+          className="p-3 mt-4 space-y-1.5"
+        >
+          <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2 font-medium">Booking</p>
+          {d.booking_status && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-faint)' }}>Status</span>
+              <span className="capitalize">{d.booking_status}</span>
+            </div>
+          )}
+          {d.booking_ref && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-faint)' }}>Ref</span>
+              <span>{d.booking_ref}</span>
+            </div>
+          )}
+          {item.cost && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-faint)' }}>Cost</span>
+              <span>{item.cost}</span>
+            </div>
+          )}
+        </div>
       )}
-      {item.cost && <Row label="Cost">{item.cost}</Row>}
-    </div>
+    </>
   )
 }
 
