@@ -108,6 +108,74 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
   )
 }
 
+const BOOKING_STATUS = ['planned', 'booked', 'confirmed']
+
+function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
+  const [enriching, setEnriching] = useState(false)
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+
+  async function autoFill() {
+    if (enriching) return
+    setEnriching(true)
+    try {
+      const suggestions = await enrichItem(itemId)
+      if (suggestions.location && !details.location) setD('location', suggestions.location)
+      if (suggestions.contact_phone && !details.contact_phone) setD('contact_phone', suggestions.contact_phone)
+      if (suggestions.website && !core.link) setCore(c => ({ ...c, link: suggestions.website }))
+    } catch {
+      // silently ignore — Places API may not be configured
+    } finally {
+      setEnriching(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Trattoria da Mario" />
+        </div>
+        <button
+          type="button"
+          onClick={autoFill}
+          disabled={enriching}
+          style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
+          className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+          title="Auto-fill empty fields from Google Places"
+        >
+          {enriching ? '…' : 'Auto-fill'}
+        </button>
+      </div>
+      <Field label="Address" value={d('location')} onChange={v => setD('location', v)} placeholder="Via della Croce 3, Rome" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+39 06 123456" />
+        <Field label="Website" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="OpenTable #123" />
+        <div className="flex flex-col gap-0.5">
+          <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Booking status</label>
+          <select
+            value={d('booking_status') || 'planned'}
+            onChange={e => setD('booking_status', e.target.value)}
+            style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+            className="rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)] capitalize"
+          >
+            {BOOKING_STATUS.map(s => (
+              <option key={s} value={s} style={{ background: 'var(--modal-bg)' }}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€60" />
+        <Field label="Time" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="19:30" />
+      </div>
+    </div>
+  )
+}
+
 function FlightForm({ core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
@@ -266,6 +334,8 @@ export default function ItemEditModal({ item, onSave, onClose }) {
         <div className="flex-1 overflow-y-auto p-5">
           {core.kind === 'accommodation' ? (
             <AccommodationForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'restaurant' ? (
+            <RestaurantForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'flight' ? (
             <FlightForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : (
