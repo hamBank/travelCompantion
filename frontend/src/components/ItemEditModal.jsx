@@ -50,22 +50,48 @@ function SectionBox({ label, children }) {
   )
 }
 
+function AutoFillButton({ enriching, enrichMsg, onClick }) {
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={enriching}
+        style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
+        className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+        title="Auto-fill empty fields from Google Places"
+      >
+        {enriching ? '…' : 'Auto-fill'}
+      </button>
+      {enrichMsg && (
+        <span className="text-xs" style={{ color: enrichMsg.color }}>{enrichMsg.text}</span>
+      )}
+    </div>
+  )
+}
+
 function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
   const [enriching, setEnriching] = useState(false)
+  const [enrichMsg, setEnrichMsg] = useState(null)
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
 
   async function autoFill() {
     if (enriching) return
     setEnriching(true)
+    setEnrichMsg(null)
     try {
       const suggestions = await enrichItem(itemId)
-      if (suggestions.location && !details.location) setD('location', suggestions.location)
-      if (suggestions.contact_phone && !details.contact_phone) setD('contact_phone', suggestions.contact_phone)
-      if (suggestions.website && !core.link) setCore(c => ({ ...c, link: suggestions.website }))
-      if (suggestions.description && !details.description) setD('description', suggestions.description)
-    } catch {
-      // silently ignore — Places API may not be configured
+      let filled = 0
+      if (suggestions.location && !details.location) { setD('location', suggestions.location); filled++ }
+      if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
+      if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
+      if (suggestions.description && !details.description) { setD('description', suggestions.description); filled++ }
+      setEnrichMsg(filled
+        ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
+        : { text: 'Nothing to add', color: 'var(--text-faint)' })
+    } catch (e) {
+      setEnrichMsg({ text: e.message, color: 'var(--error)' })
     } finally {
       setEnriching(false)
     }
@@ -77,16 +103,7 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
         <div className="flex-1">
           <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Hotel Roma" />
         </div>
-        <button
-          type="button"
-          onClick={autoFill}
-          disabled={enriching}
-          style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
-          className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
-          title="Auto-fill empty fields from Google Places"
-        >
-          {enriching ? '…' : 'Auto-fill'}
-        </button>
+        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
       </div>
       <Field label="Location / Address" value={d('location')} onChange={v => setD('location', v)} placeholder="Via Nazionale 7, Rome" />
       <div className="grid grid-cols-2 gap-3">
@@ -112,19 +129,25 @@ const BOOKING_STATUS = ['planned', 'booked', 'confirmed']
 
 function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
   const [enriching, setEnriching] = useState(false)
+  const [enrichMsg, setEnrichMsg] = useState(null)
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
 
   async function autoFill() {
     if (enriching) return
     setEnriching(true)
+    setEnrichMsg(null)
     try {
       const suggestions = await enrichItem(itemId)
-      if (suggestions.location && !details.location) setD('location', suggestions.location)
-      if (suggestions.contact_phone && !details.contact_phone) setD('contact_phone', suggestions.contact_phone)
-      if (suggestions.website && !core.link) setCore(c => ({ ...c, link: suggestions.website }))
-    } catch {
-      // silently ignore — Places API may not be configured
+      let filled = 0
+      if (suggestions.location && !details.location) { setD('location', suggestions.location); filled++ }
+      if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
+      if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
+      setEnrichMsg(filled
+        ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
+        : { text: 'Nothing to add', color: 'var(--text-faint)' })
+    } catch (e) {
+      setEnrichMsg({ text: e.message, color: 'var(--error)' })
     } finally {
       setEnriching(false)
     }
@@ -136,16 +159,7 @@ function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
         <div className="flex-1">
           <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Trattoria da Mario" />
         </div>
-        <button
-          type="button"
-          onClick={autoFill}
-          disabled={enriching}
-          style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
-          className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
-          title="Auto-fill empty fields from Google Places"
-        >
-          {enriching ? '…' : 'Auto-fill'}
-        </button>
+        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
       </div>
       <Field label="Address" value={d('location')} onChange={v => setD('location', v)} placeholder="Via della Croce 3, Rome" />
       <div className="grid grid-cols-2 gap-3">
