@@ -298,8 +298,9 @@ function RestaurantCard({ item: initial }) {
               {d.location && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{d.location}</div>
               )}
-              {(item.notes || d.booking_ref || item.cost) && (
+              {(item.scheduled_at || item.notes || d.booking_ref || item.cost) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                  {item.scheduled_at && <span>{fmtDateTime(item.scheduled_at)}</span>}
                   {item.notes && <span>{item.notes}</span>}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                   {item.cost && <span>{item.cost}</span>}
