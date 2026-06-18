@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { updateItem } from '../api.js'
+import { updateItem, enrichItem } from '../api.js'
 
 const KIND_VAR = {
   activity:      'var(--kind-activity)',
@@ -50,12 +50,44 @@ function SectionBox({ label, children }) {
   )
 }
 
-function AccommodationForm({ core, details, setCore, setDetails }) {
+function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
+  const [enriching, setEnriching] = useState(false)
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+
+  async function autoFill() {
+    if (enriching) return
+    setEnriching(true)
+    try {
+      const suggestions = await enrichItem(itemId)
+      if (suggestions.location && !details.location) setD('location', suggestions.location)
+      if (suggestions.contact_phone && !details.contact_phone) setD('contact_phone', suggestions.contact_phone)
+      if (suggestions.website && !core.link) setCore(c => ({ ...c, link: suggestions.website }))
+      if (suggestions.description && !details.description) setD('description', suggestions.description)
+    } catch {
+      // silently ignore — Places API may not be configured
+    } finally {
+      setEnriching(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Hotel Roma" />
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Hotel Roma" />
+        </div>
+        <button
+          type="button"
+          onClick={autoFill}
+          disabled={enriching}
+          style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
+          className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+          title="Auto-fill empty fields from Google Places"
+        >
+          {enriching ? '…' : 'Auto-fill'}
+        </button>
+      </div>
       <Field label="Location / Address" value={d('location')} onChange={v => setD('location', v)} placeholder="Via Nazionale 7, Rome" />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Check-in" type="datetime-local" value={d('checkin')} onChange={v => setD('checkin', v)} />
@@ -233,7 +265,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
 
         <div className="flex-1 overflow-y-auto p-5">
           {core.kind === 'accommodation' ? (
-            <AccommodationForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
+            <AccommodationForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'flight' ? (
             <FlightForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : (
