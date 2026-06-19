@@ -63,6 +63,9 @@ export const lookupAirline = (iata) => req(`/flights/airline-lookup?iata=${encod
 export const fetchRouteElevation = (lat1, lng1, lat2, lng2) =>
   req(`/route-elevation?lat1=${lat1}&lng1=${lng1}&lat2=${lat2}&lng2=${lng2}`)
 
+export const fetchGeocode = (q) =>
+  req(`/geocode?q=${encodeURIComponent(q)}`)
+
 export async function uploadGpx(id, file) {
   const token = getToken()
   const form = new FormData()

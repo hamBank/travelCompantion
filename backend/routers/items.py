@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 from sqlalchemy import nullslast
 from typing import List
-import os, io, math, xml.etree.ElementTree as ET, httpx
+import os, io, math, time, xml.etree.ElementTree as ET, httpx
 from ..database import get_session
 from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, Stop
 
@@ -411,6 +411,23 @@ def check_rail(item_id: int, session: Session = Depends(get_session)):
         "train_number": line.get("name") or train_number,
         "checks": results,
     }
+
+
+_NOMINATIM = "https://nominatim.openstreetmap.org/search"
+_NOMINATIM_HEADERS = {"User-Agent": "TravelCompanion/1.0 (personal travel planner)"}
+
+@router.get("/geocode")
+def geocode(q: str):
+    """Resolve a place name to coordinates via Nominatim (OSM, free, no key)."""
+    try:
+        with httpx.Client(timeout=8, headers=_NOMINATIM_HEADERS) as client:
+            r = client.get(_NOMINATIM, params={"q": q, "format": "json", "limit": 1})
+            results = r.json()
+        if results:
+            return {"lat": float(results[0]["lat"]), "lng": float(results[0]["lon"]), "display": results[0].get("display_name", q)}
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail=f"Could not geocode: {q}")
 
 
 @router.get("/route-elevation")
