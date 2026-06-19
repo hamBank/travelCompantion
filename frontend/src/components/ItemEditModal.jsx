@@ -8,6 +8,7 @@ const KIND_VAR = {
   accommodation: 'var(--kind-accommodation)',
   flight:        'var(--kind-flight)',
   cycling:       'var(--kind-cycling)',
+  rail:          'var(--kind-rail)',
 }
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
@@ -396,8 +397,65 @@ function GenericForm({ core, setCore }) {
 }
 
 export const KIND_LABEL = {
-  activity: 'Activity', restaurant: 'Restaurant', note: 'Note',
-  accommodation: 'Accommodation', flight: 'Flight', cycling: 'Cycling',
+  activity: 'Activity', cycling: 'Cycling', rail: 'Rail',
+  restaurant: 'Restaurant', note: 'Note',
+  accommodation: 'Accommodation', flight: 'Flight',
+}
+
+function RailForm({ core, details, setCore, setDetails }) {
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  return (
+    <div className="space-y-4">
+      <Field label="Label" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="London → Paris" />
+      <SectionBox label="Route">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="From station" value={d('origin')} onChange={v => setD('origin', v)} placeholder="London St Pancras" />
+          <Field label="To station"   value={d('destination')} onChange={v => setD('destination', v)} placeholder="Paris Gare du Nord" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Train number" value={d('train_number')} onChange={v => setD('train_number', v)} placeholder="9057" />
+          <Field label="Operator"     value={d('operator')} onChange={v => setD('operator', v)} placeholder="Eurostar" />
+        </div>
+      </SectionBox>
+      <SectionBox label="Schedule">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setD('depart_time', v)} />
+          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setD('arrive_time', v)} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Dep platform" value={d('depart_platform')} onChange={v => setD('depart_platform', v)} placeholder="Platform 2" />
+          <Field label="Arr platform" value={d('arrive_platform')} onChange={v => setD('arrive_platform', v)} placeholder="Voie 8" />
+        </div>
+        <Field label="Duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="2h 16m" />
+      </SectionBox>
+      <SectionBox label="Service">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Class"  value={d('rail_class')} onChange={v => setD('rail_class', v)} placeholder="Business Premier" />
+          <Field label="Coach"  value={d('coach')}      onChange={v => setD('coach', v)}      placeholder="Coach 12" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Seats"  value={d('seats')}      onChange={v => setD('seats', v)}      placeholder="12A, 12B" />
+          <Field label="Meal"   value={d('meal')}       onChange={v => setD('meal', v)}       placeholder="Yes" />
+        </div>
+      </SectionBox>
+      <SectionBox label="Passengers">
+        <TextArea label="Names"           value={d('passengers')}  onChange={v => setD('passengers', v)}  placeholder="Antony Wuth, Nicole Wuth" />
+        <TextArea label="Loyalty numbers" value={d('loyalty_info')} onChange={v => setD('loyalty_info', v)} placeholder="Eurostar Plus points…" />
+      </SectionBox>
+      <SectionBox label="Booking">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="BKTX42" />
+          <Field label="Phone"       value={d('booking_phone')} onChange={v => setD('booking_phone', v)} placeholder="+44 3432 186186" />
+        </div>
+        <Field label="Booking URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Total cost"  value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€250" />
+          <Field label="Notes"       value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
+        </div>
+      </SectionBox>
+    </div>
+  )
 }
 
 const SURFACE_TYPES = ['road', 'gravel', 'sand', 'dirt']
@@ -611,6 +669,8 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             <ActivityForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'cycling' ? (
             <CyclingForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'rail' ? (
+            <RailForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'flight' ? (
             <FlightForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : (
