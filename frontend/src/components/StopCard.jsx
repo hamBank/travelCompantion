@@ -25,17 +25,15 @@ export default function StopCard({ stop, index, onUpdate }) {
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
 
-  const accom    = stop.items.find(i => i.kind === 'accommodation')
-  const flights  = stop.items.filter(i => i.kind === 'flight')
-  const activities = stop.items.filter(i => i.kind === 'activity')
-  const restaurants = stop.items.filter(i => i.kind === 'restaurant')
-  const notes    = stop.items.filter(i => i.kind === 'note')
+  const accom = stop.items.find(i => i.kind === 'accommodation')
 
   const sortKey = item => {
     const dt = item.kind === 'flight' ? item.details?.depart_time : item.scheduled_at
     return dt ? new Date(dt).getTime() : Infinity
   }
-  const timeline = [...flights, ...activities, ...restaurants, ...notes].sort((a, b) => sortKey(a) - sortKey(b))
+  const timeline = stop.items
+    .filter(i => i.kind !== 'accommodation')
+    .sort((a, b) => sortKey(a) - sortKey(b))
 
   const flag = countryFlag(stop.country)
 
