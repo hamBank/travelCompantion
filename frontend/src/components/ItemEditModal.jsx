@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { updateItem, enrichItem, uploadGpx } from '../api.js'
+import { updateItem, enrichItem, uploadGpx, lookupAirline } from '../api.js'
 
 const KIND_VAR = {
   activity:      'var(--kind-activity)',
@@ -224,6 +224,25 @@ function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
 function FlightForm({ core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  const [lookupBusy, setLookupBusy] = useState(false)
+  const [lookupMsg, setLookupMsg]   = useState(null)
+
+  async function doAirlineLookup() {
+    const flightNum = d('flight_number').trim()
+    const m = flightNum.match(/^([A-Z]{2}|[A-Z][0-9]|[0-9][A-Z])/i)
+    if (!m) { setLookupMsg({ text: 'Enter a flight number first (e.g. AY 132)', color: 'var(--error)' }); return }
+    setLookupBusy(true); setLookupMsg(null)
+    try {
+      const res = await lookupAirline(m[1].toUpperCase())
+      setD('airline', res.name)
+      setLookupMsg({ text: `✓ ${res.name}`, color: 'var(--success)' })
+    } catch (e) {
+      setLookupMsg({ text: e.message, color: 'var(--error)' })
+    } finally {
+      setLookupBusy(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Field label="Label" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="SIN → HEL" />
@@ -234,7 +253,29 @@ function FlightForm({ core, details, setCore, setDetails }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Flight number" value={d('flight_number')} onChange={v => setD('flight_number', v)} placeholder="AY 132" />
-          <Field label="Airline" value={d('airline')} onChange={v => setD('airline', v)} placeholder="Finnair" />
+          <div className="flex flex-col gap-0.5">
+            <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Airline</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={d('airline')}
+                onChange={e => setD('airline', e.target.value)}
+                placeholder="Finnair"
+                style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                className="flex-1 min-w-0 rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+              />
+              <button
+                type="button"
+                onClick={doAirlineLookup}
+                disabled={lookupBusy}
+                style={{ color: 'var(--kind-flight)', border: '1px solid color-mix(in srgb, var(--kind-flight) 35%, transparent)', background: 'color-mix(in srgb, var(--kind-flight) 8%, transparent)' }}
+                className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+              >
+                {lookupBusy ? '…' : 'Lookup'}
+              </button>
+            </div>
+            {lookupMsg && <span className="text-xs mt-0.5" style={{ color: lookupMsg.color }}>{lookupMsg.text}</span>}
+          </div>
         </div>
       </SectionBox>
       <SectionBox label="Schedule">

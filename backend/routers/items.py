@@ -164,6 +164,34 @@ def check_flight(item_id: int, session: Session = Depends(get_session)):
         "checks": results,
     }
 
+@router.get("/flights/airline-lookup")
+def airline_lookup(iata: str):
+    if not _AERODATABOX_KEY:
+        raise HTTPException(status_code=503, detail="Flight check not configured (set AERODATABOX_KEY)")
+    code = iata.strip().upper()[:2]
+    if len(code) < 2:
+        raise HTTPException(status_code=400, detail="Provide a 2-letter airline IATA code")
+    try:
+        with httpx.Client(timeout=10) as client:
+            r = client.get(
+                f"https://aerodatabox.p.rapidapi.com/airlines/{code}",
+                headers={
+                    "X-RapidAPI-Key":  _AERODATABOX_KEY,
+                    "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com",
+                },
+            )
+        body = r.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Airline API unreachable: {e}")
+    if not r.is_success:
+        detail = (body.get("message") if isinstance(body, dict) else None) or f"Airline {code} not found"
+        raise HTTPException(status_code=404 if r.status_code == 404 else 502, detail=detail)
+    name = (body.get("name") or body.get("shortName") or body.get("fullName")) if isinstance(body, dict) else None
+    if not name:
+        raise HTTPException(status_code=404, detail=f"Airline {code} not found")
+    return {"iata": code, "name": name}
+
+
 @router.get("/items/{item_id}/enrich")
 def enrich_item(item_id: int, session: Session = Depends(get_session)):
     if not _PLACES_KEY:
