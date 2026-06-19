@@ -376,6 +376,7 @@ function ActivityForm({ itemId, core, details, setCore, setDetails }) {
         </div>
         <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
       </div>
+      <Field label="Date & time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
       <Field label="Address" value={d('location')} onChange={v => setD('location', v)} placeholder="123 Main St, City" />
       <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+1 234 567 8900" />
       <Field label="Website" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
