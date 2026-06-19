@@ -415,32 +415,41 @@ function WalkForm({ core, details, setCore, setDetails }) {
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
     if (mapsUrl) { setD('maps_url', mapsUrl) }
 
-    // If coordinates weren't in the URL, try geocoding the place names
+    // If no coords at all in the URL, try geocoding the place names
     if (!res.startCoords && res.start) {
-      try { res.startCoords = await fetchGeocode(res.start) } catch {}
+      try { res.startCoords = await fetchGeocode(res.start) } catch (e) {
+        setMapsMsg({ text: `Geocode failed: ${e.message}`, color: 'var(--warning)' })
+      }
     }
     if (!res.endCoords && res.end) {
-      try { res.endCoords = await fetchGeocode(res.end) } catch {}
+      try { res.endCoords = await fetchGeocode(res.end) } catch (e) {
+        setMapsMsg({ text: `Geocode failed: ${e.message}`, color: 'var(--warning)' })
+      }
     }
 
-    if (res.startCoords && res.endCoords) {
-      if (!details.distance) {
-        const km = haversineKm(res.startCoords, res.endCoords)
-        setD('distance', `~${km.toFixed(1)} km`)
-        filled++
-      }
-      if (!details.elevation_gain && !details.elevation_loss) {
-        try {
-          const elev = await fetchRouteElevation(
-            res.startCoords.lat, res.startCoords.lng,
-            res.endCoords.lat, res.endCoords.lng,
-          )
-          const gain = Math.round(Math.max(0, elev.end_elevation - elev.start_elevation))
-          const loss = Math.round(Math.max(0, elev.start_elevation - elev.end_elevation))
-          if (gain > 0) { setD('elevation_gain', `${gain} m`); filled++ }
-          if (loss > 0) { setD('elevation_loss', `${loss} m`); filled++ }
-        } catch {}
-      }
+    if (!details.distance && res.allCoords?.length >= 2) {
+      // Sum haversine along all route waypoints for a better estimate than start→end straight-line
+      const km = res.allCoords.reduce((sum, c, i) =>
+        i === 0 ? 0 : sum + haversineKm(res.allCoords[i - 1], c), 0)
+      setD('distance', `~${km.toFixed(1)} km`)
+      filled++
+    } else if (!details.distance && res.startCoords && res.endCoords) {
+      const km = haversineKm(res.startCoords, res.endCoords)
+      setD('distance', `~${km.toFixed(1)} km`)
+      filled++
+    }
+
+    if (res.startCoords && res.endCoords && !details.elevation_gain && !details.elevation_loss) {
+      try {
+        const elev = await fetchRouteElevation(
+          res.startCoords.lat, res.startCoords.lng,
+          res.endCoords.lat, res.endCoords.lng,
+        )
+        const gain = Math.round(Math.max(0, elev.end_elevation - elev.start_elevation))
+        const loss = Math.round(Math.max(0, elev.start_elevation - elev.end_elevation))
+        if (gain > 0) { setD('elevation_gain', `${gain} m`); filled++ }
+        if (loss > 0) { setD('elevation_loss', `${loss} m`); filled++ }
+      } catch {}
     }
 
     setMapsMsg(filled
@@ -573,24 +582,25 @@ function parseMapsUrl(url) {
   try {
     const u = new URL(url)
     const coordRe = /^-?\d+\.?\d*,-?\d+\.?\d*$/
+    const toCoord  = raw => { const [lat, lng] = raw.split(',').map(Number); return { lat, lng } }
     const m = u.pathname.match(/\/maps\/dir\/(.+)/)
     if (m) {
       const parts = m[1].split('/').filter(p => p && !p.startsWith('@') && !p.startsWith('data'))
       if (parts.length >= 2) {
         const rawStart = parts[0]
         const rawEnd   = parts[parts.length - 1]
+        // Collect every coordinate waypoint in path order (may include start/end and intermediates)
+        const allCoords = parts.filter(p => coordRe.test(p)).map(toCoord)
         const result = {
           start: decodeURIComponent(rawStart.replace(/\+/g, ' ')),
           end:   decodeURIComponent(rawEnd.replace(/\+/g, ' ')),
+          allCoords,
         }
-        if (coordRe.test(rawStart)) {
-          const [lat, lng] = rawStart.split(',').map(Number)
-          result.startCoords = { lat, lng }
-        }
-        if (coordRe.test(rawEnd)) {
-          const [lat, lng] = rawEnd.split(',').map(Number)
-          result.endCoords = { lat, lng }
-        }
+        if (coordRe.test(rawStart)) result.startCoords = toCoord(rawStart)
+        if (coordRe.test(rawEnd))   result.endCoords   = toCoord(rawEnd)
+        // Named start/end: use nearest available coord waypoint as fallback
+        if (!result.startCoords && allCoords.length > 0) result.startCoords = allCoords[0]
+        if (!result.endCoords   && allCoords.length > 0) result.endCoords   = allCoords[allCoords.length - 1]
         return result
       }
     }
