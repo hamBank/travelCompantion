@@ -120,28 +120,38 @@ def check_flight(item_id: int, session: Session = Depends(get_session)):
 
     def hhmm_live(local_str):
         # AeroDataBox local time: "2025-07-15 11:45+08:00"
-        try:
-            return local_str[11:16] if local_str else None
+        try: return local_str[11:16] if local_str else None
         except: return None
 
-    def chk(label, stored, live_val):
+    def local_to_iso(local_str):
+        # "2025-07-15 11:45+08:00" → "2025-07-15T11:45"
+        try: return local_str[:16].replace(" ", "T") if local_str else None
+        except: return None
+
+    def chk(label, key, stored, live_val, update_val=None):
         if live_val is None:
             return None
         stored_s = (stored or "").strip()
         live_s   = live_val.strip()
         match = stored_s.upper() == live_s.upper() if stored_s else None
-        return {"field": label, "stored": stored_s or None, "live": live_s, "match": match}
+        return {
+            "field": label, "key": key,
+            "stored": stored_s or None, "live": live_s,
+            "update_value": (update_val or live_val).strip(),
+            "match": match,
+        }
+
+    dep_local = dep.get("scheduledTime", {}).get("local")
+    arr_local = arr.get("scheduledTime", {}).get("local")
 
     results = [c for c in [
-        chk("Origin",       d.get("origin"),          dep.get("airport", {}).get("iata")),
-        chk("Destination",  d.get("destination"),      arr.get("airport", {}).get("iata")),
-        chk("Airline",      d.get("airline"),          al.get("name")),
-        chk("Depart time",  hhmm_stored(d.get("depart_time")),
-                            hhmm_live(dep.get("scheduledTime", {}).get("local"))),
-        chk("Arrive time",  hhmm_stored(d.get("arrive_time")),
-                            hhmm_live(arr.get("scheduledTime", {}).get("local"))),
-        chk("Dep terminal", d.get("origin_terminal"),  dep.get("terminal")),
-        chk("Arr terminal", d.get("arrive_terminal"),  arr.get("terminal")),
+        chk("Origin",       "origin",          d.get("origin"),          dep.get("airport", {}).get("iata")),
+        chk("Destination",  "destination",     d.get("destination"),     arr.get("airport", {}).get("iata")),
+        chk("Airline",      "airline",         d.get("airline"),         al.get("name")),
+        chk("Depart time",  "depart_time",     hhmm_stored(d.get("depart_time")), hhmm_live(dep_local), local_to_iso(dep_local)),
+        chk("Arrive time",  "arrive_time",     hhmm_stored(d.get("arrive_time")), hhmm_live(arr_local), local_to_iso(arr_local)),
+        chk("Dep terminal", "origin_terminal", d.get("origin_terminal"), dep.get("terminal")),
+        chk("Arr terminal", "arrive_terminal", d.get("arrive_terminal"), arr.get("terminal")),
     ] if c]
 
     return {

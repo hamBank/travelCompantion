@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { checkFlight } from '../api.js'
+import { checkFlight, updateItem } from '../api.js'
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -31,22 +31,42 @@ const STATUS_COLOR = {
   diverted:  'var(--warning)',
 }
 
-function FlightCheckPanel({ itemId }) {
-  const [state, setState]   = useState('idle')  // idle | loading | done | error
-  const [result, setResult] = useState(null)
-  const [errMsg, setErrMsg] = useState(null)
+function FlightCheckPanel({ item, onItemUpdate }) {
+  const [state, setState]     = useState('idle')  // idle | loading | done | error
+  const [result, setResult]   = useState(null)
+  const [errMsg, setErrMsg]   = useState(null)
+  const [applying, setApplying] = useState(null)  // key being applied
 
   async function run() {
     setState('loading')
     setResult(null)
     setErrMsg(null)
     try {
-      const data = await checkFlight(itemId)
+      const data = await checkFlight(item.id)
       setResult(data)
       setState('done')
     } catch (e) {
       setErrMsg(e.message)
       setState('error')
+    }
+  }
+
+  async function applyField(c) {
+    setApplying(c.key)
+    try {
+      const newDetails = { ...item.details, [c.key]: c.update_value }
+      const updated = await updateItem(item.id, { details: newDetails })
+      onItemUpdate(updated)
+      setResult(prev => ({
+        ...prev,
+        checks: prev.checks.map(ch =>
+          ch.key === c.key ? { ...ch, match: true, stored: c.live } : ch
+        ),
+      }))
+    } catch (e) {
+      setErrMsg(e.message)
+    } finally {
+      setApplying(null)
     }
   }
 
@@ -133,11 +153,23 @@ function FlightCheckPanel({ itemId }) {
                 Live: {c.live}
               </div>
             </div>
-            <span className="shrink-0 text-base leading-none mt-0.5">
-              {c.match === true  && <span style={{ color: 'var(--success)' }}>✓</span>}
-              {c.match === false && <span style={{ color: 'var(--warning)' }}>!</span>}
-              {c.match === null  && <span style={{ color: 'var(--text-faint)' }}>–</span>}
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {c.match === false && (
+                <button
+                  onClick={() => applyField(c)}
+                  disabled={applying === c.key}
+                  style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
+                  className="px-1.5 py-0.5 rounded text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+                >
+                  {applying === c.key ? '…' : 'Apply'}
+                </button>
+              )}
+              <span className="text-base leading-none">
+                {c.match === true  && <span style={{ color: 'var(--success)' }}>✓</span>}
+                {c.match === false && <span style={{ color: 'var(--warning)' }}>!</span>}
+                {c.match === null  && <span style={{ color: 'var(--text-faint)' }}>–</span>}
+              </span>
+            </div>
           </div>
         ))}
       </div>
@@ -145,8 +177,14 @@ function FlightCheckPanel({ itemId }) {
   )
 }
 
-export default function FlightDetailModal({ item, onClose }) {
+export default function FlightDetailModal({ item: initialItem, onClose, onSave }) {
+  const [item, setItem] = useState(initialItem)
   const d = item.details ?? {}
+
+  function onItemUpdate(updated) {
+    setItem(updated)
+    onSave?.(updated)
+  }
 
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
@@ -186,7 +224,7 @@ export default function FlightDetailModal({ item, onClose }) {
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {d.flight_number && <FlightCheckPanel itemId={item.id} />}
+            {d.flight_number && <FlightCheckPanel item={item} onItemUpdate={onItemUpdate} />}
             <button
               onClick={onClose}
               style={{ color: 'var(--text-faint)' }}

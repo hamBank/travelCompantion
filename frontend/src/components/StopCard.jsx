@@ -179,7 +179,7 @@ function FlightCard({ item: initial }) {
           ✎
         </button>
       </div>
-      {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => setItem(updated)} />}
       {showEdit && (
         <ItemEditModal
           item={item}
