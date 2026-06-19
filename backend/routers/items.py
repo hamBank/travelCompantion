@@ -69,11 +69,12 @@ _PLACES_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 _PLACES_BASE = "https://maps.googleapis.com/maps/api/place"
 
 _AVIATIONSTACK_KEY = os.getenv("AVIATIONSTACK_KEY", "")
+_AERODATABOX_KEY   = os.getenv("AERODATABOX_KEY", "")
 
 @router.get("/items/{item_id}/flight-check")
 def check_flight(item_id: int, session: Session = Depends(get_session)):
-    if not _AVIATIONSTACK_KEY:
-        raise HTTPException(status_code=503, detail="Flight check not configured (set AVIATIONSTACK_KEY)")
+    if not _AERODATABOX_KEY:
+        raise HTTPException(status_code=503, detail="Flight check not configured (set AERODATABOX_KEY)")
     item = session.get(ItineraryItem, item_id)
     if not item or item.kind != "flight":
         raise HTTPException(status_code=404, detail="Flight item not found")
@@ -83,24 +84,28 @@ def check_flight(item_id: int, session: Session = Depends(get_session)):
     if not flight_iata:
         raise HTTPException(status_code=400, detail="No flight number stored")
 
-    params = {"access_key": _AVIATIONSTACK_KEY, "flight_iata": flight_iata}
-    if d.get("depart_time"):
-        params["flight_date"] = d["depart_time"][:10]
+    dep_date = (d.get("depart_time") or "")[:10]
+    if not dep_date:
+        raise HTTPException(status_code=400, detail="No departure date stored")
 
     try:
         with httpx.Client(timeout=12) as client:
-            r = client.get("http://api.aviationstack.com/v1/flights", params=params)
+            r = client.get(
+                f"https://aerodatabox.p.rapidapi.com/flights/number/{flight_iata}/{dep_date}",
+                headers={
+                    "X-RapidAPI-Key":  _AERODATABOX_KEY,
+                    "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com",
+                },
+            )
         body = r.json()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Flight API unreachable: {e}")
 
-    # AviationStack returns errors either as HTTP 4xx or as a 200 with {"error": {...}}
-    if not r.is_success or body.get("error"):
-        err = body.get("error", {})
-        msg = err.get("info") or err.get("message") or f"API returned {r.status_code}"
+    if not r.is_success:
+        msg = body.get("message") or body.get("detail") or f"API returned {r.status_code}"
         raise HTTPException(status_code=502, detail=msg)
 
-    flights = body.get("data", [])
+    flights = body if isinstance(body, list) else body.get("data", [])
     if not flights:
         return {"found": False, "flight_iata": flight_iata, "checks": []}
 
@@ -109,8 +114,14 @@ def check_flight(item_id: int, session: Session = Depends(get_session)):
     arr  = live.get("arrival", {})
     al   = live.get("airline", {})
 
-    def hhmm(iso):
+    def hhmm_stored(iso):
         try: return iso[11:16] if iso else None
+        except: return None
+
+    def hhmm_live(local_str):
+        # AeroDataBox local time: "2025-07-15 11:45+08:00"
+        try:
+            return local_str[11:16] if local_str else None
         except: return None
 
     def chk(label, stored, live_val):
@@ -122,11 +133,13 @@ def check_flight(item_id: int, session: Session = Depends(get_session)):
         return {"field": label, "stored": stored_s or None, "live": live_s, "match": match}
 
     results = [c for c in [
-        chk("Origin",       d.get("origin"),          dep.get("iata")),
-        chk("Destination",  d.get("destination"),      arr.get("iata")),
+        chk("Origin",       d.get("origin"),          dep.get("airport", {}).get("iata")),
+        chk("Destination",  d.get("destination"),      arr.get("airport", {}).get("iata")),
         chk("Airline",      d.get("airline"),          al.get("name")),
-        chk("Depart time",  hhmm(d.get("depart_time")), hhmm(dep.get("scheduled"))),
-        chk("Arrive time",  hhmm(d.get("arrive_time")), hhmm(arr.get("scheduled"))),
+        chk("Depart time",  hhmm_stored(d.get("depart_time")),
+                            hhmm_live(dep.get("scheduledTime", {}).get("local"))),
+        chk("Arrive time",  hhmm_stored(d.get("arrive_time")),
+                            hhmm_live(arr.get("scheduledTime", {}).get("local"))),
         chk("Dep terminal", d.get("origin_terminal"),  dep.get("terminal")),
         chk("Arr terminal", d.get("arrive_terminal"),  arr.get("terminal")),
     ] if c]
@@ -134,7 +147,7 @@ def check_flight(item_id: int, session: Session = Depends(get_session)):
     return {
         "found": True,
         "flight_iata": flight_iata,
-        "flight_status": live.get("flight_status"),
+        "flight_status": live.get("status"),
         "checks": results,
     }
 
