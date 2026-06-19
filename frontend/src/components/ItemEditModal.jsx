@@ -414,6 +414,7 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
   return (
     <div className="space-y-4">
       <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Morning gravel ride" />
+      <Field label="Start time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
 
       <SectionBox label="Import from Google Maps">
         <div className="flex gap-2">
