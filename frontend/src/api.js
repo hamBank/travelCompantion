@@ -55,7 +55,8 @@ export const deleteItem = (id) => req(`/items/${id}`, { method: 'DELETE' })
 export const updateItemStatus = (id, status) => updateItem(id, { status })
 export const updateStopStatus = (id, status) => updateStop(id, { status })
 
-export const enrichItem = (id) => req(`/items/${id}/enrich`)
+export const enrichItem  = (id) => req(`/items/${id}/enrich`)
+export const checkFlight = (id) => req(`/items/${id}/flight-check`)
 
 export async function uploadGpx(id, file) {
   const token = getToken()
