@@ -413,6 +413,25 @@ def check_rail(item_id: int, session: Session = Depends(get_session)):
     }
 
 
+@router.get("/route-elevation")
+def route_elevation(lat1: float, lng1: float, lat2: float, lng2: float):
+    """Return SRTM elevations at two coordinates using OpenTopoData (free, no key)."""
+    locations = f"{lat1},{lng1}|{lat2},{lng2}"
+    try:
+        with httpx.Client(timeout=10) as client:
+            r = client.post(_TOPO_API, json={"locations": locations})
+            r.raise_for_status()
+            results = r.json().get("results", [])
+        if len(results) >= 2 and all(res.get("elevation") is not None for res in results[:2]):
+            return {
+                "start_elevation": results[0]["elevation"],
+                "end_elevation":   results[1]["elevation"],
+            }
+    except Exception:
+        pass
+    raise HTTPException(status_code=503, detail="Elevation lookup unavailable")
+
+
 @router.get("/items/{item_id}/enrich")
 def enrich_item(item_id: int, session: Session = Depends(get_session)):
     if not _PLACES_KEY:
