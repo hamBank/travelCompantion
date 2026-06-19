@@ -1,5 +1,94 @@
 import { useEffect, useState } from 'react'
-import { checkRail, updateItem } from '../api.js'
+import { updateItem } from '../api.js'
+
+const DB_HOSTS = ['https://v6.db.transport.rest', 'https://v5.db.transport.rest']
+
+function hhmm(iso) { try { return iso ? iso.slice(11, 16) : null } catch { return null } }
+function isoTrim(iso) { try { return iso ? iso.slice(0, 16) : null } catch { return null } }
+
+function mkChk(field, key, stored, live, updateValue) {
+  if (live == null) return null
+  const storedS = (stored || '').trim()
+  const liveS   = String(live).trim()
+  const match   = storedS ? storedS.toLowerCase() === liveS.toLowerCase() : null
+  const upd     = (updateValue ?? live)
+  return { field, key, stored: storedS || null, live: liveS, update_value: typeof upd === 'string' ? upd.trim() : String(upd), match }
+}
+
+async function liveRailCheck(item) {
+  const d = item.details ?? {}
+  const trainNumber = (d.train_number || '').trim()
+  const originName  = (d.origin || '').trim()
+  if (!trainNumber) throw new Error('No train number stored')
+  if (!originName)  throw new Error('No origin station stored — add it in the edit form first')
+
+  const trainKey = trainNumber.replace(/\s/g, '').toUpperCase()
+  let lastErr = 'DB REST API temporarily unavailable — try again later'
+
+  for (const host of DB_HOSTS) {
+    try {
+      const locRes = await fetch(`${host}/locations?` + new URLSearchParams({ query: originName, results: 3, stops: true, language: 'en' }))
+      if (locRes.status === 503 || !locRes.ok) { lastErr = `API unavailable (${host})`; continue }
+      const locs = await locRes.json()
+      if (!locs?.length) return { found: false, train_number: trainNumber, checks: [] }
+
+      const stopId   = locs[0].id
+      const stopName = locs[0].name || originName
+
+      const depP = new URLSearchParams({ results: 30, duration: 20, language: 'en', stopovers: false })
+      if (d.depart_time) depP.set('when', d.depart_time)
+      const depRes = await fetch(`${host}/stops/${stopId}/departures?${depP}`)
+      if (!depRes.ok) { lastErr = `Departures failed (${depRes.status})`; continue }
+      const depBody = await depRes.json()
+
+      const deps = depBody.departures ?? (Array.isArray(depBody) ? depBody : [])
+      const dep  = deps.find(x => (x.line?.name || '').replace(/\s/g, '').toUpperCase() === trainKey)
+      if (!dep) return { found: false, train_number: trainNumber, checks: [] }
+
+      const line        = dep.line ?? {}
+      const depPlanned  = dep.plannedWhen
+      const depPlatform = dep.plannedPlatform ?? dep.platform
+      const operatorNm  = line.operator?.name ?? null
+      const tripId      = dep.tripId
+
+      let arrPlanned = null, arrPlatform = null, destName = null
+      if (tripId) {
+        try {
+          const tRes = await fetch(`${host}/trips/${encodeURIComponent(tripId)}?stopovers=true&language=en`)
+          if (tRes.ok) {
+            const stopovers  = (await tRes.json()).trip?.stopovers ?? []
+            const destStored = (d.destination || '').trim().toUpperCase()
+            for (const sv of stopovers) {
+              const svName = sv.stop?.name ?? ''
+              if (destStored && svName.toUpperCase().includes(destStored)) {
+                arrPlanned = sv.plannedArrival; arrPlatform = sv.plannedArrivalPlatform ?? sv.arrivalPlatform; destName = svName; break
+              }
+            }
+            if (!arrPlanned && stopovers.length) {
+              const last = stopovers[stopovers.length - 1]
+              arrPlanned = last.plannedArrival; arrPlatform = last.plannedArrivalPlatform ?? last.arrivalPlatform; destName = last.stop?.name
+            }
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      return {
+        found: true,
+        train_number: line.name || trainNumber,
+        checks: [
+          mkChk('Origin',       'origin',          d.origin,          stopName),
+          mkChk('Destination',  'destination',     d.destination,     destName),
+          mkChk('Operator',     'operator',        d.operator,        operatorNm),
+          mkChk('Depart time',  'depart_time',     hhmm(d.depart_time), hhmm(depPlanned), isoTrim(depPlanned)),
+          mkChk('Arrive time',  'arrive_time',     hhmm(d.arrive_time), hhmm(arrPlanned), isoTrim(arrPlanned)),
+          mkChk('Dep platform', 'depart_platform', d.depart_platform, depPlatform),
+          mkChk('Arr platform', 'arrive_platform', d.arrive_platform, arrPlatform),
+        ].filter(Boolean),
+      }
+    } catch (e) { lastErr = e.message; continue }
+  }
+  throw new Error(lastErr)
+}
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -31,7 +120,7 @@ function RailCheckPanel({ item, onItemUpdate }) {
   async function run() {
     setState('loading'); setResult(null); setErrMsg(null)
     try {
-      const data = await checkRail(item.id)
+      const data = await liveRailCheck(item)
       setResult(data); setState('done')
     } catch (e) {
       setErrMsg(e.message); setState('error')
