@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 from sqlalchemy import nullslast
 from typing import List
-import os, math, xml.etree.ElementTree as ET, httpx
+import os, io, math, xml.etree.ElementTree as ET, httpx
 from ..database import get_session
 from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, Stop
 
@@ -115,6 +115,90 @@ def enrich_item(item_id: int, session: Session = Depends(get_session)):
     return suggestions
 
 
+# ── Elevation enrichment ───────────────────────────────────────────────────────
+
+_TOPO_API = "https://api.opentopodata.org/v1/srtm90m"
+_TOPO_MAX = 100  # API limit per request
+
+def _has_elevation(content: bytes) -> bool:
+    try:
+        root = ET.fromstring(content)
+        ns = root.tag.split('}')[0].lstrip('{') if '}' in root.tag else ''
+        pfx = f'{{{ns}}}' if ns else ''
+        for pt in root.findall(f'.//{pfx}trkpt'):
+            el = pt.find(f'{pfx}ele')
+            if el is not None and el.text and el.text.strip():
+                return True
+    except Exception:
+        pass
+    return False
+
+def _add_elevation_to_gpx(content: bytes) -> bytes:
+    """Fetch SRTM elevation for track points and inject <ele> tags."""
+    try:
+        # Register all namespaces so re-serialisation preserves prefixes
+        for _, (ns_prefix, uri) in ET.iterparse(io.BytesIO(content), events=['start-ns']):
+            ET.register_namespace(ns_prefix, uri)
+
+        root = ET.fromstring(content)
+        ns = root.tag.split('}')[0].lstrip('{') if '}' in root.tag else ''
+        pfx = f'{{{ns}}}' if ns else ''
+        pts = root.findall(f'.//{pfx}trkpt')
+        if len(pts) < 2:
+            return content
+
+        n = len(pts)
+        stride = max(1, n // (_TOPO_MAX - 1))
+        sample_idxs = list(range(0, n, stride))[: _TOPO_MAX - 1]
+        if sample_idxs[-1] != n - 1:
+            sample_idxs.append(n - 1)
+
+        locs = [{"latitude": float(pts[i].get('lat')), "longitude": float(pts[i].get('lon'))}
+                for i in sample_idxs]
+
+        with httpx.Client(timeout=25) as client:
+            resp = client.post(_TOPO_API, json={"locations": locs})
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+
+        raw_eles = [r.get("elevation") for r in results]
+        ele_at = {sample_idxs[j]: raw_eles[j]
+                  for j in range(min(len(raw_eles), len(sample_idxs)))
+                  if raw_eles[j] is not None}
+        if not ele_at:
+            return content
+
+        keys = sorted(ele_at.keys())
+        all_eles = [None] * n
+
+        # fill before first sample
+        for i in range(keys[0]):
+            all_eles[i] = ele_at[keys[0]]
+
+        # interpolate between samples
+        for ki in range(len(keys) - 1):
+            i0, i1 = keys[ki], keys[ki + 1]
+            e0, e1 = ele_at[i0], ele_at[i1]
+            span = i1 - i0
+            for i in range(i0, i1 + 1):
+                all_eles[i] = round(e0 + (e1 - e0) * (i - i0) / span, 1)
+
+        # inject <ele> into each trkpt
+        for i, pt in enumerate(pts):
+            if all_eles[i] is None:
+                continue
+            ele_el = pt.find(f'{pfx}ele')
+            if ele_el is None:
+                ele_el = ET.SubElement(pt, f'{pfx}ele')
+            ele_el.text = str(all_eles[i])
+
+        xml_body = ET.tostring(root, encoding='unicode')
+        return b'<?xml version="1.0" encoding="UTF-8"?>\n' + xml_body.encode('utf-8')
+
+    except Exception:
+        return content  # non-fatal: return original if anything fails
+
+
 # ── GPX helpers ────────────────────────────────────────────────────────────────
 
 def _haversine(lat1, lon1, lat2, lon2):
@@ -170,6 +254,8 @@ async def upload_gpx(item_id: int, file: UploadFile = File(...), session: Sessio
     if not item or item.kind != "cycling":
         raise HTTPException(status_code=404, detail="Cycling item not found")
     content = await file.read()
+    if not _has_elevation(content):
+        content = _add_elevation_to_gpx(content)
     os.makedirs(_GPX_DIR, exist_ok=True)
     with open(os.path.join(_GPX_DIR, f"{item_id}.gpx"), 'wb') as f:
         f.write(content)
