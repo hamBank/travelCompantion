@@ -87,13 +87,17 @@ def check_flight(item_id: int, session: Session = Depends(get_session)):
     if d.get("depart_time"):
         params["flight_date"] = d["depart_time"][:10]
 
-    with httpx.Client(timeout=12) as client:
-        r = client.get("http://api.aviationstack.com/v1/flights", params=params)
-        r.raise_for_status()
+    try:
+        with httpx.Client(timeout=12) as client:
+            r = client.get("http://api.aviationstack.com/v1/flights", params=params)
         body = r.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Flight API unreachable: {e}")
 
-    if body.get("error"):
-        msg = body["error"].get("message", "API error")
+    # AviationStack returns errors either as HTTP 4xx or as a 200 with {"error": {...}}
+    if not r.is_success or body.get("error"):
+        err = body.get("error", {})
+        msg = err.get("info") or err.get("message") or f"API returned {r.status_code}"
         raise HTTPException(status_code=502, detail=msg)
 
     flights = body.get("data", [])
