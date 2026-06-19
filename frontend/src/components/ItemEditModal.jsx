@@ -415,16 +415,15 @@ function WalkForm({ core, details, setCore, setDetails }) {
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
     if (mapsUrl) { setD('maps_url', mapsUrl) }
 
-    // Geocode any named start/end to get their actual coordinates
+    // Geocode any named start/end, validating the result against the intermediate
+    // route coords so a business name matched in the wrong city gets rejected.
     let startC = res.startCoords ?? null
     let endC   = res.endCoords   ?? null
     if (!startC && res.start) {
-      try { startC = await fetchGeocode(res.start) }
-      catch (e) { setMapsMsg({ text: `Geocode failed: ${e.message}`, color: 'var(--warning)' }) }
+      startC = await geocodeForRoute(res.start, middle)
     }
     if (!endC && res.end) {
-      try { endC = await fetchGeocode(res.end) }
-      catch (e) { setMapsMsg({ text: `Geocode failed: ${e.message}`, color: 'var(--warning)' }) }
+      endC = await geocodeForRoute(res.end, middle)
     }
 
     // Build the full coordinate chain:
@@ -621,6 +620,34 @@ function haversineKm(c1, c2) {
   const a = Math.sin(dLat / 2) ** 2
     + Math.cos(c1.lat * Math.PI / 180) * Math.cos(c2.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// Geocode `name` and validate the result is within the route's bounds.
+// If the full name returns a wrong city (business found elsewhere), fall back
+// to the address part after the first comma (strips the business/POI name).
+async function geocodeForRoute(name, routeCoords) {
+  // Threshold = 1.5× the max span between any two route coords, minimum 50 km.
+  // This rejects results from a completely different city while tolerating
+  // routes where start/end are well outside the intermediate waypoints.
+  let span = 0
+  for (let i = 0; i < routeCoords.length; i++)
+    for (let j = i + 1; j < routeCoords.length; j++)
+      span = Math.max(span, haversineKm(routeCoords[i], routeCoords[j]))
+  const threshold = routeCoords.length ? Math.max(50, span * 1.5) : Infinity
+  const inRange = pt =>
+    routeCoords.length === 0 || routeCoords.some(c => haversineKm(pt, c) < threshold)
+
+  const attempts = [name]
+  const afterComma = name.slice(name.indexOf(',') + 1).trim()
+  if (afterComma.length >= 5 && afterComma !== name) attempts.push(afterComma)
+
+  for (const q of attempts) {
+    try {
+      const pt = await fetchGeocode(q)
+      if (inRange(pt)) return pt
+    } catch {}
+  }
+  return null
 }
 
 function CyclingForm({ itemId, core, details, setCore, setDetails }) {
