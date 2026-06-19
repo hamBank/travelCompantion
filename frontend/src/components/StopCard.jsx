@@ -6,6 +6,7 @@ import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal from './ItemEditModal.jsx'
 import { countryFlag } from '../countryFlag.js'
 import { airportName } from '../airportNames.js'
+import RailDetailModal from './RailDetailModal.jsx'
 
 const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 'planned', cancelled: 'planned' }
 
@@ -94,6 +95,7 @@ export default function StopCard({ stop, index, onUpdate }) {
             <div className="space-y-1">
               {timeline.map(item => {
                 if (item.kind === 'flight')    return <FlightCard    key={item.id} item={item} />
+                if (item.kind === 'rail')      return <RailCard      key={item.id} item={item} />
                 if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} />
                 if (item.kind === 'cycling')   return <CyclingCard   key={item.id} item={item} />
                 return <ItemRow key={item.id} item={item} />
@@ -186,6 +188,77 @@ function FlightCard({ item: initial }) {
         </button>
       </div>
       {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => setItem(updated)} />}
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function RailCard({ item: initial }) {
+  const [item, setItem] = useState(initial)
+  const [showDetail, setShowDetail] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const d = item.details ?? {}
+  const route = [d.origin, d.destination].filter(Boolean).join(' → ')
+
+  return (
+    <>
+      <div className="relative group">
+        <button
+          onClick={() => setShowDetail(true)}
+          className="w-full text-left hover:opacity-80 transition-opacity"
+          style={{
+            background: 'color-mix(in srgb, var(--kind-rail) 6%, var(--surface-2))',
+            border: '1px solid color-mix(in srgb, var(--kind-rail) 35%, transparent)',
+            borderRadius: '0.5rem',
+            padding: '0.75rem',
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            <span style={{ color: 'var(--kind-rail)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>🚄</span>
+            <div className="flex-1 min-w-0 space-y-1.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-sm">{route || item.name}</span>
+                <span style={{ color: 'var(--kind-rail)' }} className="text-xs shrink-0 opacity-80">
+                  {[d.train_number, d.operator].filter(Boolean).join(' · ')}
+                </span>
+              </div>
+              {(d.depart_time || d.arrive_time) && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs">
+                  {[d.depart_time && fmtDateTime(d.depart_time),
+                    d.arrive_time && fmtDateTime(d.arrive_time)]
+                    .filter(Boolean).join(' → ')}
+                  {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
+                </div>
+              )}
+              {(d.depart_platform || d.arrive_platform) && (
+                <div style={{ color: 'var(--kind-rail)' }} className="text-xs flex gap-3 opacity-80">
+                  {d.depart_platform && <span>Dep Plat. {d.depart_platform}</span>}
+                  {d.arrive_platform && <span>Arr Plat. {d.arrive_platform}</span>}
+                </div>
+              )}
+              {(d.rail_class || d.seats) && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
+                  {d.rail_class && <span>{d.rail_class}</span>}
+                  {d.seats && <span>Seats: {d.seats}</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+          title="Edit"
+        >✎</button>
+      </div>
+      {showDetail && <RailDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => setItem(updated)} />}
       {showEdit && (
         <ItemEditModal
           item={item}
