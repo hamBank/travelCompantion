@@ -255,6 +255,46 @@ function parseGpxPoints(text) {
   } catch { return [] }
 }
 
+async function fetchOpenTopoElevations(samples) {
+  try {
+    const r = await fetch('https://api.opentopodata.org/v1/srtm90m', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locations: samples.map(s => ({ latitude: s.lat, longitude: s.lon })) }),
+    })
+    if (!r.ok) return null
+    const data = await r.json()
+    return data.results?.map(res => res.elevation) ?? null
+  } catch { return null }
+}
+
+async function enrichElevation(pts) {
+  if (pts.some(p => isFinite(p.ele))) return pts  // already has elevation
+
+  const MAX = 100
+  const n = pts.length
+  const stride = Math.max(1, Math.floor(n / (MAX - 1)))
+  const idxs = []
+  for (let i = 0; i < n && idxs.length < MAX - 1; i += stride) idxs.push(i)
+  if (idxs[idxs.length - 1] !== n - 1) idxs.push(n - 1)
+
+  const eles = await fetchOpenTopoElevations(idxs.map(i => pts[i]))
+  if (!eles) return pts
+
+  const eleAt = {}
+  idxs.forEach((idx, j) => { if (eles[j] != null) eleAt[idx] = eles[j] })
+  const keys = Object.keys(eleAt).map(Number).sort((a, b) => a - b)
+  if (!keys.length) return pts
+
+  const all = new Array(n).fill(NaN)
+  for (let i = 0; i < keys[0]; i++) all[i] = eleAt[keys[0]]
+  for (let ki = 0; ki < keys.length - 1; ki++) {
+    const i0 = keys[ki], i1 = keys[ki + 1], e0 = eleAt[i0], e1 = eleAt[i1]
+    for (let i = i0; i <= i1; i++) all[i] = e0 + (e1 - e0) * (i - i0) / (i1 - i0)
+  }
+  return pts.map((p, i) => ({ ...p, ele: all[i] }))
+}
+
 const TILE = 256
 function lonToTX(lon, z) { return (lon + 180) / 360 * Math.pow(2, z) }
 function latToTY(lat, z) {
@@ -395,10 +435,12 @@ function GpxMiniMap({ itemId }) {
   const [pts, setPts] = useState(null)
 
   useEffect(() => {
-    fetchGpxText(itemId).then(text => {
+    fetchGpxText(itemId).then(async text => {
       if (!text) return
-      const p = parseGpxPoints(text)
-      if (p.length >= 2) setPts(p)
+      const raw = parseGpxPoints(text)
+      if (raw.length < 2) return
+      const enriched = await enrichElevation(raw)
+      setPts(enriched)
     })
   }, [itemId])
 
