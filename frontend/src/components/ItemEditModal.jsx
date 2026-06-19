@@ -400,13 +400,48 @@ function GenericForm({ core, setCore }) {
 const DIFFICULTY = ['easy', 'moderate', 'hard', 'strenuous']
 
 function WalkForm({ core, details, setCore, setDetails }) {
+  const [mapsUrl, setMapsUrl] = useState('')
+  const [mapsMsg, setMapsMsg] = useState(null)
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
   const diff = d('difficulty')
+
+  function extractMaps() {
+    const res = parseMapsUrl(mapsUrl)
+    if (!res) { setMapsMsg({ text: 'Could not parse this URL', color: 'var(--error)' }); return }
+    setMapsMsg(null)
+    let filled = 0
+    if (res.start && !details.start_location) { setD('start_location', res.start); filled++ }
+    if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
+    if (mapsUrl)                               { setD('maps_url', mapsUrl) }
+    setMapsMsg(filled
+      ? { text: `${filled} location${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
+      : { text: 'Nothing to add (fields already filled)', color: 'var(--text-faint)' })
+  }
+
   return (
     <div className="space-y-4">
       <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Coastal trail" />
       <Field label="Date & time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
+
+      <SectionBox label="Import from Google Maps">
+        <div className="flex gap-2">
+          <input
+            value={mapsUrl}
+            onChange={e => setMapsUrl(e.target.value)}
+            placeholder="Paste directions URL…"
+            style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+            className="flex-1 rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          />
+          <button type="button" onClick={extractMaps}
+            style={{ color: 'var(--kind-walk)', border: '1px solid color-mix(in srgb, var(--kind-walk) 35%, transparent)', background: 'color-mix(in srgb, var(--kind-walk) 8%, transparent)' }}
+            className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity">
+            Extract
+          </button>
+        </div>
+        {mapsMsg && <p className="text-xs mt-1" style={{ color: mapsMsg.color }}>{mapsMsg.text}</p>}
+      </SectionBox>
+
       <div className="grid grid-cols-2 gap-3">
         <Field label="Start" value={d('start_location')} onChange={v => setD('start_location', v)} placeholder="Trailhead / town" />
         <Field label="End"   value={d('end_location')}   onChange={v => setD('end_location',   v)} placeholder="Summit / finish" />
