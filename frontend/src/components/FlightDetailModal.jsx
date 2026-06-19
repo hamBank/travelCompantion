@@ -284,6 +284,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave }
           )}
 
           <div className="space-y-0">
+            <Row label="Airline"       value={d.airline} />
             <Row label="Status"        value={d.flight_status} />
             <Row label="Aircraft"      value={d.aircraft} />
             <Row label="Fare class"    value={d.fare_class} />
