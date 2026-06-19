@@ -254,49 +254,17 @@ def check_rail(item_id: int, session: Session = Depends(get_session)):
     if not train_number:
         raise HTTPException(status_code=400, detail="No train number stored")
 
-    query = train_number
-    if d.get("operator"):
-        query = f"{d['operator']} {train_number}"
-
-    try:
-        with httpx.Client(timeout=12) as client:
-            r = client.get(f"{_DB_REST}/trips", params={
-                "query": query,
-                "stopovers": "false",
-                "results": 5,
-                "language": "en",
-            })
-        body = r.json()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Rail API unreachable: {e}")
-
-    if not r.is_success:
-        raise HTTPException(status_code=502, detail=f"Rail API returned {r.status_code}")
-
-    trips = body.get("trips", [])
-
-    # Try to match by departure date if we have one stored
-    dep_date = (d.get("depart_time") or "")[:10]
-    if dep_date and trips:
-        dated = [t for t in trips
-                 if (t.get("origin", {}).get("plannedDeparture") or "").startswith(dep_date)]
-        if dated:
-            trips = dated
-
-    if not trips:
-        return {"found": False, "train_number": train_number, "checks": []}
-
-    live = trips[0]
-    origin = live.get("origin", {})
-    dest   = live.get("destination", {})
-    line   = live.get("line", {})
+    origin_name = d.get("origin", "").strip()
+    if not origin_name:
+        raise HTTPException(status_code=400, detail="No origin station stored — add it in the edit form first")
 
     def hhmm(iso):
-        try:
-            t = iso[11:16] if iso else None
-            return t
-        except Exception:
-            return None
+        try: return iso[11:16] if iso else None
+        except Exception: return None
+
+    def iso_trim(iso):
+        try: return iso[:16] if iso else None
+        except Exception: return None
 
     def chk(label, key, stored, live_val, update_val=None):
         if live_val is None:
@@ -304,31 +272,106 @@ def check_rail(item_id: int, session: Session = Depends(get_session)):
         stored_s = (stored or "").strip()
         live_s   = str(live_val).strip()
         match = stored_s.lower() == live_s.lower() if stored_s else None
+        upd = update_val or live_val
         return {
             "field": label, "key": key,
             "stored": stored_s or None, "live": live_s,
-            "update_value": (update_val or live_val).strip() if isinstance(update_val or live_val, str) else str(live_val),
+            "update_value": upd.strip() if isinstance(upd, str) else str(upd),
             "match": match,
         }
 
-    dep_planned = origin.get("plannedDeparture")
-    arr_planned = dest.get("plannedArrival")
+    try:
+        with httpx.Client(timeout=12) as client:
+            # 1. Resolve origin station to a stop ID
+            loc_r = client.get(f"{_DB_REST}/locations", params={
+                "query": origin_name, "results": 3, "stops": "true", "language": "en",
+            })
+            if not loc_r.is_success or not loc_r.text:
+                raise HTTPException(status_code=502, detail=f"Rail API: station lookup failed ({loc_r.status_code})")
+            locations = loc_r.json()
+            if not locations:
+                return {"found": False, "train_number": train_number, "checks": []}
 
-    def iso_to_local(iso):
-        # "2025-07-15T10:00:00+02:00" -> "2025-07-15T10:00"
+            stop_id   = locations[0]["id"]
+            stop_name = locations[0].get("name", origin_name)
+
+            # 2. Get departures from that station, optionally anchored to stored time
+            dep_params: dict = {"results": 30, "duration": 20, "language": "en", "stopovers": "false"}
+            dep_time = d.get("depart_time", "")
+            if dep_time:
+                dep_params["when"] = dep_time
+
+            dep_r = client.get(f"{_DB_REST}/stops/{stop_id}/departures", params=dep_params)
+            if not dep_r.is_success or not dep_r.text:
+                raise HTTPException(status_code=502, detail=f"Rail API: departures failed ({dep_r.status_code})")
+            dep_body = dep_r.json()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Rail API unreachable: {e}")
+
+    departures = dep_body.get("departures", dep_body) if isinstance(dep_body, dict) else dep_body
+    if not isinstance(departures, list):
+        departures = []
+
+    # 3. Match departure by train number (flexible: "ICE123" matches "ICE 123")
+    train_key = train_number.replace(" ", "").upper()
+    matched_dep = None
+    for dep in departures:
+        line_name = (dep.get("line") or {}).get("name") or ""
+        if line_name.replace(" ", "").upper() == train_key:
+            matched_dep = dep
+            break
+
+    if not matched_dep:
+        return {"found": False, "train_number": train_number, "checks": []}
+
+    line         = matched_dep.get("line") or {}
+    dep_planned  = matched_dep.get("plannedWhen")
+    dep_platform = matched_dep.get("plannedPlatform") or matched_dep.get("platform")
+    operator_nm  = (line.get("operator") or {}).get("name")
+    trip_id      = matched_dep.get("tripId")
+
+    # 4. Fetch trip stopovers to get arrival info at destination
+    arr_planned  = None
+    arr_platform = None
+    dest_name    = None
+
+    if trip_id:
         try:
-            return iso[:16] if iso else None
+            with httpx.Client(timeout=12) as client:
+                trip_r = client.get(f"{_DB_REST}/trips/{trip_id}", params={
+                    "stopovers": "true", "language": "en",
+                })
+            if trip_r.is_success and trip_r.text:
+                trip_data   = trip_r.json().get("trip", {})
+                stopovers   = trip_data.get("stopovers", [])
+                dest_stored = (d.get("destination") or "").strip().upper()
+                # Walk stopovers to find our destination (or use the last one)
+                for sv in stopovers:
+                    sv_name = (sv.get("stop") or {}).get("name") or ""
+                    if dest_stored and dest_stored in sv_name.upper():
+                        arr_planned  = sv.get("plannedArrival")
+                        arr_platform = sv.get("plannedArrivalPlatform") or sv.get("arrivalPlatform")
+                        dest_name    = sv_name
+                        break
+                if not arr_planned and stopovers:
+                    last         = stopovers[-1]
+                    arr_planned  = last.get("plannedArrival")
+                    arr_platform = last.get("plannedArrivalPlatform") or last.get("arrivalPlatform")
+                    dest_name    = (last.get("stop") or {}).get("name")
         except Exception:
-            return None
+            pass
 
     results = [c for c in [
-        chk("Origin",       "origin",          d.get("origin"),      origin.get("name")),
-        chk("Destination",  "destination",     d.get("destination"), dest.get("name")),
-        chk("Operator",     "operator",        d.get("operator"),    line.get("operator", {}).get("name")),
-        chk("Depart time",  "depart_time",     hhmm(d.get("depart_time")), hhmm(dep_planned), iso_to_local(dep_planned)),
-        chk("Arrive time",  "arrive_time",     hhmm(d.get("arrive_time")), hhmm(arr_planned), iso_to_local(arr_planned)),
-        chk("Dep platform", "depart_platform", d.get("depart_platform"), origin.get("departurePlatform") or origin.get("plannedDeparturePlatform")),
-        chk("Arr platform", "arrive_platform", d.get("arrive_platform"), dest.get("arrivalPlatform")    or dest.get("plannedArrivalPlatform")),
+        chk("Origin",       "origin",          d.get("origin"),          stop_name),
+        chk("Destination",  "destination",     d.get("destination"),     dest_name),
+        chk("Operator",     "operator",        d.get("operator"),        operator_nm),
+        chk("Depart time",  "depart_time",     hhmm(d.get("depart_time")), hhmm(dep_planned), iso_trim(dep_planned)),
+        chk("Arrive time",  "arrive_time",     hhmm(d.get("arrive_time")), hhmm(arr_planned), iso_trim(arr_planned)),
+        chk("Dep platform", "depart_platform", d.get("depart_platform"), dep_platform),
+        chk("Arr platform", "arrive_platform", d.get("arrive_platform"), arr_platform),
     ] if c]
 
     return {
