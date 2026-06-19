@@ -164,31 +164,80 @@ def check_flight(item_id: int, session: Session = Depends(get_session)):
         "checks": results,
     }
 
+_AIRLINE_NAMES: dict[str, str] = {
+    "QF": "Qantas", "EK": "Emirates", "SQ": "Singapore Airlines", "CX": "Cathay Pacific",
+    "AY": "Finnair", "BA": "British Airways", "LH": "Lufthansa", "AF": "Air France",
+    "KL": "KLM", "AA": "American Airlines", "UA": "United Airlines", "DL": "Delta Air Lines",
+    "WN": "Southwest Airlines", "AS": "Alaska Airlines", "B6": "JetBlue Airways",
+    "NK": "Spirit Airlines", "F9": "Frontier Airlines", "G4": "Allegiant Air",
+    "HA": "Hawaiian Airlines", "VS": "Virgin Atlantic", "AC": "Air Canada",
+    "WS": "WestJet", "JL": "Japan Airlines", "NH": "All Nippon Airways",
+    "KE": "Korean Air", "OZ": "Asiana Airlines", "TG": "Thai Airways",
+    "MH": "Malaysia Airlines", "GA": "Garuda Indonesia", "PR": "Philippine Airlines",
+    "VN": "Vietnam Airlines", "CI": "China Airlines", "BR": "EVA Air",
+    "MU": "China Eastern", "CA": "Air China", "CZ": "China Southern",
+    "HU": "Hainan Airlines", "ZH": "Shenzhen Airlines", "AI": "Air India",
+    "6E": "IndiGo", "SG": "SpiceJet", "EY": "Etihad Airways", "GF": "Gulf Air",
+    "WY": "Oman Air", "FZ": "flydubai", "G9": "Air Arabia", "XY": "flynas",
+    "MS": "EgyptAir", "ET": "Ethiopian Airlines", "KQ": "Kenya Airways",
+    "SA": "South African Airways", "FR": "Ryanair", "U2": "easyJet",
+    "VY": "Vueling", "IB": "Iberia", "AZ": "ITA Airways", "TP": "TAP Air Portugal",
+    "LX": "Swiss International Air Lines", "OS": "Austrian Airlines",
+    "SK": "SAS Scandinavian Airlines", "FI": "Icelandair", "TK": "Turkish Airlines",
+    "PC": "Pegasus Airlines", "LO": "LOT Polish Airlines", "OK": "Czech Airlines",
+    "RO": "TAROM", "BT": "airBaltic", "NZ": "Air New Zealand", "JQ": "Jetstar",
+    "VA": "Virgin Australia", "TR": "Scoot", "AK": "AirAsia", "FD": "Thai AirAsia",
+    "QZ": "AirAsia Indonesia", "D7": "AirAsia X", "3K": "Jetstar Asia",
+    "7C": "Jeju Air", "BX": "Air Busan", "TW": "T'way Air", "ZE": "Eastar Jet",
+    "OO": "SkyWest Airlines", "YX": "Republic Airways", "9E": "Endeavor Air",
+    "MQ": "Envoy Air", "OH": "PSA Airlines", "PT": "Piedmont Airlines",
+    "EV": "ExpressJet", "WX": "CityJet", "BE": "Flybe", "LS": "Jet2",
+    "EZY": "easyJet", "WZ": "Red Wings", "5O": "ASL Airlines France",
+    "A3": "Aegean Airlines", "OA": "Olympic Air", "HV": "Transavia",
+    "TO": "Transavia France", "VT": "Air Tahiti", "UU": "Air Austral",
+    "MF": "Xiamen Airlines", "SC": "Shandong Airlines", "KN": "China United Airlines",
+    "GS": "Tianjin Airlines", "NS": "Hebei Airlines", "EU": "Chengdu Airlines",
+    "PN": "West Air", "UQ": "Urumqi Air", "8L": "Lucky Air",
+    "Y8": "Loong Air", "GJ": "Zhejiang Loong Airlines", "RU": "AirBridgeCargo",
+    "SU": "Aeroflot", "S7": "S7 Airlines", "UT": "UTair", "UN": "Transaero",
+    "FV": "Rossiya", "DP": "Pobeda", "N4": "Nordwind Airlines",
+    "4G": "Gazpromavia", "KC": "Air Astana", "HY": "Uzbekistan Airways",
+    "T5": "Turkmenistan Airlines", "PS": "Ukraine International Airlines",
+    "6H": "Israir", "LY": "El Al", "IZ": "Arkia", "GO": "Kuwaiti Airlines",
+    "KU": "Kuwait Airways", "RJ": "Royal Jordanian", "ME": "Middle East Airlines",
+    "QR": "Qatar Airways", "SV": "Saudi Arabian Airlines", "YY": "Flynas",
+    "XW": "NokScoot", "DD": "Nok Air", "PG": "Bangkok Airways",
+    "QV": "Lao Airlines", "VJ": "VietJet Air", "BL": "Pacific Airlines",
+    "5J": "Cebu Pacific", "DG": "Cebgo", "Z2": "Philippines AirAsia",
+    "MJ": "Mihin Lanka", "UL": "SriLankan Airlines", "4O": "Air Flamenco",
+    "LQ": "Lanmei Airlines", "K6": "Cambodia Angkor Air",
+    "BI": "Royal Brunei Airlines", "MI": "SilkAir", "IN": "Nam Air",
+    "ID": "Batik Air", "IW": "Wings Air", "JT": "Lion Air",
+    "XT": "Indonesia AirAsia", "SJ": "Sriwijaya Air", "XN": "Xpressair",
+    "AE": "Mandarin Airlines", "IT": "Tigerair Taiwan", "GE": "TransAsia Airways",
+    "DA": "Air Georgian", "4M": "LATAM Argentina", "LA": "LATAM Airlines",
+    "JJ": "LATAM Brasil", "LP": "LATAM Peru", "XL": "LATAM Ecuador",
+    "LU": "LATAM Express", "PZ": "LATAM Paraguay", "AV": "Avianca",
+    "O6": "Avianca Brasil", "5Z": "Cem Air", "AM": "Aeromexico",
+    "MX": "Mexicana", "Y4": "Volaris", "4A": "VIVA Aerobus",
+    "2I": "Star Peru", "8R": "TACA Regional", "CM": "Copa Airlines",
+    "HP": "Spirit Panama", "WC": "Islena Airlines",
+    "WP": "Island Air", "ZL": "Regional Express", "TL": "Airnorth",
+    "FO": "Felix Airways", "EI": "Aer Lingus", "FR1": "Ryanair",
+    "HW": "North Wright Air", "PD": "Porter Airlines", "TS": "Air Transat",
+    "WG": "Sunwing Airlines", "F8": "Flair Airlines",
+}
+
 @router.get("/flights/airline-lookup")
 def airline_lookup(iata: str):
-    if not _AERODATABOX_KEY:
-        raise HTTPException(status_code=503, detail="Flight check not configured (set AERODATABOX_KEY)")
-    code = iata.strip().upper()[:2]
+    code = iata.strip().upper()
+    # Accept 2-char codes; also strip leading digit-letter combos
+    code = code[:2]
     if len(code) < 2:
         raise HTTPException(status_code=400, detail="Provide a 2-letter airline IATA code")
-    try:
-        with httpx.Client(timeout=10) as client:
-            r = client.get(
-                f"https://aerodatabox.p.rapidapi.com/airlines/{code}",
-                headers={
-                    "X-RapidAPI-Key":  _AERODATABOX_KEY,
-                    "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com",
-                },
-            )
-        body = r.json()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Airline API unreachable: {e}")
-    if not r.is_success:
-        detail = (body.get("message") if isinstance(body, dict) else None) or f"Airline {code} not found"
-        raise HTTPException(status_code=404 if r.status_code == 404 else 502, detail=detail)
-    name = (body.get("name") or body.get("shortName") or body.get("fullName")) if isinstance(body, dict) else None
+    name = _AIRLINE_NAMES.get(code)
     if not name:
-        raise HTTPException(status_code=404, detail=f"Airline {code} not found")
+        raise HTTPException(status_code=404, detail=f"Airline {code} not found in lookup table")
     return {"iata": code, "name": name}
 
 

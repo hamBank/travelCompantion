@@ -154,7 +154,7 @@ function FlightCheckPanel({ item, onItemUpdate }) {
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              {c.match === false && (
+              {c.match !== true && (
                 <button
                   onClick={() => applyField(c)}
                   disabled={applying === c.key}
