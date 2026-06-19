@@ -151,7 +151,10 @@ def check_flight(item_id: int, session: Session = Depends(get_session)):
         chk("Depart time",  "depart_time",     hhmm_stored(d.get("depart_time")), hhmm_live(dep_local), local_to_iso(dep_local)),
         chk("Arrive time",  "arrive_time",     hhmm_stored(d.get("arrive_time")), hhmm_live(arr_local), local_to_iso(arr_local)),
         chk("Dep terminal", "origin_terminal", d.get("origin_terminal"), dep.get("terminal")),
+        chk("Dep gate",     "origin_gate",     d.get("origin_gate"),     dep.get("gate")),
+        chk("Check-in",     "checkin_desk",    d.get("checkin_desk"),    dep.get("checkInDesk")),
         chk("Arr terminal", "arrive_terminal", d.get("arrive_terminal"), arr.get("terminal")),
+        chk("Arr gate",     "arrive_gate",     d.get("arrive_gate"),     arr.get("gate")),
     ] if c]
 
     return {

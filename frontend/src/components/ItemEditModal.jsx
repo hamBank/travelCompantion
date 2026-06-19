@@ -247,6 +247,11 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Arr terminal" value={d('arrive_terminal')} onChange={v => setD('arrive_terminal', v)} placeholder="T2" />
         </div>
         <div className="grid grid-cols-2 gap-3">
+          <Field label="Dep gate" value={d('origin_gate')} onChange={v => setD('origin_gate', v)} placeholder="D12" />
+          <Field label="Arr gate" value={d('arrive_gate')} onChange={v => setD('arrive_gate', v)} placeholder="23" />
+        </div>
+        <Field label="Check-in desk" value={d('checkin_desk')} onChange={v => setD('checkin_desk', v)} placeholder="D5–D20" />
+        <div className="grid grid-cols-2 gap-3">
           <Field label="Depart TZ" value={d('depart_tz')} onChange={v => setD('depart_tz', v)} placeholder="GMT+8" />
           <Field label="Arrive TZ" value={d('arrive_tz')} onChange={v => setD('arrive_tz', v)} placeholder="GMT+3" />
         </div>

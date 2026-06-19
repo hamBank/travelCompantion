@@ -127,7 +127,6 @@ if [[ ! -f "$ENV_FILE" ]]; then
   info "Creating $ENV_FILE (fill in secrets before starting)"
   cat > "$ENV_FILE" <<ENVEOF
 # Google OAuth (required for authentication)
-# See .env.example for setup instructions
 GOOGLE_CLIENT_ID=
 ALLOWED_EMAIL=
 JWT_SECRET=$(openssl rand -hex 32)
@@ -136,8 +135,14 @@ JWT_SECRET=$(openssl rand -hex 32)
 SPREADSHEET_ID=
 SHEET_NAMES=
 
-# Optional: Google Places API for accommodation enrichment
+# Optional: Google Places API for accommodation/restaurant/activity enrichment
 # GOOGLE_PLACES_API_KEY=
+
+# Optional: AeroDataBox via RapidAPI — flight live-check
+# AERODATABOX_KEY=
+
+# Optional: GitHub webhook auto-deploy secret (set same value in GitHub webhook settings)
+# DEPLOY_SECRET=
 
 # JWT session lifetime in days (default 30)
 # JWT_EXPIRE_DAYS=30
@@ -220,7 +225,39 @@ else
   warn "Apache config test failed — check: apache2ctl configtest"
 fi
 
-# ── 9. (Re)start service ───────────────────────────────────────────────────────
+# ── 9. Systemd deploy path watcher ────────────────────────────────────────────
+info "Setting up auto-deploy path watcher"
+
+cat > "/etc/systemd/system/travelcomp-update.service" <<USVC
+[Unit]
+Description=Travel Companion auto-update (triggered by webhook)
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/bin/bash $APP_DIR/deploy.sh --update
+ExecStartPost=/bin/rm -f $APP_DIR/.deploy-trigger
+StandardOutput=append:/var/log/travelcomp-deploy.log
+StandardError=append:/var/log/travelcomp-deploy.log
+USVC
+
+cat > "/etc/systemd/system/travelcomp-update.path" <<UPATH
+[Unit]
+Description=Watch for Travel Companion deploy trigger file
+
+[Path]
+PathExists=$APP_DIR/.deploy-trigger
+Unit=travelcomp-update.service
+
+[Install]
+WantedBy=multi-user.target
+UPATH
+
+systemctl daemon-reload
+systemctl enable --now travelcomp-update.path
+ok "Deploy path watcher enabled (trigger: $APP_DIR/.deploy-trigger)"
+
+# ── 10. (Re)start service ──────────────────────────────────────────────────────
 if $UPDATE_ONLY || $_WAS_RUNNING; then
   info "Restarting $SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"

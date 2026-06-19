@@ -252,10 +252,15 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave }
                   <span className="text-right">
                     {fmtDateTime(d.depart_time)}
                     {d.depart_tz && <span style={{ color: 'var(--text-faint)' }} className="ml-1 text-xs">{d.depart_tz}</span>}
-                    {d.origin_terminal && (
-                      <span style={{ color: 'var(--kind-flight)' }} className="ml-2 text-xs">T{d.origin_terminal}</span>
-                    )}
+                    {d.origin_terminal && <span style={{ color: 'var(--kind-flight)' }} className="ml-2 text-xs">T{d.origin_terminal}</span>}
+                    {d.origin_gate    && <span style={{ color: 'var(--kind-flight)' }} className="ml-1 text-xs">Gate {d.origin_gate}</span>}
                   </span>
+                </div>
+              )}
+              {d.checkin_desk && (
+                <div className="flex justify-between gap-4 text-sm">
+                  <span style={{ color: 'var(--text-faint)' }}>Check-in</span>
+                  <span style={{ color: 'var(--kind-flight)' }} className="text-xs">{d.checkin_desk}</span>
                 </div>
               )}
               {d.arrive_time && (
@@ -264,9 +269,8 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave }
                   <span className="text-right">
                     {fmtDateTime(d.arrive_time)}
                     {d.arrive_tz && <span style={{ color: 'var(--text-faint)' }} className="ml-1 text-xs">{d.arrive_tz}</span>}
-                    {d.arrive_terminal && (
-                      <span style={{ color: 'var(--kind-flight)' }} className="ml-2 text-xs">T{d.arrive_terminal}</span>
-                    )}
+                    {d.arrive_terminal && <span style={{ color: 'var(--kind-flight)' }} className="ml-2 text-xs">T{d.arrive_terminal}</span>}
+                    {d.arrive_gate    && <span style={{ color: 'var(--kind-flight)' }} className="ml-1 text-xs">Gate {d.arrive_gate}</span>}
                   </span>
                 </div>
               )}

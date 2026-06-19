@@ -155,10 +155,15 @@ function FlightCard({ item: initial }) {
                   {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
                 </div>
               )}
-              {(d.origin_terminal || d.arrive_terminal) && (
-                <div style={{ color: 'var(--kind-flight)' }} className="text-xs flex gap-3 opacity-80">
-                  {d.origin_terminal && <span>Dep T{d.origin_terminal}</span>}
-                  {d.arrive_terminal && <span>Arr T{d.arrive_terminal}</span>}
+              {(d.origin_terminal || d.origin_gate || d.arrive_terminal || d.arrive_gate || d.checkin_desk) && (
+                <div style={{ color: 'var(--kind-flight)' }} className="text-xs flex gap-3 opacity-80 flex-wrap">
+                  {(d.origin_terminal || d.origin_gate) && (
+                    <span>Dep{d.origin_terminal ? ` T${d.origin_terminal}` : ''}{d.origin_gate ? ` Gate ${d.origin_gate}` : ''}</span>
+                  )}
+                  {d.checkin_desk && <span>Check-in {d.checkin_desk}</span>}
+                  {(d.arrive_terminal || d.arrive_gate) && (
+                    <span>Arr{d.arrive_terminal ? ` T${d.arrive_terminal}` : ''}{d.arrive_gate ? ` Gate ${d.arrive_gate}` : ''}</span>
+                  )}
                 </div>
               )}
               {(d.fare_class || d.seats) && (
