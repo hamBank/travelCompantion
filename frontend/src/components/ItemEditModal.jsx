@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { updateItem, enrichItem } from '../api.js'
+import { updateItem, enrichItem, uploadGpx } from '../api.js'
 
 const KIND_VAR = {
   activity:      'var(--kind-activity)',
@@ -7,6 +7,7 @@ const KIND_VAR = {
   note:          'var(--kind-note)',
   accommodation: 'var(--kind-accommodation)',
   flight:        'var(--kind-flight)',
+  cycling:       'var(--kind-cycling)',
 }
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
@@ -350,7 +351,142 @@ function GenericForm({ core, setCore }) {
 
 export const KIND_LABEL = {
   activity: 'Activity', restaurant: 'Restaurant', note: 'Note',
-  accommodation: 'Accommodation', flight: 'Flight',
+  accommodation: 'Accommodation', flight: 'Flight', cycling: 'Cycling',
+}
+
+const SURFACE_TYPES = ['road', 'gravel', 'sand', 'dirt']
+
+function parseMapsUrl(url) {
+  try {
+    const u = new URL(url)
+    const m = u.pathname.match(/\/maps\/dir\/(.+)/)
+    if (m) {
+      const parts = m[1].split('/').filter(p => p && !p.startsWith('@') && !p.startsWith('data'))
+      if (parts.length >= 2) return {
+        start: decodeURIComponent(parts[0].replace(/\+/g, ' ')),
+        end:   decodeURIComponent(parts[parts.length - 1].replace(/\+/g, ' ')),
+      }
+    }
+    const start = u.searchParams.get('origin') || u.searchParams.get('saddr')
+    const end   = u.searchParams.get('destination') || u.searchParams.get('daddr')
+    if (start || end) return { start: start || '', end: end || '' }
+  } catch {}
+  return null
+}
+
+function CyclingForm({ itemId, core, details, setCore, setDetails }) {
+  const [mapsUrl, setMapsUrl]     = useState('')
+  const [mapsMsg, setMapsMsg]     = useState(null)
+  const [gpxBusy, setGpxBusy]    = useState(false)
+  const [gpxMsg, setGpxMsg]       = useState(null)
+  const d   = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+
+  function extractMaps() {
+    const res = parseMapsUrl(mapsUrl)
+    if (!res) { setMapsMsg({ text: 'Could not parse this URL', color: 'var(--error)' }); return }
+    setMapsMsg(null)
+    let filled = 0
+    if (res.start && !details.start_location) { setD('start_location', res.start); filled++ }
+    if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
+    setMapsMsg(filled ? { text: `${filled} location${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
+                      : { text: 'Nothing to add (fields already filled)', color: 'var(--text-faint)' })
+  }
+
+  async function handleGpx(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setGpxBusy(true); setGpxMsg(null)
+    try {
+      const updated = await uploadGpx(itemId, file)
+      setDetails(updated.details ?? {})
+      setGpxMsg({ text: `✓ ${file.name} uploaded`, color: 'var(--success)' })
+    } catch (err) {
+      setGpxMsg({ text: err.message, color: 'var(--error)' })
+    } finally {
+      setGpxBusy(false)
+      e.target.value = ''
+    }
+  }
+
+  const surface = d('surface_type')
+
+  return (
+    <div className="space-y-4">
+      <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Morning gravel ride" />
+
+      <SectionBox label="Import from Google Maps">
+        <div className="flex gap-2">
+          <input
+            value={mapsUrl}
+            onChange={e => setMapsUrl(e.target.value)}
+            placeholder="Paste directions URL…"
+            style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+            className="flex-1 rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          />
+          <button type="button" onClick={extractMaps}
+            style={{ color: 'var(--kind-cycling)', border: '1px solid color-mix(in srgb, var(--kind-cycling) 35%, transparent)', background: 'color-mix(in srgb, var(--kind-cycling) 8%, transparent)' }}
+            className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity">
+            Extract
+          </button>
+        </div>
+        {mapsMsg && <p className="text-xs mt-1" style={{ color: mapsMsg.color }}>{mapsMsg.text}</p>}
+      </SectionBox>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Start" value={d('start_location')} onChange={v => setD('start_location', v)} placeholder="Trailhead / town" />
+        <Field label="End"   value={d('end_location')}   onChange={v => setD('end_location',   v)} placeholder="Finish / summit" />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Surface</label>
+        <div className="flex gap-2 flex-wrap">
+          {SURFACE_TYPES.map(s => (
+            <button key={s} type="button" onClick={() => setD('surface_type', surface === s ? '' : s)}
+              style={{
+                color: surface === s ? 'var(--kind-cycling)' : 'var(--text-faint)',
+                border: `1px solid ${surface === s ? 'var(--kind-cycling)' : 'var(--border)'}`,
+                background: surface === s ? 'color-mix(in srgb, var(--kind-cycling) 12%, transparent)' : 'transparent',
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors">
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Distance"   value={d('distance')}       onChange={v => setD('distance', v)}       placeholder="42 km" />
+        <Field label="Elev ↑"     value={d('elevation_gain')} onChange={v => setD('elevation_gain', v)} placeholder="800 m" />
+        <Field label="Elev ↓"     value={d('elevation_loss')} onChange={v => setD('elevation_loss', v)} placeholder="650 m" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Cost"  value={core.cost}  onChange={v => setCore(c => ({ ...c, cost: v }))}  placeholder="€0" />
+        <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Conditions, kit…" />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">GPX File</label>
+        <div className="flex items-center gap-3">
+          <label style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)', cursor: gpxBusy ? 'default' : 'pointer', opacity: gpxBusy ? 0.5 : 1 }}
+            className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity">
+            {gpxBusy ? 'Uploading…' : d('gpx_filename') ? 'Replace GPX' : 'Upload GPX'}
+            <input type="file" accept=".gpx,application/gpx+xml" onChange={handleGpx} disabled={gpxBusy} className="hidden" />
+          </label>
+          {gpxMsg && <span className="text-xs" style={{ color: gpxMsg.color }}>{gpxMsg.text}</span>}
+          {!gpxMsg && d('original_gpx_name') && (
+            <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{d('original_gpx_name')}</span>
+          )}
+        </div>
+        {d('gpx_filename') && !gpxMsg && (
+          <p style={{ color: 'var(--text-faint)' }} className="text-xs">
+            Stats auto-extracted — edit above if needed
+          </p>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export default function ItemEditModal({ item, onSave, onClose }) {
@@ -426,6 +562,8 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             <RestaurantForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'activity' ? (
             <ActivityForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'cycling' ? (
+            <CyclingForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'flight' ? (
             <FlightForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : (

@@ -56,3 +56,39 @@ export const updateItemStatus = (id, status) => updateItem(id, { status })
 export const updateStopStatus = (id, status) => updateStop(id, { status })
 
 export const enrichItem = (id) => req(`/items/${id}/enrich`)
+
+export async function uploadGpx(id, file) {
+  const token = getToken()
+  const form = new FormData()
+  form.append('file', file)
+  const r = await fetch(`/items/${id}/gpx`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  const body = await r.json()
+  if (!r.ok) throw new Error(Array.isArray(body.detail) ? body.detail.map(e => e.msg).join('; ') : (body.detail ?? r.statusText))
+  return body
+}
+
+export async function downloadGpx(id, filename) {
+  const token = getToken()
+  const r = await fetch(`/items/${id}/gpx`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!r.ok) throw new Error('Download failed')
+  const blob = await r.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename || 'route.gpx'
+  document.body.appendChild(a); a.click()
+  document.body.removeChild(a); URL.revokeObjectURL(url)
+}
+
+export async function fetchGpxText(id) {
+  const token = getToken()
+  const r = await fetch(`/items/${id}/gpx`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  return r.ok ? r.text() : null
+}

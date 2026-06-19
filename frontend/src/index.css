@@ -30,6 +30,7 @@
   --kind-note:          #f9e2af;
   --kind-accommodation: #cba6f7;
   --kind-flight:        #89dceb;
+  --kind-cycling:       #fab387;
   --input-icon-filter: invert(0.8);
 }
 
@@ -59,6 +60,7 @@
   --kind-note:          #eed49f;
   --kind-accommodation: #c6a0f6;
   --kind-flight:        #8bd5ca;
+  --kind-cycling:       #f5a97f;
   --input-icon-filter: invert(0.8);
 }
 
@@ -88,6 +90,7 @@
   --kind-note:          #df8e1d;
   --kind-accommodation: #8839ef;
   --kind-flight:        #04a5e5;
+  --kind-cycling:       #fe640b;
   --input-icon-filter: none;
 }
 
@@ -117,6 +120,7 @@
   --kind-note:          #ebcb8b;
   --kind-accommodation: #b48ead;
   --kind-flight:        #88c0d0;
+  --kind-cycling:       #d08770;
   --input-icon-filter: invert(0.8);
 }
 
@@ -146,6 +150,7 @@
   --kind-note:          #f6c177;
   --kind-accommodation: #c4a7e7;
   --kind-flight:        #ebbcba;
+  --kind-cycling:       #ea9a97;
   --input-icon-filter: invert(0.8);
 }
 

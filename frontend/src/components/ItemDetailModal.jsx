@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { fetchGpxText, downloadGpx } from '../api.js'
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -243,11 +244,112 @@ function NoteBody({ item }) {
   )
 }
 
+function parseGpxPoints(text) {
+  try {
+    const doc = new DOMParser().parseFromString(text, 'text/xml')
+    return Array.from(doc.querySelectorAll('trkpt')).map(pt => ({
+      lat: parseFloat(pt.getAttribute('lat')),
+      lon: parseFloat(pt.getAttribute('lon')),
+      ele: parseFloat(pt.querySelector('ele')?.textContent ?? 'NaN'),
+    })).filter(p => isFinite(p.lat) && isFinite(p.lon))
+  } catch { return [] }
+}
+
+function gpxToSvgPath(pts, w, h, pad = 10) {
+  if (pts.length < 2) return null
+  const lats = pts.map(p => p.lat), lons = pts.map(p => p.lon)
+  const [la0, la1] = [Math.min(...lats), Math.max(...lats)]
+  const [lo0, lo1] = [Math.min(...lons), Math.max(...lons)]
+  const laR = la1 - la0 || 0.001, loR = lo1 - lo0 || 0.001
+  const sc = Math.min((w - 2*pad) / loR, (h - 2*pad) / laR)
+  const ox = (w - loR * sc) / 2, oy = (h - laR * sc) / 2
+  const x = lo => ox + (lo - lo0) * sc
+  const y = la => h - oy - (la - la0) * sc
+  return pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.lon).toFixed(1)},${y(p.lat).toFixed(1)}`).join('')
+}
+
+function gpxToElevationPath(pts, w, h, pad = 6) {
+  const ep = pts.filter(p => isFinite(p.ele))
+  if (ep.length < 2) return null
+  const eles = ep.map(p => p.ele)
+  const [mn, mx] = [Math.min(...eles), Math.max(...eles)]
+  const rng = mx - mn || 1
+  const sx = (w - 2*pad) / (ep.length - 1)
+  const y = e => h - pad - ((e - mn) / rng) * (h - 2*pad)
+  return ep.map((p, i) => `${i ? 'L' : 'M'}${(pad + i * sx).toFixed(1)},${y(p.ele).toFixed(1)}`).join('')
+}
+
+function GpxMiniMap({ itemId }) {
+  const [paths, setPaths] = useState(null)
+
+  useEffect(() => {
+    fetchGpxText(itemId).then(text => {
+      if (!text) return
+      const pts = parseGpxPoints(text)
+      const track = gpxToSvgPath(pts, 300, 130)
+      const elev  = gpxToElevationPath(pts, 300, 50)
+      if (track) setPaths({ track, elev })
+    })
+  }, [itemId])
+
+  if (!paths) return null
+
+  return (
+    <div style={{ borderRadius: '0.5rem', overflow: 'hidden', background: 'var(--surface-2)', margin: '0.5rem 0 0.75rem' }}>
+      <svg viewBox="0 0 300 130" width="100%" style={{ display: 'block' }}>
+        <path d={paths.track} fill="none" stroke="var(--kind-cycling)" strokeWidth="2.5"
+              strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {paths.elev && (
+        <svg viewBox="0 0 300 50" width="100%" style={{ display: 'block', borderTop: '1px solid var(--border)', opacity: 0.7 }}>
+          <path d={paths.elev} fill="none" stroke="var(--kind-cycling)" strokeWidth="1.5"
+                strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </div>
+  )
+}
+
+function CyclingBody({ item }) {
+  const d = item.details ?? {}
+  return (
+    <>
+      {d.gpx_filename && <GpxMiniMap itemId={item.id} />}
+      <div className="space-y-0">
+        {(d.start_location || d.end_location) && (
+          <Row label="Route">{[d.start_location, d.end_location].filter(Boolean).join(' → ')}</Row>
+        )}
+        {d.surface_type && <Row label="Surface"><span className="capitalize">{d.surface_type}</span></Row>}
+        {(d.distance || d.elevation_gain || d.elevation_loss) && (
+          <Row label="Stats">
+            {[d.distance && d.distance,
+              d.elevation_gain && `↑ ${d.elevation_gain}`,
+              d.elevation_loss && `↓ ${d.elevation_loss}`
+            ].filter(Boolean).join('  ·  ')}
+          </Row>
+        )}
+        {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
+        {item.notes && <Row label="Notes">{item.notes}</Row>}
+        {item.cost  && <Row label="Cost">{item.cost}</Row>}
+        {d.gpx_filename && (
+          <Row label="GPX">
+            <button onClick={() => downloadGpx(item.id, d.original_gpx_name)}
+              style={{ color: 'var(--accent)' }} className="hover:underline text-sm text-left">
+              ⬇ {d.original_gpx_name || 'route.gpx'}
+            </button>
+          </Row>
+        )}
+      </div>
+    </>
+  )
+}
+
 const KIND_COLOR = {
   activity:      'var(--kind-activity)',
   restaurant:    'var(--kind-restaurant)',
   note:          'var(--kind-note)',
   accommodation: 'var(--kind-accommodation)',
+  cycling:       'var(--kind-cycling)',
 }
 
 export default function ItemDetailModal({ item, onClose }) {
@@ -298,6 +400,7 @@ export default function ItemDetailModal({ item, onClose }) {
           {item.kind === 'activity'      && <ActivityBody item={item} />}
           {item.kind === 'restaurant'    && <RestaurantBody item={item} />}
           {item.kind === 'note'          && <NoteBody item={item} />}
+          {item.kind === 'cycling'       && <CyclingBody item={item} />}
         </div>
       </div>
     </div>
