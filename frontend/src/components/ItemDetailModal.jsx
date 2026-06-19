@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { fetchGpxText, downloadGpx } from '../api.js'
 
 function fmtDateTime(val) {
@@ -255,57 +255,159 @@ function parseGpxPoints(text) {
   } catch { return [] }
 }
 
-function gpxToSvgPath(pts, w, h, pad = 10) {
-  if (pts.length < 2) return null
-  const lats = pts.map(p => p.lat), lons = pts.map(p => p.lon)
-  const [la0, la1] = [Math.min(...lats), Math.max(...lats)]
-  const [lo0, lo1] = [Math.min(...lons), Math.max(...lons)]
-  const laR = la1 - la0 || 0.001, loR = lo1 - lo0 || 0.001
-  const sc = Math.min((w - 2*pad) / loR, (h - 2*pad) / laR)
-  const ox = (w - loR * sc) / 2, oy = (h - laR * sc) / 2
-  const x = lo => ox + (lo - lo0) * sc
-  const y = la => h - oy - (la - la0) * sc
-  return pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.lon).toFixed(1)},${y(p.lat).toFixed(1)}`).join('')
+const TILE = 256
+function lonToTX(lon, z) { return (lon + 180) / 360 * Math.pow(2, z) }
+function latToTY(lat, z) {
+  const r = lat * Math.PI / 180
+  return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z)
 }
 
-function gpxToElevationPath(pts, w, h, pad = 6) {
+function GpxMapCanvas({ pts }) {
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!pts || pts.length < 2 || !ref.current) return
+    const canvas = ref.current
+    const ctx = canvas.getContext('2d')
+    const W = canvas.width, H = canvas.height
+
+    const lats = pts.map(p => p.lat), lons = pts.map(p => p.lon)
+    const la0 = Math.min(...lats), la1 = Math.max(...lats)
+    const lo0 = Math.min(...lons), lo1 = Math.max(...lons)
+    const laP = (la1 - la0) * 0.2 || 0.005
+    const loP = (lo1 - lo0) * 0.2 || 0.005
+    const bLaC = (la0 + la1) / 2, bLoC = (lo0 + lo1) / 2
+
+    // pick zoom where route spans ~70% of canvas
+    let zoom = 15
+    for (let z = 15; z >= 1; z--) {
+      const sx = (lonToTX(lo1 + loP, z) - lonToTX(lo0 - loP, z)) * TILE
+      const sy = (latToTY(la0 - laP, z) - latToTY(la1 + laP, z)) * TILE
+      if (sx <= W * 0.9 && sy <= H * 0.9) { zoom = z; break }
+    }
+
+    const cTX = lonToTX(bLoC, zoom), cTY = latToTY(bLaC, zoom)
+    const originTX = cTX - W / (2 * TILE), originTY = cTY - H / (2 * TILE)
+    const toPixel = (lat, lon) => ({
+      x: (lonToTX(lon, zoom) - originTX) * TILE,
+      y: (latToTY(lat, zoom) - originTY) * TILE,
+    })
+
+    const tX0 = Math.floor(originTX), tX1 = Math.ceil(originTX + W / TILE)
+    const tY0 = Math.floor(originTY), tY1 = Math.ceil(originTY + H / TILE)
+    const maxT = Math.pow(2, zoom)
+    const loads = []
+    for (let tx = tX0; tx <= tX1; tx++) {
+      for (let ty = tY0; ty <= tY1; ty++) {
+        if (ty < 0 || ty >= maxT) continue
+        const wtx = ((tx % maxT) + maxT) % maxT
+        const px = (tx - originTX) * TILE, py = (ty - originTY) * TILE
+        loads.push(new Promise(res => {
+          const img = new Image()
+          img.crossOrigin = 'anonymous'
+          img.onload = () => { ctx.drawImage(img, px, py, TILE, TILE); res() }
+          img.onerror = () => res()
+          img.src = `https://tile.openstreetmap.org/${zoom}/${wtx}/${ty}.png`
+        }))
+      }
+    }
+
+    Promise.all(loads).then(() => {
+      // dark overlay so track pops
+      ctx.fillStyle = 'rgba(0,0,0,0.08)'
+      ctx.fillRect(0, 0, W, H)
+
+      const px = pts.map(p => toPixel(p.lat, p.lon))
+
+      // shadow
+      ctx.beginPath()
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)'
+      ctx.lineWidth = 5
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+      px.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))
+      ctx.stroke()
+
+      // track
+      ctx.beginPath()
+      ctx.strokeStyle = '#fb923c'
+      ctx.lineWidth = 3
+      px.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))
+      ctx.stroke()
+
+      // start dot (green)
+      ctx.beginPath(); ctx.fillStyle = '#4ade80'
+      ctx.arc(px[0].x, px[0].y, 5, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5; ctx.stroke()
+
+      // end dot (red)
+      ctx.beginPath(); ctx.fillStyle = '#f87171'
+      ctx.arc(px[px.length-1].x, px[px.length-1].y, 5, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5; ctx.stroke()
+
+      // attribution
+      ctx.fillStyle = 'rgba(255,255,255,0.7)'
+      ctx.fillRect(0, H - 13, W, 13)
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'
+      ctx.font = '8px sans-serif'
+      ctx.fillText('© OpenStreetMap contributors', 3, H - 3)
+    })
+  }, [pts])
+
+  return <canvas ref={ref} width={480} height={210} style={{ width: '100%', display: 'block' }} />
+}
+
+function ElevationChart({ pts }) {
   const ep = pts.filter(p => isFinite(p.ele))
   if (ep.length < 2) return null
+  const W = 300, H = 64, padX = 2, padY = 6
   const eles = ep.map(p => p.ele)
-  const [mn, mx] = [Math.min(...eles), Math.max(...eles)]
+  const mn = Math.min(...eles), mx = Math.max(...eles)
   const rng = mx - mn || 1
-  const sx = (w - 2*pad) / (ep.length - 1)
-  const y = e => h - pad - ((e - mn) / rng) * (h - 2*pad)
-  return ep.map((p, i) => `${i ? 'L' : 'M'}${(pad + i * sx).toFixed(1)},${y(p.ele).toFixed(1)}`).join('')
+  const sx = (W - 2 * padX) / (ep.length - 1)
+  const yFn = e => H - padY - ((e - mn) / rng) * (H - 2 * padY)
+  const coords = ep.map((p, i) => `${(padX + i * sx).toFixed(1)},${yFn(p.ele).toFixed(1)}`)
+  const line = coords.map((c, i) => `${i ? 'L' : 'M'}${c}`).join('')
+  const last = coords[coords.length - 1].split(',')
+  const area = `${line}L${last[0]},${H}L${padX},${H}Z`
+  return (
+    <div style={{ borderTop: '1px solid var(--border)' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }}>
+        <defs>
+          <linearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--kind-cycling)" stopOpacity="0.45" />
+            <stop offset="100%" stopColor="var(--kind-cycling)" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#elevGrad)" />
+        <path d={line} fill="none" stroke="var(--kind-cycling)" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 6px 6px', color: 'var(--text-faint)', fontSize: '0.65rem' }}>
+        <span>↓ {Math.round(mn)} m</span>
+        <span style={{ color: 'var(--text-muted)' }}>Elevation</span>
+        <span>↑ {Math.round(mx)} m</span>
+      </div>
+    </div>
+  )
 }
 
 function GpxMiniMap({ itemId }) {
-  const [paths, setPaths] = useState(null)
+  const [pts, setPts] = useState(null)
 
   useEffect(() => {
     fetchGpxText(itemId).then(text => {
       if (!text) return
-      const pts = parseGpxPoints(text)
-      const track = gpxToSvgPath(pts, 300, 130)
-      const elev  = gpxToElevationPath(pts, 300, 50)
-      if (track) setPaths({ track, elev })
+      const p = parseGpxPoints(text)
+      if (p.length >= 2) setPts(p)
     })
   }, [itemId])
 
-  if (!paths) return null
+  if (!pts) return null
 
   return (
-    <div style={{ borderRadius: '0.5rem', overflow: 'hidden', background: 'var(--surface-2)', margin: '0.5rem 0 0.75rem' }}>
-      <svg viewBox="0 0 300 130" width="100%" style={{ display: 'block' }}>
-        <path d={paths.track} fill="none" stroke="var(--kind-cycling)" strokeWidth="2.5"
-              strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      {paths.elev && (
-        <svg viewBox="0 0 300 50" width="100%" style={{ display: 'block', borderTop: '1px solid var(--border)', opacity: 0.7 }}>
-          <path d={paths.elev} fill="none" stroke="var(--kind-cycling)" strokeWidth="1.5"
-                strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
+    <div style={{ borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid var(--border)', margin: '0 0 1rem' }}>
+      <GpxMapCanvas pts={pts} />
+      <ElevationChart pts={pts} />
     </div>
   )
 }
