@@ -5,6 +5,7 @@ import FlightDetailModal from './FlightDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal from './ItemEditModal.jsx'
 import { countryFlag } from '../countryFlag.js'
+import { airportName } from '../airportNames.js'
 
 const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 'planned', cancelled: 'planned' }
 
@@ -123,7 +124,7 @@ function FlightCard({ item: initial }) {
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
-  const route = [d.origin, d.destination].filter(Boolean).join(' → ')
+  const route = [d.origin, d.destination].filter(Boolean).map(airportName).join(' → ')
 
   return (
     <>
