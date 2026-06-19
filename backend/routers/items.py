@@ -61,6 +61,15 @@ def delete_item(item_id: int, session: Session = Depends(get_session)):
     item = session.get(ItineraryItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    # For accommodation items, clear the legacy stop.accommodation field so the
+    # startup backfill and timeline lazy-migration don't recreate the item.
+    if item.kind == "accommodation":
+        stop = session.get(Stop, item.stop_id)
+        if stop and stop.accommodation:
+            stop.accommodation = ""
+            stop.accommodation_link = ""
+            stop.accommodation_notes = ""
+            session.add(stop)
     session.delete(item)
     session.commit()
 
