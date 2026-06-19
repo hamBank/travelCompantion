@@ -89,7 +89,7 @@ const AIRPORTS = {
   FCO: "Rome Fiumicino", CIA: "Rome Ciampino", MXP: "Milan Malpensa",
   LIN: "Milan Linate", BGY: "Milan Bergamo", VCE: "Venice",
   NAP: "Naples", BLQ: "Bologna", PMO: "Palermo", CTA: "Catania",
-  PSA: "Pisa", FLR: "Florence", TRN: "Turin", BRI: "Bari",
+  PSA: "Pisa", FLR: "Florence", TRN: "Turin", BRI: "Bari", BDS: "Brindisi",
   VRN: "Verona", TSF: "Treviso",
 
   // Europe — Scandinavia
