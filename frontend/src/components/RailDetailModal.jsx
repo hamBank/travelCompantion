@@ -22,13 +22,15 @@ async function liveRailCheck(item) {
   if (!trainNumber) throw new Error('No train number stored')
   if (!originName)  throw new Error('No origin station stored — add it in the edit form first')
 
-  const trainKey = trainNumber.replace(/\s/g, '').toUpperCase()
-  let lastErr = 'DB REST API temporarily unavailable — try again later'
+  // Normalise for comparison: strip spaces/dashes, uppercase ("TGV 9284" == "TGV9284")
+  const norm = s => s.replace(/[\s\-]/g, '').toUpperCase()
+  const trainKey = norm(trainNumber)
 
+  // ── 1. Try DB REST hosts (German, some Austrian/Dutch trains) ────────────────
   for (const host of DB_HOSTS) {
     try {
       const locRes = await fetch(`${host}/locations?` + new URLSearchParams({ query: originName, results: 3, stops: true, language: 'en' }))
-      if (locRes.status === 503 || !locRes.ok) { lastErr = `API unavailable (${host})`; continue }
+      if (locRes.status === 503 || !locRes.ok) continue
       const locs = await locRes.json()
       if (!locs?.length) return { found: false, train_number: trainNumber, checks: [] }
 
@@ -38,11 +40,11 @@ async function liveRailCheck(item) {
       const depP = new URLSearchParams({ results: 30, duration: 20, language: 'en', stopovers: false })
       if (d.depart_time) depP.set('when', d.depart_time)
       const depRes = await fetch(`${host}/stops/${stopId}/departures?${depP}`)
-      if (!depRes.ok) { lastErr = `Departures failed (${depRes.status})`; continue }
+      if (!depRes.ok) continue
       const depBody = await depRes.json()
 
       const deps = depBody.departures ?? (Array.isArray(depBody) ? depBody : [])
-      const dep  = deps.find(x => (x.line?.name || '').replace(/\s/g, '').toUpperCase() === trainKey)
+      const dep  = deps.find(x => norm(x.line?.name || '') === trainKey)
       if (!dep) return { found: false, train_number: trainNumber, checks: [] }
 
       const line        = dep.line ?? {}
@@ -75,19 +77,80 @@ async function liveRailCheck(item) {
       return {
         found: true,
         train_number: line.name || trainNumber,
-        checks: [
-          mkChk('Origin',       'origin',          d.origin,          stopName),
-          mkChk('Destination',  'destination',     d.destination,     destName),
-          mkChk('Operator',     'operator',        d.operator,        operatorNm),
-          mkChk('Depart time',  'depart_time',     hhmm(d.depart_time), hhmm(depPlanned), isoTrim(depPlanned)),
-          mkChk('Arrive time',  'arrive_time',     hhmm(d.arrive_time), hhmm(arrPlanned), isoTrim(arrPlanned)),
-          mkChk('Dep platform', 'depart_platform', d.depart_platform, depPlatform),
-          mkChk('Arr platform', 'arrive_platform', d.arrive_platform, arrPlatform),
-        ].filter(Boolean),
+        checks: buildChecks(d, { stopName, destName, operatorNm, depPlanned, arrPlanned, depPlatform, arrPlatform }),
       }
-    } catch (e) { lastErr = e.message; continue }
+    } catch { continue }
   }
-  throw new Error(lastErr)
+
+  // ── 2. Swiss Open Transport API (TGV/TER/ICE/ÖBB/SBB — no key, CORS open) ──
+  try {
+    const destName = (d.destination || '').trim()
+
+    if (destName) {
+      // connections endpoint gives departure + arrival in one shot
+      const p = new URLSearchParams({ from: originName, to: destName, limit: 10 })
+      if (d.depart_time) p.set('datetime', d.depart_time.slice(0, 16).replace('T', ' '))
+      const res = await fetch(`https://transport.opendata.ch/v1/connections?${p}`)
+      if (res.ok) {
+        const { connections } = await res.json()
+        const conn = (connections ?? []).find(c => {
+          const jName = c.sections?.[0]?.journey?.name ?? ''
+          return norm(jName) === trainKey
+        })
+        if (conn) {
+          const sec = conn.sections?.[0] ?? {}
+          const jrn = sec.journey ?? {}
+          return {
+            found: true,
+            train_number: jrn.name || trainNumber,
+            checks: buildChecks(d, {
+              stopName:    conn.from?.station?.name,
+              destName:    conn.to?.station?.name,
+              operatorNm:  jrn.operator,
+              depPlanned:  conn.from?.departure,
+              arrPlanned:  conn.to?.arrival,
+              depPlatform: conn.from?.platform,
+              arrPlatform: conn.to?.platform,
+            }),
+          }
+        }
+      }
+    }
+
+    // stationboard fallback (departure info only)
+    const p2 = new URLSearchParams({ station: originName, limit: 60, type: 'departure' })
+    if (d.depart_time) p2.set('datetime', d.depart_time.slice(0, 16).replace('T', ' '))
+    const res2 = await fetch(`https://transport.opendata.ch/v1/stationboard?${p2}`)
+    if (res2.ok) {
+      const { stationboard } = await res2.json()
+      const dep = (stationboard ?? []).find(s => norm(s.name ?? '') === trainKey)
+      if (!dep) return { found: false, train_number: trainNumber, checks: [] }
+      return {
+        found: true,
+        train_number: dep.name || trainNumber,
+        checks: buildChecks(d, {
+          stopName:    originName,
+          operatorNm:  dep.operator,
+          depPlanned:  dep.stop?.departure,
+          depPlatform: dep.stop?.platform,
+        }),
+      }
+    }
+  } catch { /* fall through */ }
+
+  throw new Error('Rail API temporarily unavailable — try again later')
+}
+
+function buildChecks(d, { stopName, destName, operatorNm, depPlanned, arrPlanned, depPlatform, arrPlatform } = {}) {
+  return [
+    mkChk('Origin',       'origin',          d.origin,          stopName   ?? null),
+    mkChk('Destination',  'destination',     d.destination,     destName   ?? null),
+    mkChk('Operator',     'operator',        d.operator,        operatorNm ?? null),
+    mkChk('Depart time',  'depart_time',     hhmm(d.depart_time), hhmm(depPlanned), isoTrim(depPlanned)),
+    mkChk('Arrive time',  'arrive_time',     hhmm(d.arrive_time), hhmm(arrPlanned), isoTrim(arrPlanned)),
+    mkChk('Dep platform', 'depart_platform', d.depart_platform, depPlatform ?? null),
+    mkChk('Arr platform', 'arrive_platform', d.arrive_platform, arrPlatform ?? null),
+  ].filter(Boolean)
 }
 
 function fmtDateTime(val) {
