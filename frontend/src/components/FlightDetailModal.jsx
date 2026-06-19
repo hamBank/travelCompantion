@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { checkFlight, updateItem } from '../api.js'
+import { airportName, airportLabel } from '../airportNames.js'
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -192,7 +193,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave }
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const route = [d.origin, d.destination].filter(Boolean).join(' → ')
+  const route = [d.origin, d.destination].filter(Boolean).map(airportName).join(' → ')
   const flightLabel = [d.flight_number, d.airline].filter(Boolean).join(' · ')
 
   return (
@@ -248,7 +249,9 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave }
             >
               {d.depart_time && (
                 <div className="flex justify-between gap-4 text-sm">
-                  <span style={{ color: 'var(--text-faint)' }}>Departs</span>
+                  <span style={{ color: 'var(--text-faint)' }}>
+                    Departs{d.origin && <span className="ml-1 normal-case font-normal" style={{ color: 'var(--text-faint)' }}>· {airportLabel(d.origin)}</span>}
+                  </span>
                   <span className="text-right">
                     {fmtDateTime(d.depart_time)}
                     {d.depart_tz && <span style={{ color: 'var(--text-faint)' }} className="ml-1 text-xs">{d.depart_tz}</span>}
@@ -265,7 +268,9 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave }
               )}
               {d.arrive_time && (
                 <div className="flex justify-between gap-4 text-sm">
-                  <span style={{ color: 'var(--text-faint)' }}>Arrives</span>
+                  <span style={{ color: 'var(--text-faint)' }}>
+                    Arrives{d.destination && <span className="ml-1 normal-case font-normal" style={{ color: 'var(--text-faint)' }}>· {airportLabel(d.destination)}</span>}
+                  </span>
                   <span className="text-right">
                     {fmtDateTime(d.arrive_time)}
                     {d.arrive_tz && <span style={{ color: 'var(--text-faint)' }} className="ml-1 text-xs">{d.arrive_tz}</span>}
