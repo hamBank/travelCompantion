@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { checkRail, updateItem } from '../api.js'
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -21,9 +22,153 @@ function Row({ label, value }) {
   )
 }
 
+function RailCheckPanel({ item, onItemUpdate }) {
+  const [state, setState]       = useState('idle')
+  const [result, setResult]     = useState(null)
+  const [errMsg, setErrMsg]     = useState(null)
+  const [applying, setApplying] = useState(null)
+
+  async function run() {
+    setState('loading'); setResult(null); setErrMsg(null)
+    try {
+      const data = await checkRail(item.id)
+      setResult(data); setState('done')
+    } catch (e) {
+      setErrMsg(e.message); setState('error')
+    }
+  }
+
+  async function applyField(c) {
+    setApplying(c.key)
+    try {
+      const newDetails = { ...item.details, [c.key]: c.update_value }
+      const updated = await updateItem(item.id, { details: newDetails })
+      onItemUpdate(updated)
+      setResult(prev => ({
+        ...prev,
+        checks: prev.checks.map(ch =>
+          ch.key === c.key ? { ...ch, match: true, stored: c.live } : ch
+        ),
+      }))
+    } catch (e) {
+      setErrMsg(e.message)
+    } finally {
+      setApplying(null)
+    }
+  }
+
+  if (state === 'idle') {
+    return (
+      <button
+        onClick={run}
+        style={{
+          color: 'var(--kind-rail)',
+          border: '1px solid color-mix(in srgb, var(--kind-rail) 35%, transparent)',
+          background: 'color-mix(in srgb, var(--kind-rail) 8%, transparent)',
+        }}
+        className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80 transition-opacity"
+      >
+        Check train
+      </button>
+    )
+  }
+
+  if (state === 'loading') {
+    return <span style={{ color: 'var(--text-faint)' }} className="text-xs">Checking…</span>
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="flex items-center gap-2">
+        <span style={{ color: 'var(--error)' }} className="text-xs">{errMsg}</span>
+        <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70">Retry</button>
+      </div>
+    )
+  }
+
+  if (!result?.found) {
+    return (
+      <div className="flex items-center gap-2">
+        <span style={{ color: 'var(--text-faint)' }} className="text-xs">
+          Train {result?.train_number} not found · DB network only
+        </span>
+        <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70">↺</button>
+      </div>
+    )
+  }
+
+  const mismatches = result.checks.filter(c => c.match === false)
+
+  return (
+    <div
+      style={{
+        background: 'var(--surface)',
+        border: `1px solid ${mismatches.length ? 'color-mix(in srgb, var(--warning) 40%, transparent)' : 'color-mix(in srgb, var(--success) 40%, transparent)'}`,
+        borderRadius: '0.5rem',
+      }}
+      className="mt-4 overflow-hidden"
+    >
+      <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+        <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+          Live check · {result.train_number}
+          <span style={{ color: 'var(--text-faint)' }} className="ml-1 font-normal">(DB network)</span>
+        </span>
+        <div className="flex items-center gap-2">
+          {mismatches.length > 0
+            ? <span style={{ color: 'var(--warning)' }} className="text-xs font-medium">{mismatches.length} mismatch{mismatches.length > 1 ? 'es' : ''}</span>
+            : <span style={{ color: 'var(--success)' }} className="text-xs font-medium">All match</span>
+          }
+          <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70" title="Re-check">↺</button>
+        </div>
+      </div>
+
+      <div className="divide-y" style={{ '--tw-divide-color': 'var(--border)' }}>
+        {result.checks.map(c => (
+          <div key={c.field} className="flex items-start gap-2 px-3 py-2 text-xs">
+            <span style={{ color: 'var(--text-faint)', width: '6rem', flexShrink: 0 }} className="uppercase tracking-wide pt-0.5">
+              {c.field}
+            </span>
+            <div className="flex-1 min-w-0 space-y-0.5">
+              {c.stored
+                ? <div style={{ color: 'var(--text-muted)' }}>Stored: {c.stored}</div>
+                : <div style={{ color: 'var(--text-faint)' }} className="italic">Not stored</div>
+              }
+              <div style={{ color: c.match === false ? 'var(--warning)' : c.match === true ? 'var(--success)' : 'var(--text)' }}>
+                Live: {c.live}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {c.match !== true && (
+                <button
+                  onClick={() => applyField(c)}
+                  disabled={applying === c.key}
+                  style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
+                  className="px-1.5 py-0.5 rounded text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+                >
+                  {applying === c.key ? '…' : 'Apply'}
+                </button>
+              )}
+              <span className="text-base leading-none">
+                {c.match === true  && <span style={{ color: 'var(--success)' }}>✓</span>}
+                {c.match === false && <span style={{ color: 'var(--warning)' }}>!</span>}
+                {c.match === null  && <span style={{ color: 'var(--text-faint)' }}>–</span>}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function RailDetailModal({ item: initialItem, onClose, onSave }) {
   const [item, setItem] = useState(initialItem)
   const d = item.details ?? {}
+
+  function onItemUpdate(updated) {
+    setItem(updated)
+    onSave?.(updated)
+  }
 
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
@@ -62,13 +207,16 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave }) 
               <div style={{ color: 'var(--kind-rail)' }} className="text-xs mt-0.5">{trainLabel}</div>
             )}
           </div>
-          <button
-            onClick={onClose}
-            style={{ color: 'var(--text-faint)' }}
-            className="text-lg leading-none hover:opacity-70 shrink-0"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {d.train_number && <RailCheckPanel item={item} onItemUpdate={onItemUpdate} />}
+            <button
+              onClick={onClose}
+              style={{ color: 'var(--text-faint)' }}
+              className="text-lg leading-none hover:opacity-70"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Body */}

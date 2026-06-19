@@ -19,6 +19,7 @@ class ItemKind(str, Enum):
     accommodation = "accommodation"
     flight = "flight"
     cycling = "cycling"
+    rail = "rail"
 
 
 class ItemStatus(str, Enum):
