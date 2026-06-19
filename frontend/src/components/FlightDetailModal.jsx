@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { checkFlight } from '../api.js'
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -17,6 +18,129 @@ function Row({ label, value }) {
         {label}
       </span>
       <span style={{ color: 'var(--text)' }} className="text-sm break-all">{value}</span>
+    </div>
+  )
+}
+
+const STATUS_COLOR = {
+  scheduled: 'var(--status-confirmed)',
+  active:    'var(--success)',
+  landed:    'var(--success)',
+  cancelled: 'var(--error)',
+  incident:  'var(--error)',
+  diverted:  'var(--warning)',
+}
+
+function FlightCheckPanel({ itemId }) {
+  const [state, setState]   = useState('idle')  // idle | loading | done | error
+  const [result, setResult] = useState(null)
+  const [errMsg, setErrMsg] = useState(null)
+
+  async function run() {
+    setState('loading')
+    setResult(null)
+    setErrMsg(null)
+    try {
+      const data = await checkFlight(itemId)
+      setResult(data)
+      setState('done')
+    } catch (e) {
+      setErrMsg(e.message)
+      setState('error')
+    }
+  }
+
+  if (state === 'idle') {
+    return (
+      <button
+        onClick={run}
+        style={{
+          color: 'var(--accent-alt)',
+          border: '1px solid color-mix(in srgb, var(--accent-alt) 35%, transparent)',
+          background: 'color-mix(in srgb, var(--accent-alt) 8%, transparent)',
+        }}
+        className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80 transition-opacity"
+      >
+        Check flight
+      </button>
+    )
+  }
+
+  if (state === 'loading') {
+    return <span style={{ color: 'var(--text-faint)' }} className="text-xs">Checking…</span>
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="flex items-center gap-2">
+        <span style={{ color: 'var(--error)' }} className="text-xs">{errMsg}</span>
+        <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70">Retry</button>
+      </div>
+    )
+  }
+
+  if (!result?.found) {
+    return (
+      <div className="flex items-center gap-2">
+        <span style={{ color: 'var(--text-faint)' }} className="text-xs">Flight {result?.flight_iata} not found in live data</span>
+        <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70">↺</button>
+      </div>
+    )
+  }
+
+  const statusColor = STATUS_COLOR[result.flight_status] ?? 'var(--text-muted)'
+  const mismatches = result.checks.filter(c => c.match === false)
+
+  return (
+    <div
+      style={{
+        background: 'var(--surface)',
+        border: `1px solid ${mismatches.length ? 'color-mix(in srgb, var(--warning) 40%, transparent)' : 'color-mix(in srgb, var(--success) 40%, transparent)'}`,
+        borderRadius: '0.5rem',
+      }}
+      className="mt-4 overflow-hidden"
+    >
+      {/* panel header */}
+      <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Live check · {result.flight_iata}</span>
+          {result.flight_status && (
+            <span className="text-xs capitalize font-medium" style={{ color: statusColor }}>{result.flight_status}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {mismatches.length > 0
+            ? <span style={{ color: 'var(--warning)' }} className="text-xs font-medium">{mismatches.length} mismatch{mismatches.length > 1 ? 'es' : ''}</span>
+            : <span style={{ color: 'var(--success)' }} className="text-xs font-medium">All match</span>
+          }
+          <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70" title="Re-check">↺</button>
+        </div>
+      </div>
+
+      {/* check rows */}
+      <div className="divide-y" style={{ '--tw-divide-color': 'var(--border)' }}>
+        {result.checks.map(c => (
+          <div key={c.field} className="flex items-start gap-2 px-3 py-2 text-xs">
+            <span style={{ color: 'var(--text-faint)', width: '6rem', flexShrink: 0 }} className="uppercase tracking-wide pt-0.5">
+              {c.field}
+            </span>
+            <div className="flex-1 min-w-0 space-y-0.5">
+              {c.stored
+                ? <div style={{ color: 'var(--text-muted)' }}>Stored: {c.stored}</div>
+                : <div style={{ color: 'var(--text-faint)' }} className="italic">Not stored</div>
+              }
+              <div style={{ color: c.match === false ? 'var(--warning)' : c.match === true ? 'var(--success)' : 'var(--text)' }}>
+                Live: {c.live}
+              </div>
+            </div>
+            <span className="shrink-0 text-base leading-none mt-0.5">
+              {c.match === true  && <span style={{ color: 'var(--success)' }}>✓</span>}
+              {c.match === false && <span style={{ color: 'var(--warning)' }}>!</span>}
+              {c.match === null  && <span style={{ color: 'var(--text-faint)' }}>–</span>}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -61,13 +185,16 @@ export default function FlightDetailModal({ item, onClose }) {
               <div style={{ color: 'var(--accent-alt)' }} className="text-xs mt-0.5">{flightLabel}</div>
             )}
           </div>
-          <button
-            onClick={onClose}
-            style={{ color: 'var(--text-faint)' }}
-            className="text-lg leading-none hover:opacity-70 shrink-0"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {d.flight_number && <FlightCheckPanel itemId={item.id} />}
+            <button
+              onClick={onClose}
+              style={{ color: 'var(--text-faint)' }}
+              className="text-lg leading-none hover:opacity-70"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Body */}

@@ -68,6 +68,72 @@ def delete_item(item_id: int, session: Session = Depends(get_session)):
 _PLACES_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 _PLACES_BASE = "https://maps.googleapis.com/maps/api/place"
 
+_AVIATIONSTACK_KEY = os.getenv("AVIATIONSTACK_KEY", "")
+
+@router.get("/items/{item_id}/flight-check")
+def check_flight(item_id: int, session: Session = Depends(get_session)):
+    if not _AVIATIONSTACK_KEY:
+        raise HTTPException(status_code=503, detail="Flight check not configured (set AVIATIONSTACK_KEY)")
+    item = session.get(ItineraryItem, item_id)
+    if not item or item.kind != "flight":
+        raise HTTPException(status_code=404, detail="Flight item not found")
+
+    d = item.details or {}
+    flight_iata = d.get("flight_number", "").replace(" ", "").upper()
+    if not flight_iata:
+        raise HTTPException(status_code=400, detail="No flight number stored")
+
+    params = {"access_key": _AVIATIONSTACK_KEY, "flight_iata": flight_iata}
+    if d.get("depart_time"):
+        params["flight_date"] = d["depart_time"][:10]
+
+    with httpx.Client(timeout=12) as client:
+        r = client.get("http://api.aviationstack.com/v1/flights", params=params)
+        r.raise_for_status()
+        body = r.json()
+
+    if body.get("error"):
+        msg = body["error"].get("message", "API error")
+        raise HTTPException(status_code=502, detail=msg)
+
+    flights = body.get("data", [])
+    if not flights:
+        return {"found": False, "flight_iata": flight_iata, "checks": []}
+
+    live = flights[0]
+    dep  = live.get("departure", {})
+    arr  = live.get("arrival", {})
+    al   = live.get("airline", {})
+
+    def hhmm(iso):
+        try: return iso[11:16] if iso else None
+        except: return None
+
+    def chk(label, stored, live_val):
+        if live_val is None:
+            return None
+        stored_s = (stored or "").strip()
+        live_s   = live_val.strip()
+        match = stored_s.upper() == live_s.upper() if stored_s else None
+        return {"field": label, "stored": stored_s or None, "live": live_s, "match": match}
+
+    results = [c for c in [
+        chk("Origin",       d.get("origin"),          dep.get("iata")),
+        chk("Destination",  d.get("destination"),      arr.get("iata")),
+        chk("Airline",      d.get("airline"),          al.get("name")),
+        chk("Depart time",  hhmm(d.get("depart_time")), hhmm(dep.get("scheduled"))),
+        chk("Arrive time",  hhmm(d.get("arrive_time")), hhmm(arr.get("scheduled"))),
+        chk("Dep terminal", d.get("origin_terminal"),  dep.get("terminal")),
+        chk("Arr terminal", d.get("arrive_terminal"),  arr.get("terminal")),
+    ] if c]
+
+    return {
+        "found": True,
+        "flight_iata": flight_iata,
+        "flight_status": live.get("flight_status"),
+        "checks": results,
+    }
+
 @router.get("/items/{item_id}/enrich")
 def enrich_item(item_id: int, session: Session = Depends(get_session)):
     if not _PLACES_KEY:
