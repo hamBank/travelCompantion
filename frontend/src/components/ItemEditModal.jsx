@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation } from '../api.js'
+import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode } from '../api.js'
 
 const KIND_VAR = {
   activity:      'var(--kind-activity)',
@@ -415,6 +415,14 @@ function WalkForm({ core, details, setCore, setDetails }) {
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
     if (mapsUrl) { setD('maps_url', mapsUrl) }
 
+    // If coordinates weren't in the URL, try geocoding the place names
+    if (!res.startCoords && res.start) {
+      try { res.startCoords = await fetchGeocode(res.start) } catch {}
+    }
+    if (!res.endCoords && res.end) {
+      try { res.endCoords = await fetchGeocode(res.end) } catch {}
+    }
+
     if (res.startCoords && res.endCoords) {
       if (!details.distance) {
         const km = haversineKm(res.startCoords, res.endCoords)
@@ -435,9 +443,8 @@ function WalkForm({ core, details, setCore, setDetails }) {
       }
     }
 
-    const note = res.startCoords ? ' (distance & elevation are estimates)' : ''
     setMapsMsg(filled
-      ? { text: `${filled} field${filled > 1 ? 's' : ''} filled${note}`, color: 'var(--success)' }
+      ? { text: `${filled} field${filled > 1 ? 's' : ''} filled (estimates)`, color: 'var(--success)' }
       : { text: 'Nothing to add (fields already filled)', color: 'var(--text-faint)' })
   }
 
