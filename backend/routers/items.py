@@ -241,7 +241,11 @@ def airline_lookup(iata: str):
     return {"iata": code, "name": name}
 
 
-_DB_REST = "https://v6.db.transport.rest"
+_DB_REST_HOSTS = ["https://v6.db.transport.rest", "https://v5.db.transport.rest"]
+_DB_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+}
 
 @router.get("/items/{item_id}/rail-check")
 def check_rail(item_id: int, session: Session = Depends(get_session)):
@@ -280,43 +284,58 @@ def check_rail(item_id: int, session: Session = Depends(get_session)):
             "match": match,
         }
 
-    try:
-        with httpx.Client(timeout=12) as client:
-            # 1. Resolve origin station to a stop ID
-            loc_r = client.get(f"{_DB_REST}/locations", params={
-                "query": origin_name, "results": 3, "stops": "true", "language": "en",
-            })
-            if not loc_r.is_success or not loc_r.text:
-                raise HTTPException(status_code=502, detail=f"Rail API: station lookup failed ({loc_r.status_code})")
-            locations = loc_r.json()
-            if not locations:
-                return {"found": False, "train_number": train_number, "checks": []}
+    dep_time = d.get("depart_time", "")
+    dep_params: dict = {"results": 30, "duration": 20, "language": "en", "stopovers": "false"}
+    if dep_time:
+        dep_params["when"] = dep_time
 
-            stop_id   = locations[0]["id"]
-            stop_name = locations[0].get("name", origin_name)
+    locations  = None
+    dep_body   = None
+    last_error = "Rail API unreachable"
 
-            # 2. Get departures from that station, optionally anchored to stored time
-            dep_params: dict = {"results": 30, "duration": 20, "language": "en", "stopovers": "false"}
-            dep_time = d.get("depart_time", "")
-            if dep_time:
-                dep_params["when"] = dep_time
+    # Try each host in order; skip to next on 503/network error
+    with httpx.Client(timeout=14, headers=_DB_HEADERS) as client:
+        for host in _DB_REST_HOSTS:
+            try:
+                loc_r = client.get(f"{host}/locations", params={
+                    "query": origin_name, "results": 3, "stops": "true", "language": "en",
+                })
+                if loc_r.status_code == 503:
+                    last_error = f"DB REST API unavailable ({host})"
+                    continue
+                if not loc_r.is_success or not loc_r.text:
+                    last_error = f"Station lookup failed ({loc_r.status_code})"
+                    continue
+                locations = loc_r.json()
+                if not locations:
+                    return {"found": False, "train_number": train_number, "checks": []}
 
-            dep_r = client.get(f"{_DB_REST}/stops/{stop_id}/departures", params=dep_params)
-            if not dep_r.is_success or not dep_r.text:
-                raise HTTPException(status_code=502, detail=f"Rail API: departures failed ({dep_r.status_code})")
-            dep_body = dep_r.json()
+                stop_id   = locations[0]["id"]
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Rail API unreachable: {e}")
+                dep_r = client.get(f"{host}/stops/{stop_id}/departures", params=dep_params)
+                if not dep_r.is_success or not dep_r.text:
+                    last_error = f"Departures failed ({dep_r.status_code})"
+                    locations = None
+                    continue
 
+                dep_body = dep_r.json()
+                break  # success — exit host loop
+
+            except Exception as e:
+                last_error = str(e)
+                locations = None
+                continue
+
+    if locations is None or dep_body is None:
+        raise HTTPException(status_code=502, detail=last_error)
+
+    stop_name  = locations[0].get("name", origin_name)
     departures = dep_body.get("departures", dep_body) if isinstance(dep_body, dict) else dep_body
     if not isinstance(departures, list):
         departures = []
 
-    # 3. Match departure by train number (flexible: "ICE123" matches "ICE 123")
-    train_key = train_number.replace(" ", "").upper()
+    # Match departure by train number (flexible: "ICE123" == "ICE 123")
+    train_key   = train_number.replace(" ", "").upper()
     matched_dep = None
     for dep in departures:
         line_name = (dep.get("line") or {}).get("name") or ""
@@ -333,22 +352,26 @@ def check_rail(item_id: int, session: Session = Depends(get_session)):
     operator_nm  = (line.get("operator") or {}).get("name")
     trip_id      = matched_dep.get("tripId")
 
-    # 4. Fetch trip stopovers to get arrival info at destination
+    # Fetch trip stopovers to get arrival info at destination
     arr_planned  = None
     arr_platform = None
     dest_name    = None
 
     if trip_id:
+        # Use the first host that responded successfully
+        working_host = next(
+            (h for h in _DB_REST_HOSTS if locations[0].get("id")),
+            _DB_REST_HOSTS[0],
+        )
         try:
-            with httpx.Client(timeout=12) as client:
-                trip_r = client.get(f"{_DB_REST}/trips/{trip_id}", params={
+            with httpx.Client(timeout=14, headers=_DB_HEADERS) as client:
+                trip_r = client.get(f"{working_host}/trips/{trip_id}", params={
                     "stopovers": "true", "language": "en",
                 })
             if trip_r.is_success and trip_r.text:
                 trip_data   = trip_r.json().get("trip", {})
                 stopovers   = trip_data.get("stopovers", [])
                 dest_stored = (d.get("destination") or "").strip().upper()
-                # Walk stopovers to find our destination (or use the last one)
                 for sv in stopovers:
                     sv_name = (sv.get("stop") or {}).get("name") or ""
                     if dest_stored and dest_stored in sv_name.upper():
