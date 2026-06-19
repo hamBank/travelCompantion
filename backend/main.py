@@ -1,6 +1,7 @@
-import os
+import os, hmac, hashlib, json
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from pathlib import Path
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from .database import create_db_and_tables
@@ -10,7 +11,11 @@ from .routers.auth_router import router as auth_router
 # Paths that never require authentication (static assets + public endpoints)
 _PUBLIC_PREFIXES = ("/auth/", "/health", "/assets/", "/sw.", "/registerSW.", "/manifest.")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
-                    "/favicon.ico", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"}
+                    "/favicon.ico", "/icon-192.png", "/icon-512.png",
+                    "/apple-touch-icon.png", "/deploy"}
+
+_DEPLOY_SECRET = os.getenv("DEPLOY_SECRET", "").encode()
+_TRIGGER       = Path(__file__).parent.parent / ".deploy-trigger"
 
 
 @asynccontextmanager
@@ -26,6 +31,24 @@ app.include_router(trips.router, prefix="/trips", tags=["trips"])
 app.include_router(stops.router, tags=["stops"])
 app.include_router(items.router, tags=["items"])
 app.include_router(sheets_import.router)
+
+
+@app.post("/deploy")
+async def webhook_deploy(request: Request):
+    if not _DEPLOY_SECRET:
+        raise HTTPException(status_code=503, detail="Deploy webhook not configured (set DEPLOY_SECRET)")
+    body = await request.body()
+    sig      = request.headers.get("X-Hub-Signature-256", "")
+    expected = "sha256=" + hmac.new(_DEPLOY_SECRET, body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        raise HTTPException(status_code=403, detail="Bad signature")
+    if request.headers.get("X-GitHub-Event") == "push":
+        try:
+            if json.loads(body).get("ref") == "refs/heads/main":
+                _TRIGGER.touch()
+        except Exception:
+            pass
+    return {"ok": True}
 
 
 @app.middleware("http")
