@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { updateItem } from '../api.js'
 
 const DB_HOSTS = ['https://v6.db.transport.rest', 'https://v5.db.transport.rest']
+const SWISS    = 'https://transport.opendata.ch/v1'
 
 function hhmm(iso) { try { return iso ? iso.slice(11, 16) : null } catch { return null } }
 function isoTrim(iso) { try { return iso ? iso.slice(0, 16) : null } catch { return null } }
@@ -15,6 +16,26 @@ function mkChk(field, key, stored, live, updateValue) {
   return { field, key, stored: storedS || null, live: liveS, update_value: typeof upd === 'string' ? upd.trim() : String(upd), match }
 }
 
+// fetch with AbortController timeout — avoids hanging 10 s on downed servers
+async function fetchT(url, ms = 4000) {
+  const ctrl  = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), ms)
+  try   { const r = await fetch(url, { signal: ctrl.signal }); clearTimeout(timer); return r }
+  catch (e) { clearTimeout(timer); throw e }
+}
+
+// Match a journey object against the user's stored train number.
+// Tries: raw name, stripped leading zeros, category+name, category+bare.
+// "017701"/"TER017701"/"TER 017701"/"TER17701"/"TER 17701" all match "TER 17701".
+function matchesJourney(jrn, trainKey) {
+  if (!jrn) return false
+  const N    = s => s.replace(/[\s\-]/g, '').toUpperCase()
+  const name = String(jrn.name ?? '')
+  const cat  = String(jrn.category ?? '').toUpperCase()
+  const bare = name.replace(/^0+/, '') || name   // strip leading zeros
+  return [name, bare, cat + name, cat + bare].map(N).includes(trainKey)
+}
+
 async function liveRailCheck(item) {
   const d = item.details ?? {}
   const trainNumber = (d.train_number || '').trim()
@@ -22,15 +43,14 @@ async function liveRailCheck(item) {
   if (!trainNumber) throw new Error('No train number stored')
   if (!originName)  throw new Error('No origin station stored — add it in the edit form first')
 
-  // Normalise for comparison: strip spaces/dashes, uppercase ("TGV 9284" == "TGV9284")
-  const norm = s => s.replace(/[\s\-]/g, '').toUpperCase()
+  const norm     = s => s.replace(/[\s\-]/g, '').toUpperCase()
   const trainKey = norm(trainNumber)
 
-  // ── 1. Try DB REST hosts (German, some Austrian/Dutch trains) ────────────────
+  // ── 1. DB REST hosts (German/Dutch trains; skip fast if down or no CORS) ─────
   for (const host of DB_HOSTS) {
     try {
-      const locRes = await fetch(`${host}/locations?` + new URLSearchParams({ query: originName, results: 3, stops: true, language: 'en' }))
-      if (locRes.status === 503 || !locRes.ok) continue
+      const locRes = await fetchT(`${host}/locations?` + new URLSearchParams({ query: originName, results: 3, stops: true, language: 'en' }))
+      if (!locRes.ok) continue
       const locs = await locRes.json()
       if (!locs?.length) return { found: false, train_number: trainNumber, checks: [] }
 
@@ -39,7 +59,7 @@ async function liveRailCheck(item) {
 
       const depP = new URLSearchParams({ results: 30, duration: 20, language: 'en', stopovers: false })
       if (d.depart_time) depP.set('when', d.depart_time)
-      const depRes = await fetch(`${host}/stops/${stopId}/departures?${depP}`)
+      const depRes = await fetchT(`${host}/stops/${stopId}/departures?${depP}`)
       if (!depRes.ok) continue
       const depBody = await depRes.json()
 
@@ -56,7 +76,7 @@ async function liveRailCheck(item) {
       let arrPlanned = null, arrPlatform = null, destName = null
       if (tripId) {
         try {
-          const tRes = await fetch(`${host}/trips/${encodeURIComponent(tripId)}?stopovers=true&language=en`)
+          const tRes = await fetchT(`${host}/trips/${encodeURIComponent(tripId)}?stopovers=true&language=en`)
           if (tRes.ok) {
             const stopovers  = (await tRes.json()).trip?.stopovers ?? []
             const destStored = (d.destination || '').trim().toUpperCase()
@@ -73,7 +93,6 @@ async function liveRailCheck(item) {
           }
         } catch { /* non-fatal */ }
       }
-
       return {
         found: true,
         train_number: line.name || trainNumber,
@@ -82,27 +101,29 @@ async function liveRailCheck(item) {
     } catch { continue }
   }
 
-  // ── 2. Swiss Open Transport API (TGV/TER/ICE/ÖBB/SBB — no key, CORS open) ──
+  // ── 2. Swiss Open Transport API (TGV/TER/ICE/ÖBB/SBB — CORS open, no key) ──
+  // journey.name is an internal 6-digit ID ("017701"); matchesJourney() tries
+  // bare ("17701") and category-prefixed ("TER17701", "TER 17701") variants.
   try {
     const destName = (d.destination || '').trim()
 
     if (destName) {
-      // connections endpoint gives departure + arrival in one shot
       const p = new URLSearchParams({ from: originName, to: destName, limit: 10 })
       if (d.depart_time) p.set('datetime', d.depart_time.slice(0, 16).replace('T', ' '))
-      const res = await fetch(`https://transport.opendata.ch/v1/connections?${p}`)
+      const res = await fetch(`${SWISS}/connections?${p}`)
       if (res.ok) {
         const { connections } = await res.json()
-        const conn = (connections ?? []).find(c => {
-          const jName = c.sections?.[0]?.journey?.name ?? ''
-          return norm(jName) === trainKey
-        })
+        // Search all sections of each connection, not just the first
+        const conn = (connections ?? []).find(c =>
+          c.sections?.some(s => matchesJourney(s.journey, trainKey))
+        )
         if (conn) {
-          const sec = conn.sections?.[0] ?? {}
+          const sec = conn.sections?.find(s => matchesJourney(s.journey, trainKey)) ?? {}
           const jrn = sec.journey ?? {}
+          const bare = String(jrn.name ?? '').replace(/^0+/, '')
           return {
             found: true,
-            train_number: jrn.name || trainNumber,
+            train_number: [jrn.category, bare].filter(Boolean).join(' ') || trainNumber,
             checks: buildChecks(d, {
               stopName:    conn.from?.station?.name,
               destName:    conn.to?.station?.name,
@@ -114,20 +135,24 @@ async function liveRailCheck(item) {
             }),
           }
         }
+        // No matching journey in connections — return not-found to avoid falling through to stationboard
+        if ((connections ?? []).length > 0) return { found: false, train_number: trainNumber, checks: [] }
       }
     }
 
-    // stationboard fallback (departure info only)
+    // Stationboard fallback — departure info only (no destination needed)
     const p2 = new URLSearchParams({ station: originName, limit: 60, type: 'departure' })
     if (d.depart_time) p2.set('datetime', d.depart_time.slice(0, 16).replace('T', ' '))
-    const res2 = await fetch(`https://transport.opendata.ch/v1/stationboard?${p2}`)
+    const res2 = await fetch(`${SWISS}/stationboard?${p2}`)
     if (res2.ok) {
       const { stationboard } = await res2.json()
-      const dep = (stationboard ?? []).find(s => norm(s.name ?? '') === trainKey)
+      // stationboard entries share the same fields (name, category) as journey objects
+      const dep = (stationboard ?? []).find(s => matchesJourney(s, trainKey))
       if (!dep) return { found: false, train_number: trainNumber, checks: [] }
+      const bare = String(dep.name ?? '').replace(/^0+/, '')
       return {
         found: true,
-        train_number: dep.name || trainNumber,
+        train_number: [dep.category, bare].filter(Boolean).join(' ') || trainNumber,
         checks: buildChecks(d, {
           stopName:    originName,
           operatorNm:  dep.operator,
