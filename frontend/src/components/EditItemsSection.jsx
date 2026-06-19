@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { deleteItem, createItem } from '../api.js'
 import ItemEditModal from './ItemEditModal.jsx'
 
-const KIND_OPTIONS = ['activity', 'cycling', 'rail', 'restaurant', 'note', 'accommodation', 'flight']
+const KIND_OPTIONS = ['activity', 'walk', 'cycling', 'rail', 'restaurant', 'note', 'accommodation', 'flight']
 
 const KIND_VAR = {
   activity:      'var(--kind-activity)',
+  walk:          'var(--kind-walk)',
   cycling:       'var(--kind-cycling)',
   rail:          'var(--kind-rail)',
   restaurant:    'var(--kind-restaurant)',

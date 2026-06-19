@@ -397,8 +397,52 @@ function GenericForm({ core, setCore }) {
   )
 }
 
+const DIFFICULTY = ['easy', 'moderate', 'hard', 'strenuous']
+
+function WalkForm({ core, details, setCore, setDetails }) {
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  const diff = d('difficulty')
+  return (
+    <div className="space-y-4">
+      <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Coastal trail" />
+      <Field label="Date & time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Start" value={d('start_location')} onChange={v => setD('start_location', v)} placeholder="Trailhead / town" />
+        <Field label="End"   value={d('end_location')}   onChange={v => setD('end_location',   v)} placeholder="Summit / finish" />
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Distance"   value={d('distance')}       onChange={v => setD('distance', v)}       placeholder="12 km" />
+        <Field label="Elev ↑"     value={d('elevation_gain')} onChange={v => setD('elevation_gain', v)} placeholder="600 m" />
+        <Field label="Elev ↓"     value={d('elevation_loss')} onChange={v => setD('elevation_loss', v)} placeholder="400 m" />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Difficulty</label>
+        <div className="flex gap-2 flex-wrap">
+          {DIFFICULTY.map(s => (
+            <button key={s} type="button" onClick={() => setD('difficulty', diff === s ? '' : s)}
+              style={{
+                color: diff === s ? 'var(--kind-walk)' : 'var(--text-faint)',
+                border: `1px solid ${diff === s ? 'var(--kind-walk)' : 'var(--border)'}`,
+                background: diff === s ? 'color-mix(in srgb, var(--kind-walk) 12%, transparent)' : 'transparent',
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors">
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Duration"  value={d('duration')} onChange={v => setD('duration', v)} placeholder="3h 30m" />
+        <Field label="Cost"      value={core.cost}     onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€0" />
+      </div>
+      <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Trail conditions, gear needed…" />
+    </div>
+  )
+}
+
 export const KIND_LABEL = {
-  activity: 'Activity', cycling: 'Cycling', rail: 'Rail',
+  activity: 'Activity', walk: 'Walk / Hike', cycling: 'Cycling', rail: 'Rail',
   restaurant: 'Restaurant', note: 'Note',
   accommodation: 'Accommodation', flight: 'Flight',
 }
@@ -668,6 +712,8 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             <RestaurantForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'activity' ? (
             <ActivityForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'walk' ? (
+            <WalkForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'cycling' ? (
             <CyclingForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'rail' ? (

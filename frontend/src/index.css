@@ -32,6 +32,7 @@
   --kind-flight:        #89dceb;
   --kind-cycling:       #fab387;
   --kind-rail:          #b4befe;
+  --kind-walk:          #94e2d5;
   --input-icon-filter: invert(0.8);
 }
 
@@ -63,6 +64,7 @@
   --kind-flight:        #8bd5ca;
   --kind-cycling:       #f5a97f;
   --kind-rail:          #b7bdf8;
+  --kind-walk:          #7dc4e4;
   --input-icon-filter: invert(0.8);
 }
 
@@ -94,6 +96,7 @@
   --kind-flight:        #04a5e5;
   --kind-cycling:       #fe640b;
   --kind-rail:          #7287fd;
+  --kind-walk:          #179299;
   --input-icon-filter: none;
 }
 
@@ -125,6 +128,7 @@
   --kind-flight:        #88c0d0;
   --kind-cycling:       #d08770;
   --kind-rail:          #5e81ac;
+  --kind-walk:          #8fbcbb;
   --input-icon-filter: invert(0.8);
 }
 
@@ -156,6 +160,7 @@
   --kind-flight:        #ebbcba;
   --kind-cycling:       #ea9a97;
   --kind-rail:          #3e8fb0;
+  --kind-walk:          #56949f;
   --input-icon-filter: invert(0.8);
 }
 
