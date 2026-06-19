@@ -74,9 +74,20 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+def _git_sha():
+    try:
+        import subprocess
+        return subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=os.path.dirname(__file__),
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        return 'unknown'
+
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "sha": _git_sha()}
 
 
 # Serve the compiled React frontend — must come after all API routes
