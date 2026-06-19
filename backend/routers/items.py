@@ -153,8 +153,7 @@ def _add_elevation_to_gpx(content: bytes) -> bytes:
         if sample_idxs[-1] != n - 1:
             sample_idxs.append(n - 1)
 
-        locs = [{"latitude": float(pts[i].get('lat')), "longitude": float(pts[i].get('lon'))}
-                for i in sample_idxs]
+        locs = "|".join(f"{pts[i].get('lat')},{pts[i].get('lon')}" for i in sample_idxs)
 
         with httpx.Client(timeout=25) as client:
             resp = client.post(_TOPO_API, json={"locations": locs})

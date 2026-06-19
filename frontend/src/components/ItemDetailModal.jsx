@@ -260,7 +260,7 @@ async function fetchOpenTopoElevations(samples) {
     const r = await fetch('https://api.opentopodata.org/v1/srtm90m', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locations: samples.map(s => ({ latitude: s.lat, longitude: s.lon })) }),
+      body: JSON.stringify({ locations: samples.map(s => `${s.lat},${s.lon}`).join('|') }),
     })
     if (!r.ok) return null
     const data = await r.json()
