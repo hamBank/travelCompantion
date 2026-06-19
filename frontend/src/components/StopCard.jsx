@@ -94,8 +94,9 @@ export default function StopCard({ stop, index, onUpdate }) {
           {timeline.length > 0 && (
             <div className="space-y-1">
               {timeline.map(item => {
-                if (item.kind === 'flight') return <FlightCard key={item.id} item={item} />
+                if (item.kind === 'flight')    return <FlightCard    key={item.id} item={item} />
                 if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} />
+                if (item.kind === 'cycling')   return <CyclingCard   key={item.id} item={item} />
                 return <ItemRow key={item.id} item={item} />
               })}
             </div>
@@ -242,6 +243,64 @@ function AccomCard({ item: initial }) {
         >
           ✎
         </button>
+      </div>
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function CyclingCard({ item: initial }) {
+  const [item, setItem] = useState(initial)
+  const [showDetail, setShowDetail] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const d = item.details ?? {}
+
+  return (
+    <>
+      <div className="relative group">
+        <button
+          onClick={() => setShowDetail(true)}
+          className="w-full text-left hover:opacity-80 transition-opacity"
+          style={{
+            background: 'color-mix(in srgb, var(--kind-cycling) 6%, var(--surface-2))',
+            border: '1px solid color-mix(in srgb, var(--kind-cycling) 35%, transparent)',
+            borderRadius: '0.5rem',
+            padding: '0.75rem',
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            <span style={{ color: 'var(--kind-cycling)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>🚴</span>
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="font-medium text-sm truncate">{item.name}</div>
+              {(d.start_location || d.end_location) && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">
+                  {[d.start_location, d.end_location].filter(Boolean).join(' → ')}
+                </div>
+              )}
+              {(d.distance || d.elevation_gain || d.elevation_loss || d.surface_type) && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                  {d.distance       && <span>{d.distance}</span>}
+                  {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
+                  {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
+                  {d.surface_type   && <span className="capitalize">{d.surface_type}</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+          title="Edit"
+        >✎</button>
       </div>
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
       {showEdit && (
