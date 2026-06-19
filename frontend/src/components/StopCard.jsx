@@ -338,52 +338,117 @@ function WalkCard({ item: initial }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [showMap, setShowMap] = useState(false)
   const d = item.details ?? {}
   const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
 
+  // Build a Google Maps embed URL from stored start/end locations (walking mode)
+  const embedUrl = d.start_location
+    ? 'https://maps.google.com/maps?' + new URLSearchParams(
+        d.end_location
+          ? { saddr: d.start_location, daddr: d.end_location, dirflg: 'w' }
+          : { q: d.start_location }
+      ).toString() + '&output=embed'
+    : null
+
+  // Link for "Open in Maps" — prefer the stored original URL
+  const mapsLink = d.maps_url || (d.start_location
+    ? 'https://maps.google.com/maps?' + new URLSearchParams(
+        d.end_location
+          ? { saddr: d.start_location, daddr: d.end_location, dirflg: 'w' }
+          : { q: d.start_location }
+      ).toString()
+    : null)
+
   return (
     <>
-      <div className="relative group">
-        <button
-          onClick={() => setShowDetail(true)}
-          className="w-full text-left hover:opacity-80 transition-opacity"
-          style={{
-            background: 'color-mix(in srgb, var(--kind-walk) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-walk) 35%, transparent)',
-            borderRadius: '0.5rem',
-            padding: '0.75rem',
-          }}
-        >
-          <div className="flex items-start gap-2.5">
-            <span style={{ color: 'var(--kind-walk)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>🥾</span>
-            <div className="flex-1 min-w-0 space-y-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="font-medium text-sm truncate">{item.name}</span>
-                {d.difficulty && (
-                  <span style={{ color: 'var(--kind-walk)' }} className="text-xs shrink-0 opacity-80 capitalize">{d.difficulty}</span>
+      <div
+        style={{
+          background: 'color-mix(in srgb, var(--kind-walk) 6%, var(--surface-2))',
+          border: '1px solid color-mix(in srgb, var(--kind-walk) 35%, transparent)',
+          borderRadius: '0.5rem',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Card header */}
+        <div className="relative group">
+          <button
+            onClick={() => setShowDetail(true)}
+            className="w-full text-left hover:opacity-80 transition-opacity"
+            style={{ padding: '0.75rem' }}
+          >
+            <div className="flex items-start gap-2.5">
+              <span style={{ color: 'var(--kind-walk)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>🥾</span>
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{item.name}</span>
+                  {d.difficulty && (
+                    <span style={{ color: 'var(--kind-walk)' }} className="text-xs shrink-0 opacity-80 capitalize">{d.difficulty}</span>
+                  )}
+                </div>
+                {route && (
+                  <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{route}</div>
+                )}
+                {(d.distance || d.elevation_gain || d.elevation_loss || d.duration) && (
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                    {d.distance       && <span>{d.distance}</span>}
+                    {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
+                    {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
+                    {d.duration       && <span>{d.duration}</span>}
+                  </div>
                 )}
               </div>
-              {route && (
-                <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{route}</div>
-              )}
-              {(d.distance || d.elevation_gain || d.elevation_loss || d.duration) && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                  {d.distance       && <span>{d.distance}</span>}
-                  {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
-                  {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
-                  {d.duration       && <span>{d.duration}</span>}
-                </div>
-              )}
             </div>
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); setShowEdit(true) }}
+            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+            style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+            title="Edit"
+          >✎</button>
+        </div>
+
+        {/* Map controls — only when we have location data */}
+        {embedUrl && (
+          <div
+            className="flex items-center gap-3 px-3 py-1.5"
+            style={{ borderTop: '1px solid color-mix(in srgb, var(--kind-walk) 20%, transparent)' }}
+          >
+            <button
+              onClick={() => setShowMap(m => !m)}
+              style={{ color: 'var(--kind-walk)' }}
+              className="text-xs hover:opacity-70 transition-opacity"
+            >
+              {showMap ? '▲ Hide map' : '▼ Show map'}
+            </button>
+            {mapsLink && (
+              <a
+                href={mapsLink}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: 'var(--text-faint)' }}
+                className="text-xs hover:opacity-70 transition-opacity ml-auto"
+              >
+                Open in Maps ↗
+              </a>
+            )}
           </div>
-        </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >✎</button>
+        )}
+
+        {/* Embedded map iframe */}
+        {showMap && embedUrl && (
+          <iframe
+            src={embedUrl}
+            title="Route map"
+            width="100%"
+            height="280"
+            style={{ border: 'none', display: 'block' }}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        )}
       </div>
+
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
       {showEdit && (
         <ItemEditModal
