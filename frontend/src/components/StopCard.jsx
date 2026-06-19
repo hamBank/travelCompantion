@@ -30,7 +30,7 @@ export default function StopCard({ stop, index, onUpdate }) {
   const accom = stop.items.find(i => i.kind === 'accommodation')
 
   const sortKey = item => {
-    const dt = item.kind === 'flight' ? item.details?.depart_time : item.scheduled_at
+    const dt = (item.kind === 'flight' || item.kind === 'rail') ? item.details?.depart_time : item.scheduled_at
     return dt ? new Date(dt).getTime() : Infinity
   }
   const timeline = stop.items

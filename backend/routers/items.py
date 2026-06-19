@@ -241,6 +241,103 @@ def airline_lookup(iata: str):
     return {"iata": code, "name": name}
 
 
+_DB_REST = "https://v6.db.transport.rest"
+
+@router.get("/items/{item_id}/rail-check")
+def check_rail(item_id: int, session: Session = Depends(get_session)):
+    item = session.get(ItineraryItem, item_id)
+    if not item or item.kind != "rail":
+        raise HTTPException(status_code=404, detail="Rail item not found")
+
+    d = item.details or {}
+    train_number = d.get("train_number", "").strip()
+    if not train_number:
+        raise HTTPException(status_code=400, detail="No train number stored")
+
+    query = train_number
+    if d.get("operator"):
+        query = f"{d['operator']} {train_number}"
+
+    try:
+        with httpx.Client(timeout=12) as client:
+            r = client.get(f"{_DB_REST}/trips", params={
+                "query": query,
+                "stopovers": "false",
+                "results": 5,
+                "language": "en",
+            })
+        body = r.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Rail API unreachable: {e}")
+
+    if not r.is_success:
+        raise HTTPException(status_code=502, detail=f"Rail API returned {r.status_code}")
+
+    trips = body.get("trips", [])
+
+    # Try to match by departure date if we have one stored
+    dep_date = (d.get("depart_time") or "")[:10]
+    if dep_date and trips:
+        dated = [t for t in trips
+                 if (t.get("origin", {}).get("plannedDeparture") or "").startswith(dep_date)]
+        if dated:
+            trips = dated
+
+    if not trips:
+        return {"found": False, "train_number": train_number, "checks": []}
+
+    live = trips[0]
+    origin = live.get("origin", {})
+    dest   = live.get("destination", {})
+    line   = live.get("line", {})
+
+    def hhmm(iso):
+        try:
+            t = iso[11:16] if iso else None
+            return t
+        except Exception:
+            return None
+
+    def chk(label, key, stored, live_val, update_val=None):
+        if live_val is None:
+            return None
+        stored_s = (stored or "").strip()
+        live_s   = str(live_val).strip()
+        match = stored_s.lower() == live_s.lower() if stored_s else None
+        return {
+            "field": label, "key": key,
+            "stored": stored_s or None, "live": live_s,
+            "update_value": (update_val or live_val).strip() if isinstance(update_val or live_val, str) else str(live_val),
+            "match": match,
+        }
+
+    dep_planned = origin.get("plannedDeparture")
+    arr_planned = dest.get("plannedArrival")
+
+    def iso_to_local(iso):
+        # "2025-07-15T10:00:00+02:00" -> "2025-07-15T10:00"
+        try:
+            return iso[:16] if iso else None
+        except Exception:
+            return None
+
+    results = [c for c in [
+        chk("Origin",       "origin",          d.get("origin"),      origin.get("name")),
+        chk("Destination",  "destination",     d.get("destination"), dest.get("name")),
+        chk("Operator",     "operator",        d.get("operator"),    line.get("operator", {}).get("name")),
+        chk("Depart time",  "depart_time",     hhmm(d.get("depart_time")), hhmm(dep_planned), iso_to_local(dep_planned)),
+        chk("Arrive time",  "arrive_time",     hhmm(d.get("arrive_time")), hhmm(arr_planned), iso_to_local(arr_planned)),
+        chk("Dep platform", "depart_platform", d.get("depart_platform"), origin.get("departurePlatform") or origin.get("plannedDeparturePlatform")),
+        chk("Arr platform", "arrive_platform", d.get("arrive_platform"), dest.get("arrivalPlatform")    or dest.get("plannedArrivalPlatform")),
+    ] if c]
+
+    return {
+        "found": True,
+        "train_number": line.get("name") or train_number,
+        "checks": results,
+    }
+
+
 @router.get("/items/{item_id}/enrich")
 def enrich_item(item_id: int, session: Session = Depends(get_session)):
     if not _PLACES_KEY:
