@@ -60,6 +60,9 @@ export const checkFlight   = (id)   => req(`/items/${id}/flight-check`)
 export const checkRail     = (id)   => req(`/items/${id}/rail-check`)
 export const lookupAirline = (iata) => req(`/flights/airline-lookup?iata=${encodeURIComponent(iata)}`)
 
+export const fetchRouteElevation = (lat1, lng1, lat2, lng2) =>
+  req(`/route-elevation?lat1=${lat1}&lng1=${lng1}&lat2=${lat2}&lng2=${lng2}`)
+
 export async function uploadGpx(id, file) {
   const token = getToken()
   const form = new FormData()

@@ -6,17 +6,39 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-export default function TripList({ onOpen }) {
+// Pick the most relevant trip: active > soonest future > most recent past > first.
+function findNextUpcoming(trips) {
+  if (trips.length === 1) return trips[0]
+  const now = new Date()
+  const active = trips.filter(t =>
+    t.start_date && new Date(t.start_date) <= now &&
+    (!t.end_date || new Date(t.end_date) >= now)
+  )
+  if (active.length) return active.sort((a, b) => new Date(a.start_date) - new Date(b.start_date))[0]
+  const future = trips.filter(t => t.start_date && new Date(t.start_date) > now)
+  if (future.length) return future.sort((a, b) => new Date(a.start_date) - new Date(b.start_date))[0]
+  const dated = trips.filter(t => t.start_date)
+  if (dated.length) return dated.sort((a, b) => new Date(b.start_date) - new Date(a.start_date))[0]
+  return trips[0]
+}
+
+export default function TripList({ onOpen, skipAutoOpen }) {
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState(null)
   const [tripName, setTripName] = useState('')
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(true) }, [])
 
-  async function load() {
-    try { setTrips(await getTrips()) }
+  async function load(initial = false) {
+    try {
+      const data = await getTrips()
+      setTrips(data)
+      if (initial && !skipAutoOpen && data.length > 0) {
+        onOpen(findNextUpcoming(data))
+      }
+    }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { updateItem, enrichItem, uploadGpx, lookupAirline } from '../api.js'
+import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation } from '../api.js'
 
 const KIND_VAR = {
   activity:      'var(--kind-activity)',
@@ -406,16 +406,38 @@ function WalkForm({ core, details, setCore, setDetails }) {
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
   const diff = d('difficulty')
 
-  function extractMaps() {
+  async function extractMaps() {
     const res = parseMapsUrl(mapsUrl)
     if (!res) { setMapsMsg({ text: 'Could not parse this URL', color: 'var(--error)' }); return }
-    setMapsMsg(null)
+    setMapsMsg({ text: 'Extracting…', color: 'var(--text-faint)' })
     let filled = 0
     if (res.start && !details.start_location) { setD('start_location', res.start); filled++ }
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
-    if (mapsUrl)                               { setD('maps_url', mapsUrl) }
+    if (mapsUrl) { setD('maps_url', mapsUrl) }
+
+    if (res.startCoords && res.endCoords) {
+      if (!details.distance) {
+        const km = haversineKm(res.startCoords, res.endCoords)
+        setD('distance', `~${km.toFixed(1)} km`)
+        filled++
+      }
+      if (!details.elevation_gain && !details.elevation_loss) {
+        try {
+          const elev = await fetchRouteElevation(
+            res.startCoords.lat, res.startCoords.lng,
+            res.endCoords.lat, res.endCoords.lng,
+          )
+          const gain = Math.round(Math.max(0, elev.end_elevation - elev.start_elevation))
+          const loss = Math.round(Math.max(0, elev.start_elevation - elev.end_elevation))
+          if (gain > 0) { setD('elevation_gain', `${gain} m`); filled++ }
+          if (loss > 0) { setD('elevation_loss', `${loss} m`); filled++ }
+        } catch {}
+      }
+    }
+
+    const note = res.startCoords ? ' (distance & elevation are estimates)' : ''
     setMapsMsg(filled
-      ? { text: `${filled} location${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
+      ? { text: `${filled} field${filled > 1 ? 's' : ''} filled${note}`, color: 'var(--success)' }
       : { text: 'Nothing to add (fields already filled)', color: 'var(--text-faint)' })
   }
 
@@ -543,12 +565,26 @@ const SURFACE_TYPES = ['road', 'gravel', 'sand', 'dirt']
 function parseMapsUrl(url) {
   try {
     const u = new URL(url)
+    const coordRe = /^-?\d+\.?\d*,-?\d+\.?\d*$/
     const m = u.pathname.match(/\/maps\/dir\/(.+)/)
     if (m) {
       const parts = m[1].split('/').filter(p => p && !p.startsWith('@') && !p.startsWith('data'))
-      if (parts.length >= 2) return {
-        start: decodeURIComponent(parts[0].replace(/\+/g, ' ')),
-        end:   decodeURIComponent(parts[parts.length - 1].replace(/\+/g, ' ')),
+      if (parts.length >= 2) {
+        const rawStart = parts[0]
+        const rawEnd   = parts[parts.length - 1]
+        const result = {
+          start: decodeURIComponent(rawStart.replace(/\+/g, ' ')),
+          end:   decodeURIComponent(rawEnd.replace(/\+/g, ' ')),
+        }
+        if (coordRe.test(rawStart)) {
+          const [lat, lng] = rawStart.split(',').map(Number)
+          result.startCoords = { lat, lng }
+        }
+        if (coordRe.test(rawEnd)) {
+          const [lat, lng] = rawEnd.split(',').map(Number)
+          result.endCoords = { lat, lng }
+        }
+        return result
       }
     }
     const start = u.searchParams.get('origin') || u.searchParams.get('saddr')
@@ -556,6 +592,15 @@ function parseMapsUrl(url) {
     if (start || end) return { start: start || '', end: end || '' }
   } catch {}
   return null
+}
+
+function haversineKm(c1, c2) {
+  const R = 6371
+  const dLat = (c2.lat - c1.lat) * Math.PI / 180
+  const dLng = (c2.lng - c1.lng) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(c1.lat * Math.PI / 180) * Math.cos(c2.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
 function CyclingForm({ itemId, core, details, setCore, setDetails }) {

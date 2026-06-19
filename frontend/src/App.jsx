@@ -40,8 +40,10 @@ function AppShell({ user, onLogout }) {
   const [theme, setTheme] = useTheme()
   const online = useOnline()
 
+  const [userChoseList, setUserChoseList] = useState(false)
+
   function openTrip(trip) { setSelectedTrip(trip); setEditing(false) }
-  function goBack() { setSelectedTrip(null); setEditing(false) }
+  function goBack() { setSelectedTrip(null); setEditing(false); setUserChoseList(true) }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
@@ -116,7 +118,7 @@ function AppShell({ user, onLogout }) {
                 onTripRenamed={name => setSelectedTrip(t => ({ ...t, name }))}
               />
             : <TripTimeline tripId={selectedTrip.id} />
-          : <TripList onOpen={openTrip} />
+          : <TripList onOpen={openTrip} skipAutoOpen={userChoseList} />
         }
       </main>
 
