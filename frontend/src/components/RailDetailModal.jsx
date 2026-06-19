@@ -208,7 +208,7 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave }) 
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {d.train_number && <RailCheckPanel item={item} onItemUpdate={onItemUpdate} />}
+            <RailCheckPanel item={item} onItemUpdate={onItemUpdate} />
             <button
               onClick={onClose}
               style={{ color: 'var(--text-faint)' }}
