@@ -415,35 +415,41 @@ function WalkForm({ core, details, setCore, setDetails }) {
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
     if (mapsUrl) { setD('maps_url', mapsUrl) }
 
-    // If no coords at all in the URL, try geocoding the place names
-    if (!res.startCoords && res.start) {
-      try { res.startCoords = await fetchGeocode(res.start) } catch (e) {
-        setMapsMsg({ text: `Geocode failed: ${e.message}`, color: 'var(--warning)' })
-      }
+    // Geocode any named start/end to get their actual coordinates
+    let startC = res.startCoords ?? null
+    let endC   = res.endCoords   ?? null
+    if (!startC && res.start) {
+      try { startC = await fetchGeocode(res.start) }
+      catch (e) { setMapsMsg({ text: `Geocode failed: ${e.message}`, color: 'var(--warning)' }) }
     }
-    if (!res.endCoords && res.end) {
-      try { res.endCoords = await fetchGeocode(res.end) } catch (e) {
-        setMapsMsg({ text: `Geocode failed: ${e.message}`, color: 'var(--warning)' })
-      }
-    }
-
-    if (!details.distance && res.allCoords?.length >= 2) {
-      // Sum haversine along all route waypoints for a better estimate than start→end straight-line
-      const km = res.allCoords.reduce((sum, c, i) =>
-        i === 0 ? 0 : sum + haversineKm(res.allCoords[i - 1], c), 0)
-      setD('distance', `~${km.toFixed(1)} km`)
-      filled++
-    } else if (!details.distance && res.startCoords && res.endCoords) {
-      const km = haversineKm(res.startCoords, res.endCoords)
-      setD('distance', `~${km.toFixed(1)} km`)
-      filled++
+    if (!endC && res.end) {
+      try { endC = await fetchGeocode(res.end) }
+      catch (e) { setMapsMsg({ text: `Geocode failed: ${e.message}`, color: 'var(--warning)' }) }
     }
 
-    if (res.startCoords && res.endCoords && !details.elevation_gain && !details.elevation_loss) {
+    // Build the full coordinate chain:
+    // Named start/end are NOT in allCoords; coord start/end ARE already in allCoords.
+    // So prepend geocoded start (if it was named) and append geocoded end (if named).
+    const middle = res.allCoords ?? []
+    const chain = [
+      ...(startC && !res.startCoords ? [startC] : []),
+      ...middle,
+      ...(endC   && !res.endCoords   ? [endC]   : []),
+    ]
+
+    if (!details.distance && chain.length >= 2) {
+      const km = chain.reduce((sum, c, i) => i === 0 ? 0 : sum + haversineKm(chain[i - 1], c), 0)
+      setD('distance', `~${km.toFixed(1)} km`)
+      filled++
+    }
+
+    // Elevation: use the true endpoints (geocoded or coord), fall back to chain endpoints
+    const elevStart = startC ?? chain[0]
+    const elevEnd   = endC   ?? chain[chain.length - 1]
+    if (elevStart && elevEnd && !details.elevation_gain && !details.elevation_loss) {
       try {
         const elev = await fetchRouteElevation(
-          res.startCoords.lat, res.startCoords.lng,
-          res.endCoords.lat, res.endCoords.lng,
+          elevStart.lat, elevStart.lng, elevEnd.lat, elevEnd.lng,
         )
         const gain = Math.round(Math.max(0, elev.end_elevation - elev.start_elevation))
         const loss = Math.round(Math.max(0, elev.start_elevation - elev.end_elevation))
@@ -589,7 +595,7 @@ function parseMapsUrl(url) {
       if (parts.length >= 2) {
         const rawStart = parts[0]
         const rawEnd   = parts[parts.length - 1]
-        // Collect every coordinate waypoint in path order (may include start/end and intermediates)
+        // Collect every coordinate waypoint in path order
         const allCoords = parts.filter(p => coordRe.test(p)).map(toCoord)
         const result = {
           start: decodeURIComponent(rawStart.replace(/\+/g, ' ')),
@@ -598,9 +604,6 @@ function parseMapsUrl(url) {
         }
         if (coordRe.test(rawStart)) result.startCoords = toCoord(rawStart)
         if (coordRe.test(rawEnd))   result.endCoords   = toCoord(rawEnd)
-        // Named start/end: use nearest available coord waypoint as fallback
-        if (!result.startCoords && allCoords.length > 0) result.startCoords = allCoords[0]
-        if (!result.endCoords   && allCoords.length > 0) result.endCoords   = allCoords[allCoords.length - 1]
         return result
       }
     }
