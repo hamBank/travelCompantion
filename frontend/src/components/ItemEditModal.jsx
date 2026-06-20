@@ -415,8 +415,14 @@ function WalkForm({ core, details, setCore, setDetails }) {
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
     if (mapsUrl) { setD('maps_url', mapsUrl) }
 
+    // middle must be defined before the await so geocodeForRoute can use it for validation
+    const middle = res.allCoords ?? []
+
     // Geocode named start/end in parallel; validate each against route coords
     // so a business name matched in the wrong city gets rejected.
+    const needsGeocode = (!res.startCoords && res.start) || (!res.endCoords && res.end)
+    if (needsGeocode) setMapsMsg({ text: 'Locating start & end…', color: 'var(--text-faint)' })
+
     const [startResult, endResult] = await Promise.all([
       (!res.startCoords && res.start) ? geocodeForRoute(res.start, middle) : Promise.resolve(null),
       (!res.endCoords   && res.end)   ? geocodeForRoute(res.end,   middle) : Promise.resolve(null),
@@ -424,10 +430,8 @@ function WalkForm({ core, details, setCore, setDetails }) {
     const startC = res.startCoords ?? startResult
     const endC   = res.endCoords   ?? endResult
 
-    // Build the full coordinate chain:
+    // Build the full coordinate chain.
     // Named start/end are NOT in allCoords; coord start/end ARE already in allCoords.
-    // So prepend geocoded start (if it was named) and append geocoded end (if named).
-    const middle = res.allCoords ?? []
     const chain = [
       ...(startC && !res.startCoords ? [startC] : []),
       ...middle,
@@ -440,10 +444,11 @@ function WalkForm({ core, details, setCore, setDetails }) {
       filled++
     }
 
-    // Elevation: use the true endpoints (geocoded or coord), fall back to chain endpoints
+    // Show distance result now; elevation may take a few more seconds
     const elevStart = startC ?? chain[0]
     const elevEnd   = endC   ?? chain[chain.length - 1]
     if (elevStart && elevEnd && !details.elevation_gain && !details.elevation_loss) {
+      setMapsMsg({ text: `${filled} field${filled > 1 ? 's' : ''} filled — fetching elevation…`, color: 'var(--text-faint)' })
       try {
         const elev = await fetchRouteElevation(
           elevStart.lat, elevStart.lng, elevEnd.lat, elevEnd.lng,
