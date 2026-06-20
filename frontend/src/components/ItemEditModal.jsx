@@ -11,6 +11,7 @@ const KIND_VAR = {
   rail:          'var(--kind-rail)',
   walk:          'var(--kind-walk)',
   transfer:      'var(--kind-transfer)',
+  tour:          'var(--kind-tour)',
 }
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
@@ -524,8 +525,91 @@ function WalkForm({ core, details, setCore, setDetails }) {
   )
 }
 
+const TOUR_TYPES = ['private', 'small group', 'large group', 'self-guided']
+
+function TourForm({ itemId, core, details, setCore, setDetails }) {
+  const [enriching, setEnriching] = useState(false)
+  const [enrichMsg, setEnrichMsg] = useState(null)
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  const tourType = d('tour_type')
+
+  async function autoFill() {
+    if (enriching) return
+    setEnriching(true); setEnrichMsg(null)
+    try {
+      const suggestions = await enrichItem(itemId)
+      let filled = 0
+      if (suggestions.location && !details.meeting_point) { setD('meeting_point', suggestions.location); filled++ }
+      if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
+      if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
+      setEnrichMsg(filled
+        ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
+        : { text: 'Nothing to add', color: 'var(--text-faint)' })
+    } catch (e) {
+      setEnrichMsg({ text: e.message, color: 'var(--error)' })
+    } finally {
+      setEnriching(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Vatican Museums Tour" />
+        </div>
+        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date & time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
+        <Field label="Duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="3 hours" />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Tour type</label>
+        <div className="flex gap-2 flex-wrap">
+          {TOUR_TYPES.map(t => (
+            <button key={t} type="button" onClick={() => setD('tour_type', tourType === t ? '' : t)}
+              style={{
+                color: tourType === t ? 'var(--kind-tour)' : 'var(--text-faint)',
+                border: `1px solid ${tourType === t ? 'var(--kind-tour)' : 'var(--border)'}`,
+                background: tourType === t ? 'color-mix(in srgb, var(--kind-tour) 12%, transparent)' : 'transparent',
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors">
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Field label="Meeting point" value={d('meeting_point')} onChange={v => setD('meeting_point', v)} placeholder="Main entrance, St Peter's Square" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Operator / guide" value={d('operator')} onChange={v => setD('operator', v)} placeholder="GetYourGuide, local guide…" />
+        <Field label="Language" value={d('language')} onChange={v => setD('language', v)} placeholder="English" />
+      </div>
+
+      <SectionBox label="Booking">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="GYG-12345" />
+          <Field label="Total cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€80" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Per person" value={d('cost_per_person')} onChange={v => setD('cost_per_person', v)} placeholder="€40" />
+          <Field label="Group size" value={d('group_size')} onChange={v => setD('group_size', v)} placeholder="2 people" />
+        </div>
+        <Field label="Booking URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+        <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+39 06 123456" />
+      </SectionBox>
+
+      <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="What's included, bring ID, wear comfortable shoes…" />
+    </div>
+  )
+}
+
 export const KIND_LABEL = {
-  activity: 'Activity', walk: 'Walk / Hike', transfer: 'Road Transfer', cycling: 'Cycling', rail: 'Rail',
+  activity: 'Activity', walk: 'Walk / Hike', transfer: 'Road Transfer', cycling: 'Cycling',
+  tour: 'Guided Tour', rail: 'Rail',
   restaurant: 'Restaurant', note: 'Note',
   accommodation: 'Accommodation', flight: 'Flight',
 }
@@ -955,6 +1039,8 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             <WalkForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'transfer' ? (
             <TransferForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'tour' ? (
+            <TourForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'cycling' ? (
             <CyclingForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'rail' ? (
