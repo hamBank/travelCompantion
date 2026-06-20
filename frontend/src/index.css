@@ -33,6 +33,7 @@
   --kind-cycling:       #fab387;
   --kind-rail:          #b4befe;
   --kind-walk:          #94e2d5;
+  --kind-transfer:      #e8a87c;
   --input-icon-filter: invert(0.8);
 }
 
@@ -65,6 +66,7 @@
   --kind-cycling:       #f5a97f;
   --kind-rail:          #b7bdf8;
   --kind-walk:          #7dc4e4;
+  --kind-transfer:      #e49e76;
   --input-icon-filter: invert(0.8);
 }
 
@@ -97,6 +99,7 @@
   --kind-cycling:       #fe640b;
   --kind-rail:          #7287fd;
   --kind-walk:          #179299;
+  --kind-transfer:      #cc7847;
   --input-icon-filter: none;
 }
 
@@ -129,6 +132,7 @@
   --kind-cycling:       #d08770;
   --kind-rail:          #5e81ac;
   --kind-walk:          #8fbcbb;
+  --kind-transfer:      #c9956c;
   --input-icon-filter: invert(0.8);
 }
 
@@ -161,6 +165,7 @@
   --kind-cycling:       #ea9a97;
   --kind-rail:          #3e8fb0;
   --kind-walk:          #56949f;
+  --kind-transfer:      #e99f7a;
   --input-icon-filter: invert(0.8);
 }
 
