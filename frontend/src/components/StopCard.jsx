@@ -100,6 +100,7 @@ export default function StopCard({ stop, index, onUpdate }) {
                 if (item.kind === 'cycling')   return <CyclingCard   key={item.id} item={item} />
                 if (item.kind === 'walk')      return <WalkCard      key={item.id} item={item} />
                 if (item.kind === 'transfer')  return <TransferCard  key={item.id} item={item} />
+                if (item.kind === 'tour')      return <TourCard      key={item.id} item={item} />
                 return <ItemRow key={item.id} item={item} />
               })}
             </div>
@@ -451,6 +452,74 @@ function WalkCard({ item: initial }) {
       </div>
 
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function TourCard({ item: initial }) {
+  const [item, setItem] = useState(initial)
+  const [showEdit, setShowEdit] = useState(false)
+  const d = item.details ?? {}
+
+  const timeStr = (() => {
+    if (!item.scheduled_at) return null
+    const [dp, tp] = item.scheduled_at.split('T')
+    const date = new Date(dp + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    const t = tp?.slice(0, 5)
+    return t && t !== '00:00' ? `${date} · ${t}` : date
+  })()
+
+  return (
+    <>
+      <div className="relative group">
+        <button
+          onClick={() => setShowEdit(true)}
+          className="w-full text-left hover:opacity-80 transition-opacity"
+          style={{
+            background: 'color-mix(in srgb, var(--kind-tour) 6%, var(--surface-2))',
+            border: '1px solid color-mix(in srgb, var(--kind-tour) 35%, transparent)',
+            borderRadius: '0.5rem',
+            padding: '0.75rem',
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            <span style={{ color: 'var(--kind-tour)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>🎟️</span>
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-sm truncate">{item.name}</span>
+                {d.tour_type && (
+                  <span style={{ color: 'var(--kind-tour)' }} className="text-xs shrink-0 opacity-80 capitalize">{d.tour_type}</span>
+                )}
+              </div>
+              {d.meeting_point && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">📍 {d.meeting_point}</div>
+              )}
+              {(timeStr || d.duration || item.cost || d.operator || d.booking_ref) && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                  {timeStr      && <span>{timeStr}</span>}
+                  {d.duration   && <span>⏱ {d.duration}</span>}
+                  {item.cost    && <span>💳 {item.cost}</span>}
+                  {d.operator   && <span>{d.operator}</span>}
+                  {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+          title="Edit"
+        >✎</button>
+      </div>
       {showEdit && (
         <ItemEditModal
           item={item}

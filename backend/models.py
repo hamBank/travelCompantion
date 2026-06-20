@@ -22,6 +22,7 @@ class ItemKind(str, Enum):
     rail = "rail"
     walk = "walk"
     transfer = "transfer"
+    tour = "tour"
 
 
 class ItemStatus(str, Enum):
