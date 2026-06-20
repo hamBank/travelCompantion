@@ -415,16 +415,14 @@ function WalkForm({ core, details, setCore, setDetails }) {
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
     if (mapsUrl) { setD('maps_url', mapsUrl) }
 
-    // Geocode any named start/end, validating the result against the intermediate
-    // route coords so a business name matched in the wrong city gets rejected.
-    let startC = res.startCoords ?? null
-    let endC   = res.endCoords   ?? null
-    if (!startC && res.start) {
-      startC = await geocodeForRoute(res.start, middle)
-    }
-    if (!endC && res.end) {
-      endC = await geocodeForRoute(res.end, middle)
-    }
+    // Geocode named start/end in parallel; validate each against route coords
+    // so a business name matched in the wrong city gets rejected.
+    const [startResult, endResult] = await Promise.all([
+      (!res.startCoords && res.start) ? geocodeForRoute(res.start, middle) : Promise.resolve(null),
+      (!res.endCoords   && res.end)   ? geocodeForRoute(res.end,   middle) : Promise.resolve(null),
+    ])
+    const startC = res.startCoords ?? startResult
+    const endC   = res.endCoords   ?? endResult
 
     // Build the full coordinate chain:
     // Named start/end are NOT in allCoords; coord start/end ARE already in allCoords.
@@ -590,7 +588,9 @@ function parseMapsUrl(url) {
     const toCoord  = raw => { const [lat, lng] = raw.split(',').map(Number); return { lat, lng } }
     const m = u.pathname.match(/\/maps\/dir\/(.+)/)
     if (m) {
-      const parts = m[1].split('/').filter(p => p && !p.startsWith('@') && !p.startsWith('data'))
+      const parts = m[1].split('/').filter(p =>
+        p && !p.startsWith('@') && !p.startsWith('data') && !p.includes('=')
+      )
       if (parts.length >= 2) {
         const rawStart = parts[0]
         const rawEnd   = parts[parts.length - 1]
@@ -623,12 +623,10 @@ function haversineKm(c1, c2) {
 }
 
 // Geocode `name` and validate the result is within the route's bounds.
-// If the full name returns a wrong city (business found elsewhere), fall back
-// to the address part after the first comma (strips the business/POI name).
+// Tries the address part (after the first comma) before the full name so that
+// "Business Name, 24 Street, City" hits the correct address rather than
+// matching the business name to a location in the wrong city.
 async function geocodeForRoute(name, routeCoords) {
-  // Threshold = 1.5× the max span between any two route coords, minimum 50 km.
-  // This rejects results from a completely different city while tolerating
-  // routes where start/end are well outside the intermediate waypoints.
   let span = 0
   for (let i = 0; i < routeCoords.length; i++)
     for (let j = i + 1; j < routeCoords.length; j++)
@@ -637,9 +635,10 @@ async function geocodeForRoute(name, routeCoords) {
   const inRange = pt =>
     routeCoords.length === 0 || routeCoords.some(c => haversineKm(pt, c) < threshold)
 
-  const attempts = [name]
-  const afterComma = name.slice(name.indexOf(',') + 1).trim()
-  if (afterComma.length >= 5 && afterComma !== name) attempts.push(afterComma)
+  const commaIdx = name.indexOf(',')
+  const addrPart = commaIdx >= 0 ? name.slice(commaIdx + 1).trim() : ''
+  // Try address-first so a business name doesn't match the wrong city; fall back to full name.
+  const attempts = addrPart.length >= 5 ? [addrPart, name] : [name]
 
   for (const q of attempts) {
     try {
