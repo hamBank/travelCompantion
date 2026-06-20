@@ -21,6 +21,7 @@ class ItemKind(str, Enum):
     cycling = "cycling"
     rail = "rail"
     walk = "walk"
+    transfer = "transfer"
 
 
 class ItemStatus(str, Enum):

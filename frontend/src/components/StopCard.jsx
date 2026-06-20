@@ -99,6 +99,7 @@ export default function StopCard({ stop, index, onUpdate }) {
                 if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} />
                 if (item.kind === 'cycling')   return <CyclingCard   key={item.id} item={item} />
                 if (item.kind === 'walk')      return <WalkCard      key={item.id} item={item} />
+                if (item.kind === 'transfer')  return <TransferCard  key={item.id} item={item} />
                 return <ItemRow key={item.id} item={item} />
               })}
             </div>
@@ -450,6 +451,128 @@ function WalkCard({ item: initial }) {
       </div>
 
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function TransferCard({ item: initial }) {
+  const [item, setItem] = useState(initial)
+  const [showEdit, setShowEdit] = useState(false)
+  const [showMap, setShowMap] = useState(false)
+  const d = item.details ?? {}
+  const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
+
+  const vehicleIcon = { bus: '🚌', minibus: '🚌', shuttle: '🚌', taxi: '🚕' }[d.vehicle_type] ?? '🚗'
+
+  const embedUrl = d.start_location
+    ? 'https://maps.google.com/maps?' + new URLSearchParams(
+        d.end_location
+          ? { saddr: d.start_location, daddr: d.end_location, dirflg: 'd' }
+          : { q: d.start_location }
+      ).toString() + '&output=embed'
+    : null
+
+  const mapsLink = d.maps_url || (d.start_location
+    ? 'https://maps.google.com/maps?' + new URLSearchParams(
+        d.end_location
+          ? { saddr: d.start_location, daddr: d.end_location, dirflg: 'd' }
+          : { q: d.start_location }
+      ).toString()
+    : null)
+
+  return (
+    <>
+      <div
+        style={{
+          background: 'color-mix(in srgb, var(--kind-transfer) 6%, var(--surface-2))',
+          border: '1px solid color-mix(in srgb, var(--kind-transfer) 35%, transparent)',
+          borderRadius: '0.5rem',
+          overflow: 'hidden',
+        }}
+      >
+        <div className="relative group">
+          <button
+            onClick={() => setShowEdit(true)}
+            className="w-full text-left hover:opacity-80 transition-opacity"
+            style={{ padding: '0.75rem' }}
+          >
+            <div className="flex items-start gap-2.5">
+              <span style={{ color: 'var(--kind-transfer)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>{vehicleIcon}</span>
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{item.name}</span>
+                  {d.vehicle_type && (
+                    <span style={{ color: 'var(--kind-transfer)' }} className="text-xs shrink-0 opacity-80 capitalize">{d.vehicle_type}</span>
+                  )}
+                </div>
+                {route && (
+                  <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{route}</div>
+                )}
+                {(d.distance || d.duration || item.cost || d.provider) && (
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                    {d.distance && <span>{d.distance}</span>}
+                    {d.duration && <span>{d.duration}</span>}
+                    {item.cost  && <span>{item.cost}</span>}
+                    {d.provider && <span>{d.provider}</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); setShowEdit(true) }}
+            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+            style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+            title="Edit"
+          >✎</button>
+        </div>
+
+        {embedUrl && (
+          <div
+            className="flex items-center gap-3 px-3 py-1.5"
+            style={{ borderTop: '1px solid color-mix(in srgb, var(--kind-transfer) 20%, transparent)' }}
+          >
+            <button
+              onClick={() => setShowMap(m => !m)}
+              style={{ color: 'var(--kind-transfer)' }}
+              className="text-xs hover:opacity-70 transition-opacity"
+            >
+              {showMap ? '▲ Hide map' : '▼ Show map'}
+            </button>
+            {mapsLink && (
+              <a
+                href={mapsLink}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: 'var(--text-faint)' }}
+                className="text-xs hover:opacity-70 transition-opacity ml-auto"
+              >
+                Open in Maps ↗
+              </a>
+            )}
+          </div>
+        )}
+
+        {showMap && embedUrl && (
+          <iframe
+            src={embedUrl}
+            title="Transfer route map"
+            width="100%"
+            height="280"
+            style={{ border: 'none', display: 'block' }}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        )}
+      </div>
+
       {showEdit && (
         <ItemEditModal
           item={item}

@@ -9,6 +9,8 @@ const KIND_VAR = {
   flight:        'var(--kind-flight)',
   cycling:       'var(--kind-cycling)',
   rail:          'var(--kind-rail)',
+  walk:          'var(--kind-walk)',
+  transfer:      'var(--kind-transfer)',
 }
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
@@ -523,9 +525,115 @@ function WalkForm({ core, details, setCore, setDetails }) {
 }
 
 export const KIND_LABEL = {
-  activity: 'Activity', walk: 'Walk / Hike', cycling: 'Cycling', rail: 'Rail',
+  activity: 'Activity', walk: 'Walk / Hike', transfer: 'Road Transfer', cycling: 'Cycling', rail: 'Rail',
   restaurant: 'Restaurant', note: 'Note',
   accommodation: 'Accommodation', flight: 'Flight',
+}
+
+const VEHICLE_TYPES = ['car', 'taxi', 'minibus', 'bus', 'shuttle', 'private car']
+
+function TransferForm({ core, details, setCore, setDetails }) {
+  const [mapsUrl, setMapsUrl] = useState('')
+  const [mapsMsg, setMapsMsg] = useState(null)
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  const vehicle = d('vehicle_type')
+
+  async function extractMaps() {
+    const res = parseMapsUrl(mapsUrl)
+    if (!res) { setMapsMsg({ text: 'Could not parse this URL', color: 'var(--error)' }); return }
+    setMapsMsg({ text: 'Extracting…', color: 'var(--text-faint)' })
+    let filled = 0
+    if (res.start && !details.start_location) { setD('start_location', res.start); filled++ }
+    if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
+    if (mapsUrl) { setD('maps_url', mapsUrl) }
+
+    const middle = res.allCoords ?? []
+    if ((!res.startCoords && res.start) || (!res.endCoords && res.end))
+      setMapsMsg({ text: 'Locating start & end…', color: 'var(--text-faint)' })
+
+    const [startResult, endResult] = await Promise.all([
+      (!res.startCoords && res.start) ? geocodeForRoute(res.start, middle) : Promise.resolve(null),
+      (!res.endCoords   && res.end)   ? geocodeForRoute(res.end,   middle) : Promise.resolve(null),
+    ])
+    const startC = res.startCoords ?? startResult
+    const endC   = res.endCoords   ?? endResult
+
+    const chain = [
+      ...(startC && !res.startCoords ? [startC] : []),
+      ...middle,
+      ...(endC && !res.endCoords ? [endC] : []),
+    ]
+    if (!details.distance && chain.length >= 2) {
+      const km = chain.reduce((sum, c, i) => i === 0 ? 0 : sum + haversineKm(chain[i - 1], c), 0)
+      setD('distance', `~${km.toFixed(1)} km`)
+      filled++
+    }
+
+    setMapsMsg(filled
+      ? { text: `${filled} field${filled > 1 ? 's' : ''} filled (estimates)`, color: 'var(--success)' }
+      : { text: 'Nothing to add (fields already filled)', color: 'var(--text-faint)' })
+  }
+
+  return (
+    <div className="space-y-4">
+      <Field label="Description" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Hotel to airport" />
+      <Field label="Pickup time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
+
+      <div className="flex flex-col gap-1.5">
+        <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Vehicle</label>
+        <div className="flex gap-2 flex-wrap">
+          {VEHICLE_TYPES.map(v => (
+            <button key={v} type="button" onClick={() => setD('vehicle_type', vehicle === v ? '' : v)}
+              style={{
+                color: vehicle === v ? 'var(--kind-transfer)' : 'var(--text-faint)',
+                border: `1px solid ${vehicle === v ? 'var(--kind-transfer)' : 'var(--border)'}`,
+                background: vehicle === v ? 'color-mix(in srgb, var(--kind-transfer) 12%, transparent)' : 'transparent',
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors">
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <SectionBox label="Import from Google Maps">
+        <div className="flex gap-2">
+          <input
+            value={mapsUrl}
+            onChange={e => setMapsUrl(e.target.value)}
+            placeholder="Paste directions URL…"
+            style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+            className="flex-1 rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          />
+          <button type="button" onClick={extractMaps}
+            style={{ color: 'var(--kind-transfer)', border: '1px solid color-mix(in srgb, var(--kind-transfer) 35%, transparent)', background: 'color-mix(in srgb, var(--kind-transfer) 8%, transparent)' }}
+            className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity">
+            Extract
+          </button>
+        </div>
+        {mapsMsg && <p className="text-xs mt-1" style={{ color: mapsMsg.color }}>{mapsMsg.text}</p>}
+      </SectionBox>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="From" value={d('start_location')} onChange={v => setD('start_location', v)} placeholder="Hotel / address" />
+        <Field label="To"   value={d('end_location')}   onChange={v => setD('end_location',   v)} placeholder="Airport / address" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Distance"  value={d('distance')} onChange={v => setD('distance', v)} placeholder="45 km" />
+        <Field label="Duration"  value={d('duration')} onChange={v => setD('duration', v)} placeholder="1h 15m" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Total cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€60" />
+        <Field label="Per person" value={d('cost_per_person')} onChange={v => setD('cost_per_person', v)} placeholder="€30" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Booking ref" value={d('booking_ref')}    onChange={v => setD('booking_ref', v)}    placeholder="CONF123" />
+        <Field label="Provider"    value={d('provider')}        onChange={v => setD('provider', v)}        placeholder="Local taxis" />
+      </div>
+      <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Meet at hotel lobby, driver name…" />
+    </div>
+  )
 }
 
 function RailForm({ core, details, setCore, setDetails }) {
@@ -845,6 +953,8 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             <ActivityForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'walk' ? (
             <WalkForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'transfer' ? (
+            <TransferForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'cycling' ? (
             <CyclingForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'rail' ? (
