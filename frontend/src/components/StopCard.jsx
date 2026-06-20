@@ -392,10 +392,10 @@ function WalkCard({ item: initial }) {
                 )}
                 {(d.distance || d.elevation_gain || d.elevation_loss || d.duration) && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                    {d.distance       && <span>{d.distance}</span>}
+                    {d.distance       && <span>↔ {d.distance}</span>}
                     {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
                     {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
-                    {d.duration       && <span>{d.duration}</span>}
+                    {d.duration       && <span>⏱ {d.duration}</span>}
                   </div>
                 )}
               </div>
@@ -515,12 +515,13 @@ function TransferCard({ item: initial }) {
                 {route && (
                   <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{route}</div>
                 )}
-                {(d.distance || d.duration || item.cost || d.provider) && (
+                {(d.distance || d.duration || item.cost || d.provider || d.booking_ref) && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                    {d.distance && <span>{d.distance}</span>}
-                    {d.duration && <span>{d.duration}</span>}
-                    {item.cost  && <span>{item.cost}</span>}
-                    {d.provider && <span>{d.provider}</span>}
+                    {d.distance   && <span>↔ {d.distance}</span>}
+                    {d.duration   && <span>⏱ {d.duration}</span>}
+                    {item.cost    && <span>💳 {item.cost}</span>}
+                    {d.provider   && <span>via {d.provider}</span>}
+                    {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                   </div>
                 )}
               </div>
