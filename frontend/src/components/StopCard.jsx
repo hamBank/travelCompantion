@@ -4,6 +4,7 @@ import ItemRow from './ItemRow.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal from './ItemEditModal.jsx'
+import CostDisplay from './CostDisplay.jsx'
 import { countryFlag } from '../countryFlag.js'
 import { airportName } from '../airportNames.js'
 import RailDetailModal from './RailDetailModal.jsx'
@@ -326,7 +327,7 @@ function AccomCard({ item: initial, onItemSaved }) {
               {(d.booking_ref || item.cost) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
-                  {item.cost && <span>{item.cost}</span>}
+                  {item.cost && <CostDisplay item={item} />}
                 </div>
               )}
             </div>
@@ -522,7 +523,7 @@ function TourCard({ item: initial, onItemSaved }) {
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
                   {timeStr      && <span>{timeStr}</span>}
                   {d.duration   && <span>⏱ {d.duration}</span>}
-                  {item.cost    && <span>💳 {item.cost}</span>}
+                  {item.cost    && <span>💳 <CostDisplay item={item} /></span>}
                   {d.operator   && <span>{d.operator}</span>}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                 </div>
@@ -605,7 +606,7 @@ function TransferCard({ item: initial, onItemSaved }) {
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
                     {d.distance   && <span>↔ {d.distance}</span>}
                     {d.duration   && <span>⏱ {d.duration}</span>}
-                    {item.cost    && <span>💳 {item.cost}</span>}
+                    {item.cost    && <span>💳 <CostDisplay item={item} /></span>}
                     {d.provider   && <span>via {d.provider}</span>}
                     {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                   </div>
@@ -751,7 +752,7 @@ function PurchaseCard({ item: initial, onItemSaved }) {
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-sm truncate">{item.name}</span>
                 {item.cost && (
-                  <span style={{ color: 'var(--kind-purchase)' }} className="text-xs shrink-0 opacity-80">{item.cost}</span>
+                  <CostDisplay item={item} className="text-xs shrink-0 opacity-80" style={{ color: 'var(--kind-purchase)' }} />
                 )}
               </div>
               {d.location && (
@@ -900,7 +901,7 @@ function RestaurantCard({ item: initial, onItemSaved }) {
                   })()}
                   {item.notes && <span>{item.notes}</span>}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
-                  {item.cost && <span>{item.cost}</span>}
+                  {item.cost && <CostDisplay item={item} />}
                 </div>
               )}
             </div>

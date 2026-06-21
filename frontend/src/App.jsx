@@ -5,6 +5,7 @@ import TripTimeline from './components/TripTimeline.jsx'
 import EditTrip from './components/EditTrip.jsx'
 import ThemePicker from './components/ThemePicker.jsx'
 import LoginPage from './components/LoginPage.jsx'
+import UserSettings from './components/UserSettings.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig } from './api.js'
 
@@ -38,6 +39,7 @@ function AppShell({ user, onLogout }) {
   const [selectedTrip, setSelectedTrip] = useState(null)
   const [editing, setEditing] = useState(false)
   const [theme, setTheme] = useTheme()
+  const [showSettings, setShowSettings] = useState(false)
   const online = useOnline()
 
   const [userChoseList, setUserChoseList] = useState(false)
@@ -80,6 +82,14 @@ function AppShell({ user, onLogout }) {
         )}
 
         <ThemePicker current={theme} onChange={setTheme} />
+        <button
+          onClick={() => setShowSettings(true)}
+          style={{ color: 'var(--text-faint)' }}
+          className="text-base hover:opacity-70 transition-opacity shrink-0"
+          title="Settings"
+        >
+          ⚙
+        </button>
 
         {selectedTrip && online && (
           <button
@@ -109,6 +119,8 @@ function AppShell({ user, onLogout }) {
           </button>
         )}
       </header>
+
+      {showSettings && <UserSettings onClose={() => setShowSettings(false)} />}
 
       <main className="max-w-2xl mx-auto px-4 py-6">
         {selectedTrip

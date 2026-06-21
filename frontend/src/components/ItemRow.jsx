@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { updateItemStatus } from '../api.js'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal from './ItemEditModal.jsx'
+import CostDisplay from './CostDisplay.jsx'
 
 const CYCLE = { pending: 'done', done: 'skipped', skipped: 'pending' }
 const ICON = { pending: '○', done: '✓', skipped: '—' }
@@ -45,7 +46,7 @@ export default function ItemRow({ item, onItemSaved }) {
             {current.name}
           </span>
           {current.cost && (
-            <span style={{ color: 'var(--text-muted)' }} className="text-xs shrink-0">{current.cost}</span>
+            <CostDisplay item={current} className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }} />
           )}
           {current.scheduled_at && (
             <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0 ml-auto">

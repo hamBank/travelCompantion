@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode } from '../api.js'
 import { KIND_VAR, KIND_LABEL } from '../kinds.js'
+import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
   return (
@@ -989,7 +990,27 @@ export default function ItemEditModal({ item, onSave, onClose }) {
     if (saving) return
     setSaving(true); setError(null)
     try {
-      const updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details })
+      let finalDetails = { ...details }
+
+      const homeCurrency = getHomeCurrency()
+      if (core.cost && homeCurrency) {
+        const parsed = parseCost(core.cost)
+        if (parsed && parsed.code !== homeCurrency) {
+          const converted = await convertCurrency(parsed.amount, parsed.code, homeCurrency)
+          if (converted != null) {
+            finalDetails = { ...finalDetails, converted_cost: converted, converted_currency: homeCurrency }
+          }
+        } else {
+          // Cost cleared or same currency — remove stale conversion
+          const { converted_cost: _, converted_currency: __, ...rest } = finalDetails
+          finalDetails = rest
+        }
+      } else if (!core.cost) {
+        const { converted_cost: _, converted_currency: __, ...rest } = finalDetails
+        finalDetails = rest
+      }
+
+      const updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
       onSave(updated)
     } catch (e) {
       setError(e.message)
