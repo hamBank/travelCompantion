@@ -107,7 +107,7 @@ export default function StopCard({ stop, index, onUpdate }) {
                 if (item.kind === 'walk')      return <WalkCard      key={item.id} item={item} onItemSaved={handleItemSaved} />
                 if (item.kind === 'transfer')  return <TransferCard  key={item.id} item={item} onItemSaved={handleItemSaved} />
                 if (item.kind === 'tour')      return <TourCard      key={item.id} item={item} onItemSaved={handleItemSaved} />
-                return <ItemRow key={item.id} item={item} />
+                return <ItemRow key={item.id} item={item} onItemSaved={handleItemSaved} />
               })}
             </div>
           )}

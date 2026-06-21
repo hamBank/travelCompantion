@@ -6,7 +6,7 @@ import ItemEditModal from './ItemEditModal.jsx'
 const CYCLE = { pending: 'done', done: 'skipped', skipped: 'pending' }
 const ICON = { pending: '○', done: '✓', skipped: '—' }
 
-export default function ItemRow({ item }) {
+export default function ItemRow({ item, onItemSaved }) {
   const [current, setCurrent] = useState(item)
   const [status, setStatus] = useState(item.status)
   const [showDetail, setShowDetail] = useState(false)
@@ -73,7 +73,7 @@ export default function ItemRow({ item }) {
       {showEdit && (
         <ItemEditModal
           item={current}
-          onSave={updated => { setCurrent(updated); setShowEdit(false) }}
+          onSave={updated => { setCurrent(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
