@@ -9,7 +9,7 @@ from .routers import trips, stops, items, sheets_import
 from .routers.auth_router import router as auth_router
 
 # Paths that never require authentication (static assets + public endpoints)
-_PUBLIC_PREFIXES = ("/auth/", "/health", "/assets/", "/sw.", "/registerSW.", "/manifest.")
+_PUBLIC_PREFIXES = ("/auth/", "/health", "/currency/", "/assets/", "/sw.", "/registerSW.", "/manifest.")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
                     "/favicon.ico", "/icon-192.png", "/icon-512.png",
                     "/apple-touch-icon.png", "/deploy"}
@@ -88,6 +88,27 @@ def _git_sha():
 @app.get("/health")
 def health():
     return {"status": "ok", "sha": _git_sha()}
+
+
+@app.get("/currency/convert")
+async def currency_convert(amount: float, from_currency: str, to_currency: str):
+    import httpx
+    if from_currency == to_currency:
+        return {"rate": 1.0, "result": amount}
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(
+                "https://api.frankfurter.app/latest",
+                params={"amount": amount, "from": from_currency, "to": to_currency},
+            )
+            r.raise_for_status()
+            data = r.json()
+            result = data["rates"].get(to_currency)
+            if result is None:
+                raise HTTPException(status_code=502, detail=f"No rate for {to_currency}")
+            return {"rate": round(result / amount, 6), "result": round(result, 2)}
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Currency API error: {e}")
 
 
 # Serve the compiled React frontend — must come after all API routes

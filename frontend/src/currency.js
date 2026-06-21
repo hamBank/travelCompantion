@@ -66,21 +66,19 @@ function extractNumber(str) {
 }
 
 /**
- * Convert `amount` from `fromCode` to `toCode` using the Frankfurter API.
- * Returns the converted number rounded to 2dp, or null on failure.
+ * Convert `amount` from `fromCode` to `toCode` via the backend proxy.
+ * Returns the converted number rounded to 2dp, or throws on failure.
  */
 export async function convertCurrency(amount, fromCode, toCode) {
   if (!fromCode || !toCode || fromCode === toCode) return amount
-  try {
-    const url = `https://api.frankfurter.app/latest?amount=${amount}&from=${fromCode}&to=${toCode}`
-    const r = await fetch(url)
-    if (!r.ok) return null
-    const data = await r.json()
-    const result = data.rates?.[toCode]
-    return result != null ? Math.round(result * 100) / 100 : null
-  } catch {
-    return null
+  const url = `/currency/convert?amount=${amount}&from_currency=${encodeURIComponent(fromCode)}&to_currency=${encodeURIComponent(toCode)}`
+  const r = await fetch(url)
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}))
+    throw new Error(body.detail ?? `Currency conversion failed (${r.status})`)
   }
+  const data = await r.json()
+  return data.result
 }
 
 /** Format a numeric amount in a given ISO currency code for display. */

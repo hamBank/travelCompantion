@@ -981,11 +981,12 @@ export default function ItemEditModal({ item, onSave, onClose }) {
   })
   const [details, setDetails] = useState(item.details ?? {})
   const [saving, setSaving] = useState(false)
+  const [savingMsg, setSavingMsg] = useState('')
   const [error, setError] = useState(null)
 
   async function save() {
     if (saving) return
-    setSaving(true); setError(null)
+    setSaving(true); setSavingMsg(''); setError(null)
     try {
       let finalDetails = { ...details }
 
@@ -1002,9 +1003,9 @@ export default function ItemEditModal({ item, onSave, onClose }) {
         if (parsed && parsed.code !== homeCurrency) {
           // Re-convert if cost changed or if no conversion stored yet
           if (costChanged || finalDetails.converted_cost == null) {
+            setSavingMsg(`Converting ${parsed.code} → ${homeCurrency}…`)
             const converted = await convertCurrency(parsed.amount, parsed.code, homeCurrency)
-            if (converted != null)
-              finalDetails = { ...finalDetails, converted_cost: converted, converted_currency: homeCurrency }
+            finalDetails = { ...finalDetails, converted_cost: converted, converted_currency: homeCurrency }
           }
           // Re-convert amount_paid if it changed or no conversion stored yet
           if ((costChanged || paidChanged || finalDetails.converted_amount_paid == null) && finalDetails.amount_paid) {
@@ -1012,8 +1013,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             const paidAmount = parsedPaid ? parsedPaid.amount : parseFloat(finalDetails.amount_paid)
             if (paidAmount > 0) {
               const convertedPaid = await convertCurrency(paidAmount, parsed.code, homeCurrency)
-              if (convertedPaid != null)
-                finalDetails = { ...finalDetails, converted_amount_paid: convertedPaid }
+              finalDetails = { ...finalDetails, converted_amount_paid: convertedPaid }
             }
           } else if (!finalDetails.amount_paid) {
             const { converted_amount_paid: _, ...rest } = finalDetails
@@ -1129,7 +1129,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
             className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
           >
-            {saving ? 'Saving…' : 'Save'}
+            {savingMsg || (saving ? 'Saving…' : 'Save')}
           </button>
         </div>
       </div>
