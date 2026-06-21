@@ -23,6 +23,7 @@ class ItemKind(str, Enum):
     walk = "walk"
     transfer = "transfer"
     tour = "tour"
+    food = "food"
 
 
 class ItemStatus(str, Enum):

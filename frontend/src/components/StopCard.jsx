@@ -34,8 +34,9 @@ export default function StopCard({ stop, index, onUpdate }) {
     return dt ? new Date(dt).getTime() : Infinity
   }
   const timeline = stop.items
-    .filter(i => i.kind !== 'accommodation')
+    .filter(i => i.kind !== 'accommodation' && i.kind !== 'food')
     .sort((a, b) => sortKey(a) - sortKey(b))
+  const foodItems = stop.items.filter(i => i.kind === 'food')
 
   const flag = countryFlag(stop.country)
 
@@ -106,7 +107,13 @@ export default function StopCard({ stop, index, onUpdate }) {
             </div>
           )}
 
-          {!accom && timeline.length === 0 && (
+          {foodItems.length > 0 && (
+            <Section label="Food & Drink">
+              {foodItems.map(item => <FoodCard key={item.id} item={item} />)}
+            </Section>
+          )}
+
+          {!accom && timeline.length === 0 && foodItems.length === 0 && (
             <p style={{ color: 'var(--text-faint)' }} className="text-xs">No details recorded.</p>
           )}
         </div>
@@ -701,6 +708,65 @@ function CyclingCard({ item: initial }) {
         >✎</button>
       </div>
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function FoodCard({ item: initial }) {
+  const [item, setItem] = useState(initial)
+  const [showEdit, setShowEdit] = useState(false)
+  const d = item.details ?? {}
+
+  return (
+    <>
+      <div className="relative group">
+        <div
+          className="w-full text-left"
+          style={{
+            background: 'color-mix(in srgb, var(--kind-food) 6%, var(--surface-2))',
+            border: '1px solid color-mix(in srgb, var(--kind-food) 35%, transparent)',
+            borderRadius: '0.5rem',
+            padding: '0.75rem',
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            <span style={{ color: 'var(--kind-food)', fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>🍴</span>
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-sm truncate">{item.name}</span>
+                {item.link && (
+                  <a
+                    href={item.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    style={{ color: 'var(--kind-food)' }}
+                    className="text-xs shrink-0 opacity-80 hover:opacity-60 transition-opacity"
+                  >
+                    ↗
+                  </a>
+                )}
+              </div>
+              {d.description && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs">{d.description}</div>
+              )}
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+          title="Edit"
+        >✎</button>
+      </div>
       {showEdit && (
         <ItemEditModal
           item={item}

@@ -12,6 +12,7 @@ const KIND_VAR = {
   walk:          'var(--kind-walk)',
   transfer:      'var(--kind-transfer)',
   tour:          'var(--kind-tour)',
+  food:          'var(--kind-food)',
 }
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
@@ -612,6 +613,7 @@ export const KIND_LABEL = {
   tour: 'Guided Tour', rail: 'Rail',
   restaurant: 'Restaurant', note: 'Note',
   accommodation: 'Accommodation', flight: 'Flight',
+  food: 'Food & Drink',
 }
 
 const VEHICLE_TYPES = ['car', 'taxi', 'minibus', 'bus', 'shuttle', 'private car']
@@ -962,6 +964,18 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
   )
 }
 
+function FoodForm({ core, details, setCore, setDetails }) {
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  return (
+    <div className="space-y-4">
+      <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Pasta alla Norma" />
+      <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="Notes, what to order, what to avoid…" rows={3} />
+      <Field label="Link (optional)" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+    </div>
+  )
+}
+
 export default function ItemEditModal({ item, onSave, onClose }) {
   const [core, setCore] = useState({
     kind: item.kind ?? 'activity',
@@ -1047,6 +1061,8 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             <RailForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'flight' ? (
             <FlightForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'food' ? (
+            <FoodForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : (
             <GenericForm core={core} setCore={setCore} />
           )}
