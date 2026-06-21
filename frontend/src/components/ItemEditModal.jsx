@@ -1000,14 +1000,14 @@ export default function ItemEditModal({ item, onSave, onClose }) {
       } else if (homeCurrency) {
         const parsed = parseCost(core.cost)
         if (parsed && parsed.code !== homeCurrency) {
-          // Re-convert total cost only if it changed
-          if (costChanged) {
+          // Re-convert if cost changed or if no conversion stored yet
+          if (costChanged || finalDetails.converted_cost == null) {
             const converted = await convertCurrency(parsed.amount, parsed.code, homeCurrency)
             if (converted != null)
               finalDetails = { ...finalDetails, converted_cost: converted, converted_currency: homeCurrency }
           }
-          // Re-convert amount_paid if it changed (uses same source currency as cost)
-          if ((costChanged || paidChanged) && finalDetails.amount_paid) {
+          // Re-convert amount_paid if it changed or no conversion stored yet
+          if ((costChanged || paidChanged || finalDetails.converted_amount_paid == null) && finalDetails.amount_paid) {
             const parsedPaid = parseCost(finalDetails.amount_paid)
             const paidAmount = parsedPaid ? parsedPaid.amount : parseFloat(finalDetails.amount_paid)
             if (paidAmount > 0) {
