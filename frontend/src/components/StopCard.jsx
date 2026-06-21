@@ -195,7 +195,7 @@ function FlightCard({ item: initial, onItemSaved }) {
         </button>
         <button
           onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
           style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
           title="Edit"
         >
@@ -268,7 +268,7 @@ function RailCard({ item: initial, onItemSaved }) {
         </button>
         <button
           onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
           style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
           title="Edit"
         >✎</button>
@@ -329,7 +329,7 @@ function AccomCard({ item: initial, onItemSaved }) {
         </button>
         <button
           onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
           style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
           title="Edit"
         >
@@ -416,7 +416,7 @@ function WalkCard({ item: initial, onItemSaved }) {
           </button>
           <button
             onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+            className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
             style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
             title="Edit"
           >✎</button>
@@ -527,7 +527,7 @@ function TourCard({ item: initial, onItemSaved }) {
         </button>
         <button
           onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
           style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
           title="Edit"
         >✎</button>
@@ -610,7 +610,7 @@ function TransferCard({ item: initial, onItemSaved }) {
           </button>
           <button
             onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+            className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
             style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
             title="Edit"
           >✎</button>
@@ -707,7 +707,7 @@ function CyclingCard({ item: initial, onItemSaved }) {
         </button>
         <button
           onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
           style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
           title="Edit"
         >✎</button>
@@ -767,7 +767,7 @@ function FoodCard({ item: initial, onItemSaved }) {
         </div>
         <button
           onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
           style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
           title="Edit"
         >✎</button>
@@ -840,7 +840,7 @@ function RestaurantCard({ item: initial, onItemSaved }) {
         </button>
         <button
           onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
           style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
           title="Edit"
         >

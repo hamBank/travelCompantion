@@ -198,6 +198,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
 }
 
+/* ─── Touch devices: always show edit buttons ───────────────────── */
+@media (hover: none) {
+  .edit-btn {
+    opacity: 1 !important;
+  }
+}
+
+/* ─── iOS safe area ─────────────────────────────────────────────── */
+main {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
 /* ─── Timeline connector ────────────────────────────────────────── */
 .timeline-line {
   position: absolute;

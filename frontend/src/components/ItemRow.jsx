@@ -25,45 +25,45 @@ export default function ItemRow({ item, onItemSaved }) {
 
   return (
     <>
-      <div className="flex items-start gap-3 py-0.5 group">
+      <div className="flex items-center gap-3 group" style={{ minHeight: '1.75rem' }}>
         <button
           onClick={cycle}
-          style={{ color: iconColor, marginTop: '1px', minWidth: '1rem' }}
+          style={{ color: iconColor, minWidth: '1rem' }}
           className="text-sm hover:opacity-70 transition-opacity shrink-0"
         >
           {ICON[status]}
         </button>
         <button
           onClick={() => setShowDetail(true)}
-          className="flex-1 min-w-0 text-left hover:opacity-70 transition-opacity"
+          className="flex-1 min-w-0 text-left hover:opacity-70 transition-opacity flex items-center gap-2"
           style={{ opacity: struck ? 0.4 : 1 }}
         >
-          <span className="text-sm" style={{ color: 'var(--text)' }}>
-            {current.scheduled_at && (
-              <span style={{ color: 'var(--text-faint)' }} className="text-xs mr-2">
-                {(() => {
-                  const [dp, tp] = current.scheduled_at.split('T')
-                  const d = new Date(dp + 'T00:00:00')
-                  const weekday = d.toLocaleDateString('en-GB', { weekday: 'short' })
-                  const day = d.getDate()
-                  const time = tp?.slice(0, 5)
-                  return time ? `${weekday} ${day} ${time}` : `${weekday} ${day}`
-                })()}
-              </span>
-            )}
+          <span className="text-sm truncate" style={{ color: 'var(--text)' }}>
             {current.kind === 'note' && (
               <span className="mr-1" style={{ fontSize: '0.8em' }}>📝</span>
             )}
             {current.name}
-            {current.cost && (
-              <span style={{ color: 'var(--text-muted)' }} className="text-xs ml-2">{current.cost}</span>
-            )}
           </span>
+          {current.cost && (
+            <span style={{ color: 'var(--text-muted)' }} className="text-xs shrink-0">{current.cost}</span>
+          )}
+          {current.scheduled_at && (
+            <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0 ml-auto">
+              {(() => {
+                const [dp, tp] = current.scheduled_at.split('T')
+                const d = new Date(dp + 'T00:00:00')
+                const weekday = d.toLocaleDateString('en-GB', { weekday: 'short' })
+                const day = d.getDate()
+                const time = tp?.slice(0, 5)
+                return time && time !== '00:00' ? `${weekday} ${day} ${time}` : `${weekday} ${day}`
+              })()}
+            </span>
+          )}
         </button>
         <button
           onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem', marginTop: '2px' }}
-          className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+          className="edit-btn shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
           title="Edit"
         >
           ✎

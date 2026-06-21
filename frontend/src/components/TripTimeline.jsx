@@ -42,26 +42,10 @@ export default function TripTimeline({ tripId }) {
         </div>
       )}
 
-      <div className="relative">
-        {total > 1 && <div className="timeline-line" />}
-        <div className="space-y-3">
-          {timeline.stops.map((stop, i) => (
-            <div key={stop.id} className="relative flex items-start gap-4">
-              <div
-                className="timeline-dot shrink-0"
-                style={{
-                  borderColor: `var(--status-${stop.status || 'planned'})`,
-                  color: `var(--status-${stop.status || 'planned'})`,
-                }}
-              >
-                {i + 1}
-              </div>
-              <div className="flex-1 min-w-0">
-                <StopCard stop={stop} index={i} onUpdate={load} />
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="space-y-3">
+        {timeline.stops.map((stop, i) => (
+          <StopCard key={stop.id} stop={stop} index={i} onUpdate={load} />
+        ))}
       </div>
     </div>
   )
