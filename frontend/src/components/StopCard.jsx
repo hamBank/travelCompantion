@@ -68,15 +68,13 @@ export default function StopCard({ stop, index, onUpdate }) {
         onClick={() => setOpen(o => !o)}
         className="w-full px-4 py-3.5 flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
       >
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm flex items-center gap-1.5">
-            {flag && <span className="text-base leading-none">{flag}</span>}
-            <span className="truncate">{stop.location}</span>
-          </div>
+        <div className="flex-1 min-w-0 flex items-center gap-1.5">
+          {flag && <span className="text-base leading-none shrink-0">{flag}</span>}
+          <span className="font-medium text-sm truncate">{stop.location}</span>
           {(stop.arrive || stop.depart) && (
-            <div style={{ color: 'var(--text-faint)' }} className="text-xs mt-0.5">
+            <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0">
               {fmtDate(stop.arrive)}{stop.depart ? ` → ${fmtDate(stop.depart)}` : ''}
-            </div>
+            </span>
           )}
         </div>
         <button
