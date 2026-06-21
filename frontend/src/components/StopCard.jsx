@@ -26,17 +26,22 @@ export default function StopCard({ stop, index, onUpdate }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
+  const [items, setItems] = useState(stop.items)
 
-  const accom = stop.items.find(i => i.kind === 'accommodation')
+  function handleItemSaved(updated) {
+    setItems(prev => prev.map(i => i.id === updated.id ? updated : i))
+  }
+
+  const accom = items.find(i => i.kind === 'accommodation')
 
   const sortKey = item => {
     const dt = (item.kind === 'flight' || item.kind === 'rail') ? item.details?.depart_time : item.scheduled_at
     return dt ? new Date(dt).getTime() : Infinity
   }
-  const timeline = stop.items
+  const timeline = items
     .filter(i => i.kind !== 'accommodation' && i.kind !== 'food')
     .sort((a, b) => sortKey(a) - sortKey(b))
-  const foodItems = stop.items.filter(i => i.kind === 'food')
+  const foodItems = items.filter(i => i.kind === 'food')
 
   const flag = countryFlag(stop.country)
 
@@ -88,20 +93,20 @@ export default function StopCard({ stop, index, onUpdate }) {
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
           {accom && (
             <Section label="Accommodation">
-              <AccomCard item={accom} />
+              <AccomCard item={accom} onItemSaved={handleItemSaved} />
             </Section>
           )}
 
           {timeline.length > 0 && (
             <div className="space-y-1">
               {timeline.map(item => {
-                if (item.kind === 'flight')    return <FlightCard    key={item.id} item={item} />
-                if (item.kind === 'rail')      return <RailCard      key={item.id} item={item} />
-                if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} />
-                if (item.kind === 'cycling')   return <CyclingCard   key={item.id} item={item} />
-                if (item.kind === 'walk')      return <WalkCard      key={item.id} item={item} />
-                if (item.kind === 'transfer')  return <TransferCard  key={item.id} item={item} />
-                if (item.kind === 'tour')      return <TourCard      key={item.id} item={item} />
+                if (item.kind === 'flight')    return <FlightCard    key={item.id} item={item} onItemSaved={handleItemSaved} />
+                if (item.kind === 'rail')      return <RailCard      key={item.id} item={item} onItemSaved={handleItemSaved} />
+                if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} onItemSaved={handleItemSaved} />
+                if (item.kind === 'cycling')   return <CyclingCard   key={item.id} item={item} onItemSaved={handleItemSaved} />
+                if (item.kind === 'walk')      return <WalkCard      key={item.id} item={item} onItemSaved={handleItemSaved} />
+                if (item.kind === 'transfer')  return <TransferCard  key={item.id} item={item} onItemSaved={handleItemSaved} />
+                if (item.kind === 'tour')      return <TourCard      key={item.id} item={item} onItemSaved={handleItemSaved} />
                 return <ItemRow key={item.id} item={item} />
               })}
             </div>
@@ -109,7 +114,7 @@ export default function StopCard({ stop, index, onUpdate }) {
 
           {foodItems.length > 0 && (
             <Section label="Food & Drink">
-              {foodItems.map(item => <FoodCard key={item.id} item={item} />)}
+              {foodItems.map(item => <FoodCard key={item.id} item={item} onItemSaved={handleItemSaved} />)}
             </Section>
           )}
 
@@ -131,7 +136,7 @@ function Section({ label, children }) {
   )
 }
 
-function FlightCard({ item: initial }) {
+function FlightCard({ item: initial, onItemSaved }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -197,11 +202,11 @@ function FlightCard({ item: initial }) {
           ✎
         </button>
       </div>
-      {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => setItem(updated)} />}
+      {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
-          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
@@ -209,7 +214,7 @@ function FlightCard({ item: initial }) {
   )
 }
 
-function RailCard({ item: initial }) {
+function RailCard({ item: initial, onItemSaved }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -268,11 +273,11 @@ function RailCard({ item: initial }) {
           title="Edit"
         >✎</button>
       </div>
-      {showDetail && <RailDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => setItem(updated)} />}
+      {showDetail && <RailDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
-          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
@@ -280,7 +285,7 @@ function RailCard({ item: initial }) {
   )
 }
 
-function AccomCard({ item: initial }) {
+function AccomCard({ item: initial, onItemSaved }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -335,7 +340,7 @@ function AccomCard({ item: initial }) {
       {showEdit && (
         <ItemEditModal
           item={item}
-          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
@@ -343,7 +348,7 @@ function AccomCard({ item: initial }) {
   )
 }
 
-function WalkCard({ item: initial }) {
+function WalkCard({ item: initial, onItemSaved }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -462,7 +467,7 @@ function WalkCard({ item: initial }) {
       {showEdit && (
         <ItemEditModal
           item={item}
-          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
@@ -470,7 +475,7 @@ function WalkCard({ item: initial }) {
   )
 }
 
-function TourCard({ item: initial }) {
+function TourCard({ item: initial, onItemSaved }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
@@ -530,7 +535,7 @@ function TourCard({ item: initial }) {
       {showEdit && (
         <ItemEditModal
           item={item}
-          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
@@ -538,7 +543,7 @@ function TourCard({ item: initial }) {
   )
 }
 
-function TransferCard({ item: initial }) {
+function TransferCard({ item: initial, onItemSaved }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
   const [showMap, setShowMap] = useState(false)
@@ -653,7 +658,7 @@ function TransferCard({ item: initial }) {
       {showEdit && (
         <ItemEditModal
           item={item}
-          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
@@ -661,7 +666,7 @@ function TransferCard({ item: initial }) {
   )
 }
 
-function CyclingCard({ item: initial }) {
+function CyclingCard({ item: initial, onItemSaved }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -711,7 +716,7 @@ function CyclingCard({ item: initial }) {
       {showEdit && (
         <ItemEditModal
           item={item}
-          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
@@ -719,7 +724,7 @@ function CyclingCard({ item: initial }) {
   )
 }
 
-function FoodCard({ item: initial }) {
+function FoodCard({ item: initial, onItemSaved }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
@@ -770,7 +775,7 @@ function FoodCard({ item: initial }) {
       {showEdit && (
         <ItemEditModal
           item={item}
-          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
@@ -780,7 +785,7 @@ function FoodCard({ item: initial }) {
 
 const BOOKING_STATUS_COLOR = { planned: 'var(--text-faint)', booked: 'var(--kind-activity)', confirmed: 'var(--success)' }
 
-function RestaurantCard({ item: initial }) {
+function RestaurantCard({ item: initial, onItemSaved }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -846,7 +851,7 @@ function RestaurantCard({ item: initial }) {
       {showEdit && (
         <ItemEditModal
           item={item}
-          onSave={updated => { setItem(updated); setShowEdit(false) }}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
         />
       )}
