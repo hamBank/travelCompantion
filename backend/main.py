@@ -95,8 +95,9 @@ async def currency_convert(amount: float, from_currency: str, to_currency: str):
     import httpx
     if from_currency == to_currency:
         return {"rate": 1.0, "result": amount}
+    timeout = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.get(
                 "https://api.frankfurter.app/latest",
                 params={"amount": amount, "from": from_currency, "to": to_currency},
@@ -107,8 +108,12 @@ async def currency_convert(amount: float, from_currency: str, to_currency: str):
             if result is None:
                 raise HTTPException(status_code=502, detail=f"No rate for {to_currency}")
             return {"rate": round(result / amount, 6), "result": round(result, 2)}
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Currency API error: {e}")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Currency API timed out — try again")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Currency API unreachable: {e}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Currency API error: {e.response.status_code}")
 
 
 # Serve the compiled React frontend — must come after all API routes
