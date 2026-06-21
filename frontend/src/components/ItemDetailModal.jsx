@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { fetchGpxText, downloadGpx } from '../api.js'
+import CostDisplay from './CostDisplay.jsx'
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -113,7 +114,7 @@ function AccommodationBody({ item }) {
           {item.cost && (
             <div className="flex justify-between gap-4 text-sm">
               <span style={{ color: 'var(--text-faint)' }}>Cost</span>
-              <span>{item.cost}</span>
+              <CostDisplay item={item} />
             </div>
           )}
           {d.amount_paid && (
@@ -153,7 +154,7 @@ function ActivityBody({ item }) {
              style={{ color: 'var(--accent)' }} className="hover:underline break-all">{item.link}</a>
         </Row>
       )}
-      {item.cost && <Row label="Cost">{item.cost}</Row>}
+      {item.cost && <Row label="Cost"><CostDisplay item={item} /></Row>}
     </div>
   )
 }
@@ -216,7 +217,7 @@ function RestaurantBody({ item }) {
           {item.cost && (
             <div className="flex justify-between gap-4 text-sm">
               <span style={{ color: 'var(--text-faint)' }}>Cost</span>
-              <span>{item.cost}</span>
+              <CostDisplay item={item} />
             </div>
           )}
         </div>
@@ -474,7 +475,7 @@ function CyclingBody({ item }) {
         )}
         {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
         {item.notes && <Row label="Notes">{item.notes}</Row>}
-        {item.cost  && <Row label="Cost">{item.cost}</Row>}
+        {item.cost  && <Row label="Cost"><CostDisplay item={item} /></Row>}
         {d.gpx_filename && (
           <Row label="GPX">
             <button onClick={() => downloadGpx(item.id, d.original_gpx_name)}
