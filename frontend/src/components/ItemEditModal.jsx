@@ -944,6 +944,22 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
   )
 }
 
+function PurchaseForm({ core, details, setCore, setDetails }) {
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  return (
+    <div className="space-y-4">
+      <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Silk scarf" />
+      <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="What it is, why you want it…" rows={3} />
+      <Field label="Shop / Location" value={d('location')} onChange={v => setD('location', v)} placeholder="Night market, Chatuchak…" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="฿350" />
+        <Field label="Link / URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+      </div>
+    </div>
+  )
+}
+
 function FoodForm({ core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
@@ -1041,6 +1057,8 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             <RailForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'flight' ? (
             <FlightForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'purchase' ? (
+            <PurchaseForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'food' ? (
             <FoodForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : (

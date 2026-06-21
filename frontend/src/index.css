@@ -36,6 +36,7 @@
   --kind-transfer:      #e8a87c;
   --kind-tour:          #f5c2e7;
   --kind-food:          #f2cdcd;
+  --kind-purchase:      #eba0ac;
   --input-icon-filter: invert(0.8);
 }
 
@@ -71,6 +72,7 @@
   --kind-transfer:      #e49e76;
   --kind-tour:          #f5bde6;
   --kind-food:          #f0c6c6;
+  --kind-purchase:      #e38393;
   --input-icon-filter: invert(0.8);
 }
 
@@ -106,6 +108,7 @@
   --kind-transfer:      #cc7847;
   --kind-tour:          #ea76cb;
   --kind-food:          #e64553;
+  --kind-purchase:      #d20f39;
   --input-icon-filter: none;
 }
 
@@ -141,6 +144,7 @@
   --kind-transfer:      #c9956c;
   --kind-tour:          #d699b6;
   --kind-food:          #c9a9c2;
+  --kind-purchase:      #bf616a;
   --input-icon-filter: invert(0.8);
 }
 
@@ -176,6 +180,7 @@
   --kind-transfer:      #e99f7a;
   --kind-tour:          #f2b5a0;
   --kind-food:          #ebbcba;
+  --kind-purchase:      #eb6f92;
   --input-icon-filter: invert(0.8);
 }
 
