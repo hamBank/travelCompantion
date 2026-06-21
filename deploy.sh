@@ -30,6 +30,10 @@ BIND_PORT="8000"
 UPDATE_ONLY=false
 [[ "${1:-}" == "--update" ]] && UPDATE_ONLY=true
 
+echo "═══════════════════════════════════════════════════════"
+echo "  Deploy triggered: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+echo "═══════════════════════════════════════════════════════"
+
 # Remember if the service was already running before we touch anything
 _WAS_RUNNING=false
 systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && _WAS_RUNNING=true
