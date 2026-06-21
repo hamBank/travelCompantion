@@ -51,6 +51,9 @@ export default function ItemRow({ item }) {
                 })()}
               </span>
             )}
+            {current.kind === 'note' && (
+              <span className="mr-1" style={{ fontSize: '0.8em' }}>📝</span>
+            )}
             {current.name}
             {current.cost && (
               <span style={{ color: 'var(--text-muted)' }} className="text-xs ml-2">{current.cost}</span>
