@@ -1,19 +1,6 @@
 import { useState } from 'react'
 import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode } from '../api.js'
-
-const KIND_VAR = {
-  activity:      'var(--kind-activity)',
-  restaurant:    'var(--kind-restaurant)',
-  note:          'var(--kind-note)',
-  accommodation: 'var(--kind-accommodation)',
-  flight:        'var(--kind-flight)',
-  cycling:       'var(--kind-cycling)',
-  rail:          'var(--kind-rail)',
-  walk:          'var(--kind-walk)',
-  transfer:      'var(--kind-transfer)',
-  tour:          'var(--kind-tour)',
-  food:          'var(--kind-food)',
-}
+import { KIND_VAR, KIND_LABEL } from '../kinds.js'
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
   return (
@@ -608,13 +595,6 @@ function TourForm({ itemId, core, details, setCore, setDetails }) {
   )
 }
 
-export const KIND_LABEL = {
-  activity: 'Activity', walk: 'Walk / Hike', transfer: 'Road Transfer', cycling: 'Cycling',
-  tour: 'Guided Tour', rail: 'Rail',
-  restaurant: 'Restaurant', note: 'Note',
-  accommodation: 'Accommodation', flight: 'Flight',
-  food: 'Food & Drink',
-}
 
 const VEHICLE_TYPES = ['car', 'taxi', 'minibus', 'bus', 'shuttle', 'private car']
 
