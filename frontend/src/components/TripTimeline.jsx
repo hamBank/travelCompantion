@@ -42,7 +42,7 @@ export default function TripTimeline({ tripId }) {
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-1.5">
         {timeline.stops.map((stop, i) => (
           <StopCard key={stop.id} stop={stop} index={i} onUpdate={load} />
         ))}
