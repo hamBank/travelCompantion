@@ -104,10 +104,7 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Check-in" type="datetime-local" value={d('checkin')} onChange={v => setD('checkin', v)} />
         <Field label="Check-out" type="datetime-local" value={d('checkout')} onChange={v => setD('checkout', v)} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Total cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€450" />
-        <Field label="Amount paid" value={d('amount_paid')} onChange={v => setD('amount_paid', v)} placeholder="€225" />
-      </div>
+      <Field label="Total cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€450" />
       <Field label="Booking confirmation" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="ABC123XYZ" />
       <SectionBox label="Contact">
         <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+39 06 123456" />
@@ -993,21 +990,40 @@ export default function ItemEditModal({ item, onSave, onClose }) {
       let finalDetails = { ...details }
 
       const homeCurrency = getHomeCurrency()
-      if (core.cost && homeCurrency) {
+      const costChanged = core.cost !== (item.cost ?? '')
+      const paidChanged = (details.amount_paid ?? '') !== (item.details?.amount_paid ?? '')
+
+      if (!core.cost) {
+        // Cost removed — clear all conversion data
+        const { converted_cost: _a, converted_amount_paid: _b, converted_currency: _c, ...rest } = finalDetails
+        finalDetails = rest
+      } else if (homeCurrency) {
         const parsed = parseCost(core.cost)
         if (parsed && parsed.code !== homeCurrency) {
-          const converted = await convertCurrency(parsed.amount, parsed.code, homeCurrency)
-          if (converted != null) {
-            finalDetails = { ...finalDetails, converted_cost: converted, converted_currency: homeCurrency }
+          // Re-convert total cost only if it changed
+          if (costChanged) {
+            const converted = await convertCurrency(parsed.amount, parsed.code, homeCurrency)
+            if (converted != null)
+              finalDetails = { ...finalDetails, converted_cost: converted, converted_currency: homeCurrency }
           }
-        } else {
-          // Cost cleared or same currency — remove stale conversion
-          const { converted_cost: _, converted_currency: __, ...rest } = finalDetails
+          // Re-convert amount_paid if it changed (uses same source currency as cost)
+          if ((costChanged || paidChanged) && finalDetails.amount_paid) {
+            const parsedPaid = parseCost(finalDetails.amount_paid)
+            const paidAmount = parsedPaid ? parsedPaid.amount : parseFloat(finalDetails.amount_paid)
+            if (paidAmount > 0) {
+              const convertedPaid = await convertCurrency(paidAmount, parsed.code, homeCurrency)
+              if (convertedPaid != null)
+                finalDetails = { ...finalDetails, converted_amount_paid: convertedPaid }
+            }
+          } else if (!finalDetails.amount_paid) {
+            const { converted_amount_paid: _, ...rest } = finalDetails
+            finalDetails = rest
+          }
+        } else if (parsed && parsed.code === homeCurrency) {
+          // Same currency — no conversion needed, clear stale data
+          const { converted_cost: _a, converted_amount_paid: _b, converted_currency: _c, ...rest } = finalDetails
           finalDetails = rest
         }
-      } else if (!core.cost) {
-        const { converted_cost: _, converted_currency: __, ...rest } = finalDetails
-        finalDetails = rest
       }
 
       const updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
@@ -1084,6 +1100,17 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             <FoodForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : (
             <GenericForm core={core} setCore={setCore} />
+          )}
+          {core.cost && (
+            <div style={{ borderTop: '1px solid var(--border)' }} className="mt-4 pt-4">
+              <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Payment</p>
+              <Field
+                label="Amount paid"
+                value={details.amount_paid ?? ''}
+                onChange={v => setDetails(d => ({ ...d, amount_paid: v || undefined }))}
+                placeholder="€225"
+              />
+            </div>
           )}
           {error && <p style={{ color: 'var(--error)' }} className="text-xs mt-3">{error}</p>}
         </div>
