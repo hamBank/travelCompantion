@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem } from '../api.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
+import RailLookupModal from './RailLookupModal.jsx'
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
   return (
@@ -696,9 +697,31 @@ function TransferForm({ core, details, setCore, setDetails }) {
 function RailForm({ core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  const [showLookup, setShowLookup] = useState(false)
   return (
     <div className="space-y-4">
-      <Field label="Label" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="London → Paris" />
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <Field label="Label" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="London → Paris" />
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowLookup(true)}
+          disabled={!d('train_number') || !d('origin')}
+          title={!d('train_number') || !d('origin') ? 'Enter train number and origin station first' : 'Look up live times'}
+          style={{ color: 'var(--kind-rail)', border: '1px solid color-mix(in srgb, var(--kind-rail) 35%, transparent)', background: 'color-mix(in srgb, var(--kind-rail) 8%, transparent)' }}
+          className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+        >
+          Look up times
+        </button>
+      </div>
+      {showLookup && (
+        <RailLookupModal
+          details={details}
+          onApply={(key, value) => setD(key, value)}
+          onClose={() => setShowLookup(false)}
+        />
+      )}
       <SectionBox label="Route">
         <div className="grid grid-cols-2 gap-3">
           <Field label="From station" value={d('origin')} onChange={v => setD('origin', v)} placeholder="London St Pancras" />

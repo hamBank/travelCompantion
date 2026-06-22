@@ -38,7 +38,7 @@ function matchesJourney(jrn, trainKey) {
   return [name, bare, cat + name, cat + bare].map(N).includes(trainKey)
 }
 
-async function liveRailCheck(item) {
+export async function liveRailCheck(item) {
   const d = item.details ?? {}
   const trainNumber = (d.train_number || '').trim()
   const originName  = (d.origin || '').trim()
