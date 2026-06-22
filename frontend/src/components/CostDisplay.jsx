@@ -1,33 +1,28 @@
 import { formatAmount, parseCost } from '../currency.js'
 
 /**
- * Shows cost with optional converted equivalent, and if amount_paid is set,
- * breaks down into total · paid · remaining.
+ * Renders cost information from stored values only — no API calls.
  *
- * Compact mode (default): single line e.g. "€450 (£375)"
- * When amount_paid is present, shows full breakdown.
+ * Without amount_paid: inline  "€450 (£375)"
+ * With amount_paid:    block breakdown showing total, paid, outstanding
+ *
+ * Converted amounts come from item.details.converted_* (written at save time).
  */
 export default function CostDisplay({ item, className = '' }) {
   const cost = item?.cost
   const d = item?.details ?? {}
-  const amountPaid = d.amount_paid
+  const amountPaid    = d.amount_paid
   const convertedCost = d.converted_cost
   const convertedPaid = d.converted_amount_paid
   const convertedCurrency = d.converted_currency
 
   if (!cost) return null
 
-  // Try to calculate remaining from parsed values
   const parsedCost = parseCost(cost)
-  const parsedPaid = amountPaid ? (parseCost(amountPaid) ?? { amount: parseFloat(amountPaid) }) : null
-  const remaining = parsedCost && parsedPaid ? parsedCost.amount - parsedPaid.amount : null
-  const convertedRemaining = convertedCost != null && convertedPaid != null ? convertedCost - convertedPaid : null
-
-  // Whether the converted amount is in a different currency from what's in the cost string
   const showConverted = convertedCost != null && convertedCurrency && convertedCurrency !== parsedCost?.code
 
+  // ── Simple inline mode (no paid amount) ────────────────────────────────────
   if (!amountPaid) {
-    // Simple mode — just show cost + converted
     return (
       <span className={className}>
         {cost}
@@ -40,34 +35,59 @@ export default function CostDisplay({ item, className = '' }) {
     )
   }
 
-  // Full breakdown — total / paid / remaining
+  // ── Breakdown mode (paid amount present) ───────────────────────────────────
+  const parsedPaid = parseCost(amountPaid) ?? { amount: parseFloat(amountPaid), code: parsedCost?.code }
+  const outstanding    = parsedCost && parsedPaid.amount != null ? parsedCost.amount - parsedPaid.amount : null
+  const convertedOutstanding = convertedCost != null && convertedPaid != null
+    ? Math.round((convertedCost - convertedPaid) * 100) / 100
+    : null
+
+  const fullyPaid = outstanding != null && outstanding <= 0
+
   return (
-    <span className={`${className} inline-flex flex-col gap-0.5`}>
-      <span>
-        {cost}
+    <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+
+      {/* Total */}
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>Total</span>
+        <span>{cost}</span>
         {showConverted && (
-          <span style={{ color: 'var(--text-faint)', fontSize: '0.85em' }}>
-            {' '}({formatAmount(convertedCost, convertedCurrency)})
+          <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>
+            ({formatAmount(convertedCost, convertedCurrency)})
           </span>
         )}
-      </span>
-      <span style={{ color: 'var(--text-faint)', fontSize: '0.85em' }}>
-        Paid: {amountPaid}
+      </div>
+
+      {/* Paid */}
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>Paid</span>
+        <span>{amountPaid}</span>
         {convertedPaid != null && convertedCurrency && (
-          <span> ({formatAmount(convertedPaid, convertedCurrency)})</span>
+          <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>
+            ({formatAmount(convertedPaid, convertedCurrency)})
+          </span>
         )}
-      </span>
-      {remaining != null && remaining > 0 && (
-        <span style={{ color: 'var(--warning)', fontSize: '0.85em' }}>
-          Remaining: {parsedCost?.code ? formatAmount(remaining, parsedCost.code) : remaining.toFixed(2)}
-          {convertedRemaining != null && convertedRemaining > 0 && convertedCurrency && (
-            <span style={{ color: 'var(--text-faint)' }}> ({formatAmount(convertedRemaining, convertedCurrency)})</span>
+      </div>
+
+      {/* Outstanding / Fully paid */}
+      {fullyPaid ? (
+        <div>
+          <span style={{ color: 'var(--success)', fontSize: '0.8em' }}>Fully paid ✓</span>
+        </div>
+      ) : outstanding != null && outstanding > 0 ? (
+        <div className="flex items-baseline gap-1.5 flex-wrap">
+          <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>Outstanding</span>
+          <span style={{ color: 'var(--warning)', fontWeight: 500 }}>
+            {parsedCost?.code ? formatAmount(outstanding, parsedCost.code) : outstanding.toFixed(2)}
+          </span>
+          {convertedOutstanding != null && convertedOutstanding > 0 && convertedCurrency && (
+            <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>
+              ({formatAmount(convertedOutstanding, convertedCurrency)})
+            </span>
           )}
-        </span>
-      )}
-      {remaining != null && remaining <= 0 && (
-        <span style={{ color: 'var(--success)', fontSize: '0.85em' }}>Fully paid ✓</span>
-      )}
-    </span>
+        </div>
+      ) : null}
+
+    </div>
   )
 }
