@@ -149,16 +149,26 @@ export function formatAmount(amount, code) {
   return formatCurrencyAmount(amount, code)
 }
 
+// Extract a numeric amount from a cost string, falling back to a bare number
+// parse when no currency symbol/code is recognised.
+function numericAmount(str) {
+  if (str == null) return null
+  const parsed = parseCost(str)
+  if (parsed) return parsed.amount
+  const n = parseFloat(String(str).replace(/[^\d.,]/g, '').replace(/,(?=\d{3}(?:[^\d]|$))/g, ''))
+  return isNaN(n) ? null : n
+}
+
 /** True when the item has a cost and the amount paid covers it. */
 export function isFullyPaid(item) {
   const cost = item?.cost
   if (!cost) return false
   const amountPaid = item?.details?.amount_paid
   if (!amountPaid) return false
-  const parsedCost = parseCost(cost)
-  const parsedPaid = parseCost(amountPaid) ?? { amount: parseFloat(amountPaid) }
-  if (!parsedCost || parsedPaid.amount == null || isNaN(parsedPaid.amount)) return false
-  return parsedPaid.amount >= parsedCost.amount
+  const costAmount = numericAmount(cost)
+  const paidAmount = numericAmount(amountPaid)
+  if (costAmount == null || paidAmount == null) return false
+  return paidAmount >= costAmount
 }
 
 export const HOME_CURRENCY_KEY = 'tc-home-currency'
