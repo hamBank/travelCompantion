@@ -10,13 +10,14 @@
 //   storage  — where it must be carried during the flight
 //   usage    — whether it may be used/charged in flight
 
-// IATA/ICAO general baseline — applies when an airline isn't in the table.
+// ICAO global standard — effective 27 March 2026, adopted by all 193 member
+// states. Applies when an airline isn't in the table below.
 const DEFAULT_POLICY = {
   maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 2, airline approval required. >160 Wh: prohibited.',
-  number:  'Up to 20 spare batteries / power banks (≤100 Wh) for personal use.',
-  storage: 'Carry-on only — never in checked baggage. Protect terminals against short circuit.',
-  usage:   'Generally permitted to power personal devices; charging from aircraft USB may be restricted.',
-  source:  'IATA/ICAO general guidance',
+  number:  'Maximum 2 power banks per passenger.',
+  storage: 'Carry-on only — overhead bins forbidden. Keep accessible; protect terminals.',
+  usage:   'PROHIBITED in flight — no charging power banks, and no using them to charge devices.',
+  source:  'ICAO global standard (27 Mar 2026)',
 }
 
 // Airline-specific overrides. Keys are lowercase substrings matched against
@@ -24,58 +25,58 @@ const DEFAULT_POLICY = {
 const AIRLINE_POLICIES = {
   singapore: {
     maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 2, with approval. >160 Wh: prohibited.',
-    number:  'Reasonable quantity for personal use (≤100 Wh).',
+    number:  'Maximum 2 power banks per passenger (since 15 Apr 2026).',
     storage: 'Carry-on only. Must be kept in the seat pocket or under the seat — not in overhead bins.',
-    usage:   'Use and charging of power banks PROHIBITED during the flight (since Apr 2025).',
+    usage:   'Use and charging of power banks PROHIBITED during the flight.',
     source:  'Singapore Airlines',
   },
   thai: {
     maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 2, with approval. >160 Wh: prohibited.',
-    number:  'Reasonable quantity for personal use (≤100 Wh).',
+    number:  'Maximum 2 power banks per passenger (enforced 27 Mar 2026).',
     storage: 'Carry-on only. Keep accessible, not in overhead bins.',
-    usage:   'Use and charging of power banks PROHIBITED in flight (since Mar 2025).',
+    usage:   'Use and charging PROHIBITED in flight — non-compliance risks denied boarding.',
     source:  'Thai Airways',
   },
   'eva air': {
     maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 2, with approval. >160 Wh: prohibited.',
-    number:  'Reasonable quantity for personal use.',
+    number:  'Maximum 2 power banks per passenger.',
     storage: 'Carry-on only. Not permitted in overhead bins.',
-    usage:   'Using or charging power banks PROHIBITED throughout the flight (since Mar 2025).',
+    usage:   'Using or charging power banks PROHIBITED throughout the flight.',
     source:  'EVA Air',
   },
   'korean air': {
     maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 2, with approval. >160 Wh: prohibited.',
-    number:  'Max 5 spare batteries / power banks per person.',
+    number:  'Maximum 2 power banks per passenger.',
     storage: 'Carry-on only. Must be kept on your person or in the seat pocket, not overhead bins.',
-    usage:   'Charging power banks via aircraft power and charging devices FROM power banks prohibited (since Mar 2025).',
+    usage:   'In-flight use and charging of power banks PROHIBITED (since 26 Jan 2026).',
     source:  'Korean Air',
   },
   qantas: {
     maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 2, with approval. >160 Wh: prohibited.',
-    number:  'Up to 20 spare batteries / power banks for personal use.',
+    number:  'Maximum 2 power banks per passenger (since Dec 2025).',
     storage: 'Carry-on only. Keep within reach; do not store in overhead lockers.',
-    usage:   'Power banks should not be used to charge devices in flight; keep monitored.',
+    usage:   'In-flight use of power banks PROHIBITED.',
     source:  'Qantas',
   },
   emirates: {
-    maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 1 spare, with approval. >160 Wh: prohibited.',
-    number:  'One power bank (≤100 Wh) per passenger, for personal use.',
+    maxWh:   '≤100 Wh only. >100 Wh: prohibited.',
+    number:  'One power bank (≤100 Wh) per passenger — stricter than ICAO.',
     storage: 'Carry-on only. Must remain accessible during the flight.',
-    usage:   'Power banks must NOT be used to charge devices on board.',
+    usage:   'In-flight use of power banks PROHIBITED (since Oct 2025).',
     source:  'Emirates',
   },
   qatar: {
-    maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 2, with approval. >160 Wh: prohibited.',
-    number:  'Reasonable quantity for personal use.',
-    storage: 'Carry-on only. Keep terminals protected.',
-    usage:   'Use of power banks to charge devices not permitted in flight.',
+    maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 2, with prior approval. >160 Wh: prohibited.',
+    number:  'Maximum 2 power banks per passenger.',
+    storage: 'Carry-on only. Keep terminals protected; not in overhead bins.',
+    usage:   'In-flight use and charging PROHIBITED (ICAO global standard).',
     source:  'Qatar Airways',
   },
   cathay: {
-    maxWh:   '≤100 Wh: allowed. 100–160 Wh: max 2, with approval. >160 Wh: prohibited.',
-    number:  'Reasonable quantity for personal use.',
+    maxWh:   '≤100 Wh: allowed. 100–160 Wh: needs clearance ≥48 h before departure. >160 Wh: prohibited.',
+    number:  'Maximum 2 power banks per passenger.',
     storage: 'Carry-on only. Not in overhead bins.',
-    usage:   'Using or charging power banks PROHIBITED during the flight (since 2025).',
+    usage:   'Using or charging power banks PROHIBITED during the flight.',
     source:  'Cathay Pacific',
   },
 }
