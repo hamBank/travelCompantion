@@ -547,15 +547,11 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
               {d.meeting_point && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">📍 {d.meeting_point}</div>
               )}
-              {item.cost && !isFullyPaid(item) && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs">
-                  <CostDisplay item={item} compact />
-                </div>
-              )}
-              {(timeStr || d.duration || d.booking_ref) && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+              {(timeStr || d.duration || (item.cost && !isFullyPaid(item)) || d.booking_ref) && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
                   {timeStr       && <span>{timeStr}</span>}
                   {d.duration    && <span>⏱ {d.duration}</span>}
+                  {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                 </div>
               )}
