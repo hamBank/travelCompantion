@@ -35,14 +35,17 @@ export default function StopCard({ stop, index, onUpdate }) {
   const hideCompleted = useHideCompleted()
   const visibleItems = hideCompleted ? items.filter(i => i.status !== 'done') : items
 
-  const accom = visibleItems.find(i => i.kind === 'accommodation')
-
   const sortKey = item => {
-    const dt = (item.kind === 'flight' || item.kind === 'rail') ? item.details?.depart_time : item.scheduled_at
+    let dt
+    if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
+    else if (item.kind === 'accommodation')             dt = item.details?.checkin || item.scheduled_at
+    else                                                dt = item.scheduled_at
     return dt ? new Date(dt).getTime() : Infinity
   }
+  // Accommodation now flows chronologically with everything else (by check-in /
+  // arrival) instead of being pinned to the top. Food & purchases stay grouped.
   const timeline = visibleItems
-    .filter(i => i.kind !== 'accommodation' && i.kind !== 'food' && i.kind !== 'purchase')
+    .filter(i => i.kind !== 'food' && i.kind !== 'purchase')
     .sort((a, b) => sortKey(a) - sortKey(b))
   const foodItems = visibleItems.filter(i => i.kind === 'food')
   const purchaseItems = visibleItems.filter(i => i.kind === 'purchase')
@@ -93,15 +96,10 @@ export default function StopCard({ stop, index, onUpdate }) {
 
       {open && (
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
-          {accom && (
-            <Section label="Accommodation">
-              <AccomCard item={accom} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-            </Section>
-          )}
-
           {timeline.length > 0 && (
             <div className="space-y-1">
               {timeline.map(item => {
+                if (item.kind === 'accommodation') return <AccomCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
                 if (item.kind === 'flight')    return <FlightCard    key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
                 if (item.kind === 'rail')      return <RailCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
                 if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
@@ -128,7 +126,7 @@ export default function StopCard({ stop, index, onUpdate }) {
             </Section>
           )}
 
-          {!accom && timeline.length === 0 && foodItems.length === 0 && purchaseItems.length === 0 && (
+          {timeline.length === 0 && foodItems.length === 0 && purchaseItems.length === 0 && (
             <p style={{ color: 'var(--text-faint)' }} className="text-xs">No details recorded.</p>
           )}
         </div>
