@@ -193,10 +193,9 @@ function FlightCard({ item: initial, onItemSaved }) {
                   </div>
                 )
               })()}
-              {(d.checkin_desk || d.fare_class || d.seats) && (
+              {(d.checkin_desk || d.seats) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
                   {d.checkin_desk && <span>Check-in {d.checkin_desk}</span>}
-                  {d.fare_class && <span>{d.fare_class}</span>}
                   {d.seats && <span>Seats: {d.seats}</span>}
                 </div>
               )}
