@@ -5,6 +5,7 @@ import FlightDetailModal from './FlightDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal from './ItemEditModal.jsx'
 import CostDisplay from './CostDisplay.jsx'
+import { isFullyPaid } from '../currency.js'
 import { countryFlag } from '../countryFlag.js'
 import { airportName } from '../airportNames.js'
 import RailDetailModal from './RailDetailModal.jsx'
@@ -171,6 +172,9 @@ function FlightCard({ item: initial, onItemSaved }) {
                   {[d.flight_number, d.airline].filter(Boolean).join(' · ')}
                 </span>
               </div>
+              {item.cost && !isFullyPaid(item) && (
+                <div className="text-xs"><CostDisplay item={item} compact /></div>
+              )}
               {(d.depart_time || d.arrive_time) && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs">
                   {[d.depart_time && fmtDateTime(d.depart_time) + (d.depart_tz ? ` ${d.depart_tz}` : ''),
@@ -317,7 +321,7 @@ function AccomCard({ item: initial, onItemSaved }) {
               {d.location && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs">{d.location}</div>
               )}
-              {item.cost && (
+              {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
               {(d.checkin || d.checkout) && (
@@ -325,11 +329,6 @@ function AccomCard({ item: initial, onItemSaved }) {
                   {[d.checkin && `In: ${fmtDateTime(d.checkin)}`,
                     d.checkout && `Out: ${fmtDateTime(d.checkout)}`]
                     .filter(Boolean).join('  ·  ')}
-                </div>
-              )}
-              {d.booking_ref && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs">
-                  <span>Ref: {d.booking_ref}</span>
                 </div>
               )}
             </div>
@@ -608,15 +607,23 @@ function TransferCard({ item: initial, onItemSaved }) {
                 {route && (
                   <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{route}</div>
                 )}
-                {item.cost && (
-                  <div className="text-xs"><CostDisplay item={item} compact /></div>
-                )}
-                {(d.distance || d.duration || d.provider || d.booking_ref) && (
-                  <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                {(item.cost || d.distance || d.duration || d.provider || d.booking_ref) && (
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
+                    {item.cost    && <CostDisplay item={item} compact />}
                     {d.distance   && <span>↔ {d.distance}</span>}
                     {d.duration   && <span>⏱ {d.duration}</span>}
                     {d.provider   && <span>via {d.provider}</span>}
                     {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
+                  </div>
+                )}
+                {item.scheduled_at && (
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs">
+                    {(() => {
+                      const [dp, tp] = item.scheduled_at.split('T')
+                      const date = new Date(dp + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                      const t = tp?.slice(0, 5)
+                      return t && t !== '00:00' ? `${date} · ${t}` : date
+                    })()}
                   </div>
                 )}
               </div>

@@ -149,6 +149,18 @@ export function formatAmount(amount, code) {
   return formatCurrencyAmount(amount, code)
 }
 
+/** True when the item has a cost and the amount paid covers it. */
+export function isFullyPaid(item) {
+  const cost = item?.cost
+  if (!cost) return false
+  const amountPaid = item?.details?.amount_paid
+  if (!amountPaid) return false
+  const parsedCost = parseCost(cost)
+  const parsedPaid = parseCost(amountPaid) ?? { amount: parseFloat(amountPaid) }
+  if (!parsedCost || parsedPaid.amount == null || isNaN(parsedPaid.amount)) return false
+  return parsedPaid.amount >= parsedCost.amount
+}
+
 export const HOME_CURRENCY_KEY = 'tc-home-currency'
 export const getHomeCurrency = () => localStorage.getItem(HOME_CURRENCY_KEY) || ''
 export const setHomeCurrency = (code) => localStorage.setItem(HOME_CURRENCY_KEY, code)
