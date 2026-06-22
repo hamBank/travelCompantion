@@ -136,10 +136,15 @@ name), `KIND_OPTIONS` (ordered list). **Adding a new kind = edit `kinds.js` +
   `useSyncExternalStore`; StopCard filters done items when enabled. Toggle lives in
   UserSettings → Display.
 
-## Auth
+## Auth & permissions
 
-- `auth.py` `AUTH_ENABLED` (env). When disabled, middleware passes through and the
-  frontend auto-logs-in as a dev user.
+See **PERMISSIONS.md** for the full role/sharing design. In brief: per-trip roles
+(viewer < editor < owner) via the `TripMembership` table, keyed by email.
+`backend/permissions.py` enforces every endpoint; `frontend/src/roles.js`
+(`RoleContext`) gates UI. Sharing via owner-only `ShareModal` + `/trips/{id}/members`.
+
+- `auth.py` `AUTH_ENABLED` (env). When disabled, middleware passes through, the
+  frontend auto-logs-in as a dev user, and all permission checks return `owner`.
 - When enabled: middleware validates `Authorization: Bearer <JWT>` except for
   public prefixes: `/auth/`, `/health`, `/currency/`, `/assets/`, `/sw.`,
   `/registerSW.`, `/manifest.` and exact public paths (`/`, `/index.html`, static

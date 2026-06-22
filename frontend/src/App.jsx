@@ -6,8 +6,10 @@ import EditTrip from './components/EditTrip.jsx'
 import ThemePicker from './components/ThemePicker.jsx'
 import LoginPage from './components/LoginPage.jsx'
 import UserSettings from './components/UserSettings.jsx'
+import ShareModal from './components/ShareModal.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig } from './api.js'
+import { canEdit, canManage } from './roles.js'
 
 function useOnline() {
   const [online, setOnline] = useState(navigator.onLine)
@@ -40,6 +42,7 @@ function AppShell({ user, onLogout }) {
   const [editing, setEditing] = useState(false)
   const [theme, setTheme] = useTheme()
   const [showSettings, setShowSettings] = useState(false)
+  const [showShare, setShowShare] = useState(false)
   const online = useOnline()
 
   const [userChoseList, setUserChoseList] = useState(false)
@@ -91,7 +94,18 @@ function AppShell({ user, onLogout }) {
           ⚙
         </button>
 
-        {selectedTrip && online && (
+        {selectedTrip && online && canManage(selectedTrip.role) && (
+          <button
+            onClick={() => setShowShare(true)}
+            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            className="px-3 py-1 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity shrink-0"
+            title="Share trip"
+          >
+            Share
+          </button>
+        )}
+
+        {selectedTrip && online && canEdit(selectedTrip.role) && (
           <button
             onClick={() => setEditing(e => !e)}
             style={{
@@ -121,6 +135,7 @@ function AppShell({ user, onLogout }) {
       </header>
 
       {showSettings && <UserSettings onClose={() => setShowSettings(false)} />}
+      {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={() => setShowShare(false)} />}
 
       <main className="max-w-2xl mx-auto px-4 py-6">
         {selectedTrip

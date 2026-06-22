@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getTripTimeline, backfillAccommodations } from '../api.js'
 import StopCard from './StopCard.jsx'
+import { RoleContext, canEdit } from '../roles.js'
 
 export default function TripTimeline({ tripId }) {
   const [timeline, setTimeline] = useState(null)
@@ -12,8 +13,10 @@ export default function TripTimeline({ tripId }) {
   async function load() {
     setLoading(true)
     try {
-      try { await backfillAccommodations(tripId) } catch (_) {}
-      setTimeline(await getTripTimeline(tripId))
+      const tl = await getTripTimeline(tripId)
+      setTimeline(tl)
+      // Legacy accommodation backfill — editors only (timeline also lazy-migrates).
+      if (canEdit(tl.role)) { try { await backfillAccommodations(tripId) } catch (_) {} }
     }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
@@ -27,26 +30,28 @@ export default function TripTimeline({ tripId }) {
   const total = timeline.stops.length
 
   return (
-    <div>
-      {total > 0 && (
-        <div className="flex items-center justify-between mb-5">
-          <p style={{ color: 'var(--text-faint)' }} className="text-xs">
-            {total} stops · {completed} completed
-          </p>
-          <div style={{ background: 'var(--border)' }} className="rounded-full h-1.5 w-32 overflow-hidden">
-            <div
-              style={{ background: 'var(--success)', width: `${(completed / total) * 100}%` }}
-              className="h-full rounded-full transition-all"
-            />
+    <RoleContext.Provider value={timeline.role ?? 'owner'}>
+      <div>
+        {total > 0 && (
+          <div className="flex items-center justify-between mb-5">
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs">
+              {total} stops · {completed} completed
+            </p>
+            <div style={{ background: 'var(--border)' }} className="rounded-full h-1.5 w-32 overflow-hidden">
+              <div
+                style={{ background: 'var(--success)', width: `${(completed / total) * 100}%` }}
+                className="h-full rounded-full transition-all"
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="space-y-1.5">
-        {timeline.stops.map((stop, i) => (
-          <StopCard key={stop.id} stop={stop} index={i} onUpdate={load} />
-        ))}
+        <div className="space-y-1.5">
+          {timeline.stops.map((stop, i) => (
+            <StopCard key={stop.id} stop={stop} index={i} onUpdate={load} />
+          ))}
+        </div>
       </div>
-    </div>
+    </RoleContext.Provider>
   )
 }

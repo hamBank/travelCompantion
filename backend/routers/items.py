@@ -6,7 +6,9 @@ from sqlalchemy.orm.attributes import flag_modified
 from typing import List
 import os, io, math, time, xml.etree.ElementTree as ET, httpx
 from ..database import get_session
-from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, Stop
+from ..auth import get_current_user
+from ..permissions import require_stop_role, require_item_role
+from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, Stop, TripRole
 
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _GPX_DIR  = os.path.join(_APP_ROOT, 'uploads', 'gpx')
@@ -15,9 +17,8 @@ router = APIRouter()
 
 
 @router.get("/stops/{stop_id}/items", response_model=List[ItemRead])
-def list_items(stop_id: int, session: Session = Depends(get_session)):
-    if not session.get(Stop, stop_id):
-        raise HTTPException(status_code=404, detail="Stop not found")
+def list_items(stop_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_stop_role(session, user, stop_id, TripRole.viewer)
     return session.exec(
         select(ItineraryItem)
         .where(ItineraryItem.stop_id == stop_id)
@@ -26,9 +27,8 @@ def list_items(stop_id: int, session: Session = Depends(get_session)):
 
 
 @router.post("/stops/{stop_id}/items", response_model=ItemRead, status_code=201)
-def create_item(stop_id: int, item_in: ItemCreate, session: Session = Depends(get_session)):
-    if not session.get(Stop, stop_id):
-        raise HTTPException(status_code=404, detail="Stop not found")
+def create_item(stop_id: int, item_in: ItemCreate, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_stop_role(session, user, stop_id, TripRole.editor)
     item = ItineraryItem(**item_in.model_dump(), stop_id=stop_id)
     session.add(item)
     session.commit()
@@ -37,18 +37,15 @@ def create_item(stop_id: int, item_in: ItemCreate, session: Session = Depends(ge
 
 
 @router.get("/items/{item_id}", response_model=ItemRead)
-def get_item(item_id: int, session: Session = Depends(get_session)):
-    item = session.get(ItineraryItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    return item
+def get_item(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_item_role(session, user, item_id, TripRole.viewer)
+    return session.get(ItineraryItem, item_id)
 
 
 @router.patch("/items/{item_id}", response_model=ItemRead)
-def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(get_session)):
+def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_item_role(session, user, item_id, TripRole.editor)
     item = session.get(ItineraryItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
     for field, value in item_in.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
         if field == 'details':
@@ -60,10 +57,9 @@ def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(ge
 
 
 @router.delete("/items/{item_id}", status_code=204)
-def delete_item(item_id: int, session: Session = Depends(get_session)):
+def delete_item(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_item_role(session, user, item_id, TripRole.editor)
     item = session.get(ItineraryItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
     # For accommodation items, clear the legacy stop.accommodation field so the
     # startup backfill and timeline lazy-migration don't recreate the item.
     if item.kind == "accommodation":
@@ -84,7 +80,8 @@ _AVIATIONSTACK_KEY = os.getenv("AVIATIONSTACK_KEY", "")
 _AERODATABOX_KEY   = os.getenv("AERODATABOX_KEY", "")
 
 @router.get("/items/{item_id}/flight-check")
-def check_flight(item_id: int, session: Session = Depends(get_session)):
+def check_flight(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_item_role(session, user, item_id, TripRole.editor)
     if not _AERODATABOX_KEY:
         raise HTTPException(status_code=503, detail="Flight check not configured (set AERODATABOX_KEY)")
     item = session.get(ItineraryItem, item_id)
@@ -260,7 +257,8 @@ _DB_HEADERS = {
 }
 
 @router.get("/items/{item_id}/rail-check")
-def check_rail(item_id: int, session: Session = Depends(get_session)):
+def check_rail(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_item_role(session, user, item_id, TripRole.editor)
     item = session.get(ItineraryItem, item_id)
     if not item or item.kind != "rail":
         raise HTTPException(status_code=404, detail="Rail item not found")
@@ -453,7 +451,8 @@ def route_elevation(lat1: float, lng1: float, lat2: float, lng2: float):
 
 
 @router.get("/items/{item_id}/enrich")
-def enrich_item(item_id: int, session: Session = Depends(get_session)):
+def enrich_item(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_item_role(session, user, item_id, TripRole.editor)
     if not _PLACES_KEY:
         raise HTTPException(status_code=503, detail="Google Places API not configured")
     item = session.get(ItineraryItem, item_id)
@@ -632,7 +631,8 @@ def _extract_gpx_stats(content: bytes) -> dict:
 # ── GPX upload / download ──────────────────────────────────────────────────────
 
 @router.post("/items/{item_id}/gpx", response_model=ItemRead)
-async def upload_gpx(item_id: int, file: UploadFile = File(...), session: Session = Depends(get_session)):
+async def upload_gpx(item_id: int, file: UploadFile = File(...), session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_item_role(session, user, item_id, TripRole.editor)
     item = session.get(ItineraryItem, item_id)
     if not item or item.kind != "cycling":
         raise HTTPException(status_code=404, detail="Cycling item not found")
@@ -660,7 +660,8 @@ async def upload_gpx(item_id: int, file: UploadFile = File(...), session: Sessio
 
 
 @router.get("/items/{item_id}/gpx")
-def download_gpx(item_id: int, session: Session = Depends(get_session)):
+def download_gpx(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_item_role(session, user, item_id, TripRole.viewer)
     item = session.get(ItineraryItem, item_id)
     if not item or item.kind != "cycling":
         raise HTTPException(status_code=404, detail="Cycling item not found")

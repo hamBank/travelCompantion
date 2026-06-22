@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { deleteItem } from '../api.js'
+import { useCanEdit } from '../roles.js'
 
 /**
  * Shared footer for detail modals — Edit + Delete actions with inline
@@ -16,6 +17,8 @@ export default function DetailActions({ item, onEdit, onDeleted, onClose }) {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState(null)
 
+  // Viewers (read-only) get no edit/delete actions.
+  if (!useCanEdit()) return null
   if (!onEdit && !onDeleted) return null
 
   async function handleDelete() {

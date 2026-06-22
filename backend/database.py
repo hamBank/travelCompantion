@@ -15,6 +15,7 @@ def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
     _migrate()
     _backfill_accommodations()
+    _backfill_trip_ownership()
 
 
 def _migrate():
@@ -80,3 +81,35 @@ def _backfill_accommodations():
                 print(f"[migrate] created {created} accommodation item(s) from legacy stop fields")
     except Exception as e:
         print(f"[migrate] _backfill_accommodations failed: {e}")
+
+
+def _backfill_trip_ownership():
+    """Give every trip without any membership an owner. Uses ALLOWED_EMAIL (the
+    single existing user) so pre-permissions trips remain accessible."""
+    try:
+        import os
+        from .models import Trip, TripMembership, TripRole
+        from sqlmodel import select
+
+        owner_email = os.environ.get("ALLOWED_EMAIL", "").lower()
+        if not owner_email:
+            return  # nothing to assign to (auth-disabled / no configured user)
+
+        with Session(engine) as session:
+            trips = session.exec(select(Trip)).all()
+            created = 0
+            for trip in trips:
+                has_member = session.exec(
+                    select(TripMembership).where(TripMembership.trip_id == trip.id)
+                ).first()
+                if has_member:
+                    continue
+                session.add(TripMembership(
+                    trip_id=trip.id, user_email=owner_email, role=TripRole.owner,
+                ))
+                created += 1
+            if created:
+                session.commit()
+                print(f"[migrate] assigned {created} trip(s) to owner {owner_email}")
+    except Exception as e:
+        print(f"[migrate] _backfill_trip_ownership failed: {e}")

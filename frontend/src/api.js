@@ -34,6 +34,12 @@ export const updateTrip = (id, data) =>
 
 export const getTripTimeline = (id) => req(`/trips/${id}/timeline`)
 
+export const getTripMembers = (id) => req(`/trips/${id}/members`)
+export const addTripMember = (id, user_email, role) =>
+  req(`/trips/${id}/members`, { method: 'POST', body: JSON.stringify({ user_email, role }) })
+export const removeTripMember = (id, email) =>
+  req(`/trips/${id}/members/${encodeURIComponent(email)}`, { method: 'DELETE' })
+
 export const backfillAccommodations = (tripId) =>
   req(`/import/backfill-accommodations/${tripId}`, { method: 'POST' })
 

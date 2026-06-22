@@ -33,6 +33,16 @@ class ItemStatus(str, Enum):
     skipped = "skipped"
 
 
+class TripRole(str, Enum):
+    owner = "owner"
+    editor = "editor"
+    viewer = "viewer"
+
+
+# Higher number = more privilege. Used for "at least this role" checks.
+ROLE_RANK = {TripRole.viewer: 1, TripRole.editor: 2, TripRole.owner: 3}
+
+
 # ── Trip ──────────────────────────────────────────────────────────────────────
 
 class TripBase(SQLModel):
@@ -60,6 +70,30 @@ class TripUpdate(SQLModel):
 class TripRead(TripBase):
     id: int
     created_at: datetime
+
+
+class TripReadWithRole(TripRead):
+    role: TripRole = TripRole.owner
+
+
+# ── TripMembership (per-trip access control) ───────────────────────────────────
+
+class TripMembership(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    trip_id: int = Field(foreign_key="trip.id", index=True)
+    user_email: str = Field(index=True)
+    role: TripRole = TripRole.viewer
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MembershipRead(SQLModel):
+    user_email: str
+    role: TripRole
+
+
+class MembershipCreate(SQLModel):
+    user_email: str
+    role: TripRole = TripRole.viewer
 
 
 # ── Stop ──────────────────────────────────────────────────────────────────────

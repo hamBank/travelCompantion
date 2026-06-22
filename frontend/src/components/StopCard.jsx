@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { updateStopStatus, updateItemStatus } from '../api.js'
 import { useHideCompleted } from '../settings.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
+import { useCanEdit } from '../roles.js'
 import ItemRow from './ItemRow.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
@@ -146,10 +147,13 @@ function Section({ label, children }) {
 }
 
 // Clickable leading icon — toggles completion (done ↔ pending). Shows ✓ when done.
+// Viewers (no edit rights) see a static icon with no toggle.
 function CardIcon({ item, icon, color, setItem, onItemSaved }) {
+  const canEdit = useCanEdit()
   const done = item.status === 'done'
   async function toggle(e) {
     e.stopPropagation()
+    if (!canEdit) return
     const next = done ? 'pending' : 'done'
     const prev = item
     const updated = { ...item, status: next }
@@ -159,13 +163,26 @@ function CardIcon({ item, icon, color, setItem, onItemSaved }) {
   }
   return (
     <span
-      onClick={toggle}
-      title={done ? 'Mark as not done' : 'Mark as done'}
-      style={{ color: done ? 'var(--success)' : color, fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0, cursor: 'pointer' }}
-      className="hover:opacity-70 transition-opacity"
+      onClick={canEdit ? toggle : undefined}
+      title={canEdit ? (done ? 'Mark as not done' : 'Mark as done') : undefined}
+      style={{ color: done ? 'var(--success)' : color, fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0, cursor: canEdit ? 'pointer' : 'default' }}
+      className={canEdit ? 'hover:opacity-70 transition-opacity' : ''}
     >
       {done ? '✓' : icon}
     </span>
+  )
+}
+
+// Hover edit pencil — renders nothing for viewers.
+function EditPencil({ onClick, absolute = true }) {
+  if (!useCanEdit()) return null
+  return (
+    <button
+      onClick={onClick}
+      className={`edit-btn ${absolute ? 'absolute top-2 right-2 ' : ''}opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity`}
+      style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+      title="Edit"
+    >✎</button>
   )
 }
 
@@ -228,14 +245,7 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >
-          ✎
-        </button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
@@ -302,12 +312,7 @@ function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >✎</button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showDetail && <RailDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
@@ -361,14 +366,7 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >
-          ✎
-        </button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
@@ -452,12 +450,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
               </div>
             </div>
           </button>
-          <button
-            onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-            className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-            style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-            title="Edit"
-          >✎</button>
+          <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
         </div>
 
         {/* Map controls — only when we have location data */}
@@ -558,12 +551,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >✎</button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showEdit && (
         <ItemEditModal
@@ -647,12 +635,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
               </div>
             </div>
           </button>
-          <button
-            onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-            className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-            style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-            title="Edit"
-          >✎</button>
+          <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
         </div>
 
         {embedUrl && (
@@ -748,12 +731,7 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >✎</button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
@@ -811,12 +789,7 @@ function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </div>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >✎</button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showEdit && (
         <ItemEditModal
@@ -871,12 +844,7 @@ function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </div>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >✎</button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showEdit && (
         <ItemEditModal
@@ -933,12 +901,7 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >✎</button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showDetail && (
         <ItemDetailModal
@@ -996,12 +959,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >✎</button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showDetail && (
         <ItemDetailModal
@@ -1073,14 +1031,7 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
             </div>
           </div>
         </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
-          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
-          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-          title="Edit"
-        >
-          ✎
-        </button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (

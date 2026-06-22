@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, SQLModel, select
 from ..database import get_session
+from ..auth import get_current_user
+from ..permissions import require_trip_role
 from ..sheets import fetch_sheets
 from ..importer import import_sheets, import_flights, update_stop_dates, enrich_accommodations, _parse_flights_sheet, _assign_flights_to_stops, _parse_date, FLIGHT_SHEET_NAMES
-from ..models import TripRead, Stop, ItineraryItem
+from ..models import TripRead, Stop, ItineraryItem, TripMembership, TripRole
 
 router = APIRouter(tags=["import"])
 
@@ -17,7 +19,7 @@ class SheetsImportResult(TripRead):
 
 
 @router.post("/import/sheets", response_model=SheetsImportResult, status_code=201)
-def import_from_sheets(req: SheetsImportRequest, session: Session = Depends(get_session)):
+def import_from_sheets(req: SheetsImportRequest, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     try:
         sheets_raw = fetch_sheets()
     except RuntimeError as e:
@@ -28,16 +30,22 @@ def import_from_sheets(req: SheetsImportRequest, session: Session = Depends(get_
     stop_count = session.exec(
         select(Stop).where(Stop.trip_id == trip.id)
     ).all()
+    data = trip.model_dump()  # capture before the membership commit expires attributes
 
-    return SheetsImportResult(**trip.model_dump(), stops_imported=len(stop_count))
+    # Creator becomes the owner of the imported trip.
+    session.add(TripMembership(trip_id=trip.id, user_email=user["email"].lower(), role=TripRole.owner))
+    session.commit()
+
+    return SheetsImportResult(**data, stops_imported=len(stop_count))
 
 
 @router.post("/import/sheets/flights/{trip_id}", status_code=200)
-def import_flights_only(trip_id: int, session: Session = Depends(get_session)):
+def import_flights_only(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """
     Fetch the Flights sheet and attach flight items to an existing trip's stops.
     Does not create a new trip or touch existing stops/items.
     """
+    require_trip_role(session, user, trip_id, TripRole.editor)
     try:
         sheets_raw = fetch_sheets()
     except RuntimeError as e:
@@ -52,11 +60,12 @@ def import_flights_only(trip_id: int, session: Session = Depends(get_session)):
 
 
 @router.post("/import/sheets/update-stop-dates/{trip_id}", status_code=200)
-def update_stop_dates_from_sheets(trip_id: int, session: Session = Depends(get_session)):
+def update_stop_dates_from_sheets(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """
     Re-read arrive/depart dates from the location sheets and patch existing stops.
     Safe to call on a trip that already has manually-edited items — only dates change.
     """
+    require_trip_role(session, user, trip_id, TripRole.editor)
     try:
         sheets_raw = fetch_sheets()
     except RuntimeError as e:
@@ -71,11 +80,12 @@ def update_stop_dates_from_sheets(trip_id: int, session: Session = Depends(get_s
 
 
 @router.get("/import/sheets/flights/{trip_id}/preview")
-def preview_flight_assignments(trip_id: int, session: Session = Depends(get_session)):
+def preview_flight_assignments(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """
     Dry-run: show which stop each flight would be assigned to, without importing.
     Useful for diagnosing stop-matching issues.
     """
+    require_trip_role(session, user, trip_id, TripRole.viewer)
     try:
         sheets_raw = fetch_sheets()
     except RuntimeError as e:
@@ -125,13 +135,14 @@ def preview_sheets():
 
 
 @router.post("/import/backfill-scheduled-at/{trip_id}", status_code=200)
-def backfill_scheduled_at(trip_id: int, session: Session = Depends(get_session)):
+def backfill_scheduled_at(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """
     For existing activity items that have no scheduled_at but have a date string in
     their notes field (e.g. "24/7 12:00", "Wednesday 22 Jul 22:05"), parse the notes
     and write the result to scheduled_at so items sort correctly.
     Safe to call multiple times — only updates rows where scheduled_at is NULL.
     """
+    require_trip_role(session, user, trip_id, TripRole.editor)
     stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
     if not stops:
         raise HTTPException(status_code=404, detail=f"No stops found for trip {trip_id}")
@@ -158,7 +169,7 @@ def backfill_scheduled_at(trip_id: int, session: Session = Depends(get_session))
 
 
 @router.post("/import/enrich-accommodations/{trip_id}", status_code=200)
-def enrich_accommodation_details(trip_id: int, session: Session = Depends(get_session)):
+def enrich_accommodation_details(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """
     Look up missing accommodation details (address, phone, website) for all stops
     in the trip.
@@ -170,6 +181,7 @@ def enrich_accommodation_details(trip_id: int, session: Session = Depends(get_se
     Only fills gaps — values already present from the sheet are never overwritten.
     Safe to call multiple times; stops that already have an address are skipped.
     """
+    require_trip_role(session, user, trip_id, TripRole.editor)
     try:
         result = enrich_accommodations(session, trip_id)
     except ValueError as e:
@@ -178,7 +190,7 @@ def enrich_accommodation_details(trip_id: int, session: Session = Depends(get_se
 
 
 @router.post("/import/backfill-accommodations/{trip_id}", status_code=200)
-def backfill_accommodation_items(trip_id: int, session: Session = Depends(get_session)):
+def backfill_accommodation_items(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """
     For trips imported with older code, create ItineraryItem(kind=accommodation)
     rows from the Stop-level accommodation fields (stop.accommodation,
@@ -189,6 +201,7 @@ def backfill_accommodation_items(trip_id: int, session: Session = Depends(get_se
     After running this, call /import/enrich-accommodations/{trip_id} to fill
     in missing addresses and contact details.
     """
+    require_trip_role(session, user, trip_id, TripRole.editor)
     from ..importer import ItemKind, ItemStatus, _combine_checkinout
     from ..models import ItineraryItem as Item
 

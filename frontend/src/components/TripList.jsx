@@ -126,16 +126,24 @@ export default function TripList({ onOpen, skipAutoOpen }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
+                  {trip.role && trip.role !== 'owner' && (
+                    <span style={{ color: 'var(--text-faint)', border: '1px solid var(--border)' }}
+                      className="text-xs px-2 py-0.5 rounded-full capitalize shrink-0">
+                      {trip.role}
+                    </span>
+                  )}
                   <span style={{ color: 'var(--text-faint)' }}>→</span>
-                  <button
-                    onClick={e => handleDelete(e, trip.id)}
-                    style={{ color: 'var(--text-faint)' }}
-                    className="text-xs opacity-0 group-hover:opacity-100 transition-all hover:opacity-70"
-                    onMouseEnter={e => e.currentTarget.style.color = 'var(--error)'}
-                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text-faint)'}
-                  >
-                    Delete
-                  </button>
+                  {trip.role === 'owner' && (
+                    <button
+                      onClick={e => handleDelete(e, trip.id)}
+                      style={{ color: 'var(--text-faint)' }}
+                      className="text-xs opacity-0 group-hover:opacity-100 transition-all hover:opacity-70"
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--error)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-faint)'}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             )
