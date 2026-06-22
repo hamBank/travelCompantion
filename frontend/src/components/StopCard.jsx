@@ -116,6 +116,7 @@ export default function StopCard({ stop, index, onUpdate }) {
                 if (item.kind === 'walk')      return <WalkCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
                 if (item.kind === 'transfer')  return <TransferCard  key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
                 if (item.kind === 'tour')      return <TourCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
+                if (item.kind === 'note')      return <NoteCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
                 return <ItemRow key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
               })}
             </div>
@@ -899,6 +900,75 @@ function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
           title="Edit"
         >✎</button>
       </div>
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
+        />
+      )}
+    </>
+  )
+}
+
+function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
+  const [item, setItem] = useState(initial)
+  const [showDetail, setShowDetail] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+
+  const timeStr = (() => {
+    if (!item.scheduled_at) return null
+    const [dp, tp] = item.scheduled_at.split('T')
+    const date = new Date(dp + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    const t = tp?.slice(0, 5)
+    return t && t !== '00:00' ? `${date} · ${t}` : date
+  })()
+
+  return (
+    <>
+      <div className="relative group">
+        <button
+          onClick={() => setShowDetail(true)}
+          className="w-full text-left hover:opacity-80 transition-opacity"
+          style={{
+            background: 'color-mix(in srgb, var(--kind-note) 6%, var(--surface-2))',
+            border: '1px solid color-mix(in srgb, var(--kind-note) 35%, transparent)',
+            borderRadius: '0.5rem',
+            padding: '0.75rem',
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            <CardIcon item={item} icon="📝" color="var(--kind-note)" setItem={setItem} onItemSaved={onItemSaved} />
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="font-medium text-sm">{item.name}</div>
+              {item.notes && (
+                <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }} className="text-xs">{item.notes}</div>
+              )}
+              {(timeStr || (item.cost && !isFullyPaid(item))) && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
+                  {timeStr && <span>{timeStr}</span>}
+                  {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
+                </div>
+              )}
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); setShowEdit(true) }}
+          className="edit-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
+          style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+          title="Edit"
+        >✎</button>
+      </div>
+      {showDetail && (
+        <ItemDetailModal
+          item={item}
+          onClose={() => setShowDetail(false)}
+          onEdit={() => { setShowDetail(false); setShowEdit(true) }}
+          onDeleted={onItemDeleted}
+        />
+      )}
       {showEdit && (
         <ItemEditModal
           item={item}
