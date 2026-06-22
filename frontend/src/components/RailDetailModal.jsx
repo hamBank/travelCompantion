@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { updateItem } from '../api.js'
+import DetailActions from './DetailActions.jsx'
 
 const DB_HOSTS = ['https://v6.db.transport.rest', 'https://v5.db.transport.rest']
 const SWISS    = 'https://transport.opendata.ch/v1'
@@ -338,7 +339,7 @@ function RailCheckPanel({ item, onItemUpdate }) {
   )
 }
 
-export default function RailDetailModal({ item: initialItem, onClose, onSave }) {
+export default function RailDetailModal({ item: initialItem, onClose, onSave, onEdit, onDeleted }) {
   const [item, setItem] = useState(initialItem)
   const d = item.details ?? {}
 
@@ -487,6 +488,8 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave }) 
             </div>
           )}
         </div>
+
+        <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose} />
       </div>
     </div>
   )

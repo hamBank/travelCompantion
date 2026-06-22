@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { checkFlight, updateItem } from '../api.js'
 import { airportName, airportLabel } from '../airportNames.js'
+import DetailActions from './DetailActions.jsx'
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -178,7 +179,7 @@ function FlightCheckPanel({ item, onItemUpdate }) {
   )
 }
 
-export default function FlightDetailModal({ item: initialItem, onClose, onSave }) {
+export default function FlightDetailModal({ item: initialItem, onClose, onSave, onEdit, onDeleted }) {
   const [item, setItem] = useState(initialItem)
   const d = item.details ?? {}
 
@@ -353,6 +354,8 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave }
             </div>
           )}
         </div>
+
+        <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose} />
       </div>
     </div>
   )

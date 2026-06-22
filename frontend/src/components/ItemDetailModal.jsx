@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { fetchGpxText, downloadGpx } from '../api.js'
 import CostDisplay from './CostDisplay.jsx'
+import DetailActions from './DetailActions.jsx'
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -491,7 +492,7 @@ const KIND_COLOR = {
   cycling:       'var(--kind-cycling)',
 }
 
-export default function ItemDetailModal({ item, onClose }) {
+export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -541,6 +542,8 @@ export default function ItemDetailModal({ item, onClose }) {
           {item.kind === 'note'          && <NoteBody item={item} />}
           {item.kind === 'cycling'       && <CyclingBody item={item} />}
         </div>
+
+        <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose} />
       </div>
     </div>
   )

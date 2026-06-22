@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode } from '../api.js'
+import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem } from '../api.js'
 import { KIND_VAR, KIND_LABEL } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 
@@ -948,7 +948,7 @@ function FoodForm({ core, details, setCore, setDetails }) {
   )
 }
 
-export default function ItemEditModal({ item, onSave, onClose }) {
+export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
   const [core, setCore] = useState({
     kind: item.kind ?? 'activity',
     name: item.name ?? '',
@@ -961,6 +961,20 @@ export default function ItemEditModal({ item, onSave, onClose }) {
   const [saving, setSaving] = useState(false)
   const [savingMsg, setSavingMsg] = useState('')
   const [error, setError] = useState(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  async function handleDelete() {
+    if (deleting) return
+    setDeleting(true); setError(null)
+    try {
+      await deleteItem(item.id)
+      onDeleted?.(item.id)
+      onClose()
+    } catch (e) {
+      setError(e.message); setDeleting(false)
+    }
+  }
 
   async function save() {
     if (saving) return
@@ -1099,22 +1113,56 @@ export default function ItemEditModal({ item, onSave, onClose }) {
           {error && <p style={{ color: 'var(--error)' }} className="text-xs mt-3">{error}</p>}
         </div>
 
-        <div style={{ borderTop: '1px solid var(--border)' }} className="flex items-center justify-end gap-3 px-5 py-4">
-          <button
-            onClick={onClose}
-            style={{ color: 'var(--text-faint)' }}
-            className="text-sm hover:opacity-70 transition-opacity"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
-            className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
-          >
-            {savingMsg || (saving ? 'Saving…' : 'Save')}
-          </button>
+        <div style={{ borderTop: '1px solid var(--border)' }} className="flex items-center gap-3 px-5 py-4">
+          {confirmingDelete ? (
+            <>
+              <span style={{ color: 'var(--text)' }} className="text-sm flex-1">Delete this item?</span>
+              <button
+                onClick={() => setConfirmingDelete(false)}
+                disabled={deleting}
+                style={{ color: 'var(--text-faint)' }}
+                className="text-sm hover:opacity-70 transition-opacity"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                style={{ background: 'var(--error)', color: '#fff' }}
+                className="px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </>
+          ) : (
+            <>
+              {onDeleted && (
+                <button
+                  onClick={() => setConfirmingDelete(true)}
+                  style={{ color: 'var(--error)', border: '1px solid color-mix(in srgb, var(--error) 35%, transparent)' }}
+                  className="px-3 py-2 rounded-lg text-sm font-medium hover:opacity-80 transition-opacity"
+                >
+                  Delete
+                </button>
+              )}
+              <div className="flex-1" />
+              <button
+                onClick={onClose}
+                style={{ color: 'var(--text-faint)' }}
+                className="text-sm hover:opacity-70 transition-opacity"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={save}
+                disabled={saving}
+                style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+                className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+              >
+                {savingMsg || (saving ? 'Saving…' : 'Save')}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

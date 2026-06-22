@@ -8,7 +8,7 @@ import { isFullyPaid } from '../currency.js'
 const CYCLE = { pending: 'done', done: 'skipped', skipped: 'pending' }
 const ICON = { pending: '○', done: '✓', skipped: '—' }
 
-export default function ItemRow({ item, onItemSaved }) {
+export default function ItemRow({ item, onItemSaved, onItemDeleted }) {
   const [current, setCurrent] = useState(item)
   const [status, setStatus] = useState(item.status)
   const [showDetail, setShowDetail] = useState(false)
@@ -71,12 +71,20 @@ export default function ItemRow({ item, onItemSaved }) {
           ✎
         </button>
       </div>
-      {showDetail && <ItemDetailModal item={current} onClose={() => setShowDetail(false)} />}
+      {showDetail && (
+        <ItemDetailModal
+          item={current}
+          onClose={() => setShowDetail(false)}
+          onEdit={() => { setShowDetail(false); setShowEdit(true) }}
+          onDeleted={onItemDeleted}
+        />
+      )}
       {showEdit && (
         <ItemEditModal
           item={current}
           onSave={updated => { setCurrent(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>

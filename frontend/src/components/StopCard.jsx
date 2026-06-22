@@ -34,6 +34,10 @@ export default function StopCard({ stop, index, onUpdate }) {
     setItems(prev => prev.map(i => i.id === updated.id ? updated : i))
   }
 
+  function handleItemDeleted(id) {
+    setItems(prev => prev.filter(i => i.id !== id))
+  }
+
   const accom = items.find(i => i.kind === 'accommodation')
 
   const sortKey = item => {
@@ -94,34 +98,34 @@ export default function StopCard({ stop, index, onUpdate }) {
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
           {accom && (
             <Section label="Accommodation">
-              <AccomCard item={accom} onItemSaved={handleItemSaved} />
+              <AccomCard item={accom} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
             </Section>
           )}
 
           {timeline.length > 0 && (
             <div className="space-y-1">
               {timeline.map(item => {
-                if (item.kind === 'flight')    return <FlightCard    key={item.id} item={item} onItemSaved={handleItemSaved} />
-                if (item.kind === 'rail')      return <RailCard      key={item.id} item={item} onItemSaved={handleItemSaved} />
-                if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} onItemSaved={handleItemSaved} />
-                if (item.kind === 'cycling')   return <CyclingCard   key={item.id} item={item} onItemSaved={handleItemSaved} />
-                if (item.kind === 'walk')      return <WalkCard      key={item.id} item={item} onItemSaved={handleItemSaved} />
-                if (item.kind === 'transfer')  return <TransferCard  key={item.id} item={item} onItemSaved={handleItemSaved} />
-                if (item.kind === 'tour')      return <TourCard      key={item.id} item={item} onItemSaved={handleItemSaved} />
-                return <ItemRow key={item.id} item={item} onItemSaved={handleItemSaved} />
+                if (item.kind === 'flight')    return <FlightCard    key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
+                if (item.kind === 'rail')      return <RailCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
+                if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
+                if (item.kind === 'cycling')   return <CyclingCard   key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
+                if (item.kind === 'walk')      return <WalkCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
+                if (item.kind === 'transfer')  return <TransferCard  key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
+                if (item.kind === 'tour')      return <TourCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
+                return <ItemRow key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
               })}
             </div>
           )}
 
           {foodItems.length > 0 && (
             <Section label="Food & Drink">
-              {foodItems.map(item => <FoodCard key={item.id} item={item} onItemSaved={handleItemSaved} />)}
+              {foodItems.map(item => <FoodCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />)}
             </Section>
           )}
 
           {purchaseItems.length > 0 && (
             <Section label="Purchases">
-              {purchaseItems.map(item => <PurchaseCard key={item.id} item={item} onItemSaved={handleItemSaved} />)}
+              {purchaseItems.map(item => <PurchaseCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />)}
             </Section>
           )}
 
@@ -143,7 +147,7 @@ function Section({ label, children }) {
   )
 }
 
-function FlightCard({ item: initial, onItemSaved }) {
+function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -211,19 +215,20 @@ function FlightCard({ item: initial, onItemSaved }) {
           ✎
         </button>
       </div>
-      {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
+      {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
   )
 }
 
-function RailCard({ item: initial, onItemSaved }) {
+function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -282,19 +287,20 @@ function RailCard({ item: initial, onItemSaved }) {
           title="Edit"
         >✎</button>
       </div>
-      {showDetail && <RailDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
+      {showDetail && <RailDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
   )
 }
 
-function AccomCard({ item: initial, onItemSaved }) {
+function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -342,19 +348,20 @@ function AccomCard({ item: initial, onItemSaved }) {
           ✎
         </button>
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
   )
 }
 
-function WalkCard({ item: initial, onItemSaved }) {
+function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -472,19 +479,20 @@ function WalkCard({ item: initial, onItemSaved }) {
         )}
       </div>
 
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
   )
 }
 
-function TourCard({ item: initial, onItemSaved }) {
+function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
@@ -550,13 +558,14 @@ function TourCard({ item: initial, onItemSaved }) {
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
   )
 }
 
-function TransferCard({ item: initial, onItemSaved }) {
+function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
   const [showMap, setShowMap] = useState(false)
@@ -683,13 +692,14 @@ function TransferCard({ item: initial, onItemSaved }) {
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
   )
 }
 
-function CyclingCard({ item: initial, onItemSaved }) {
+function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -738,19 +748,20 @@ function CyclingCard({ item: initial, onItemSaved }) {
           title="Edit"
         >✎</button>
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
   )
 }
 
-function PurchaseCard({ item: initial, onItemSaved }) {
+function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
@@ -805,13 +816,14 @@ function PurchaseCard({ item: initial, onItemSaved }) {
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
   )
 }
 
-function FoodCard({ item: initial, onItemSaved }) {
+function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
@@ -864,6 +876,7 @@ function FoodCard({ item: initial, onItemSaved }) {
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
@@ -872,7 +885,7 @@ function FoodCard({ item: initial, onItemSaved }) {
 
 const BOOKING_STATUS_COLOR = { planned: 'var(--text-faint)', booked: 'var(--kind-activity)', confirmed: 'var(--success)' }
 
-function RestaurantCard({ item: initial, onItemSaved }) {
+function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -936,12 +949,13 @@ function RestaurantCard({ item: initial, onItemSaved }) {
           ✎
         </button>
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
           onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
           onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
         />
       )}
     </>
