@@ -450,6 +450,7 @@ function WalkForm({ core, details, setCore, setDetails }) {
   return (
     <div className="space-y-4">
       <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Coastal trail" />
+      <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="Route overview, highlights…" rows={2} />
       <Field label="Date & time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
 
       <SectionBox label="Import from Google Maps">

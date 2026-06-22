@@ -409,6 +409,9 @@ function WalkCard({ item: initial, onItemSaved }) {
                 {route && (
                   <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{route}</div>
                 )}
+                {d.description && (
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs">{d.description}</div>
+                )}
                 {(d.distance || d.elevation_gain || d.elevation_loss || d.duration) && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
                     {d.distance       && <span>↔ {d.distance}</span>}
