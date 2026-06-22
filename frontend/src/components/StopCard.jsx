@@ -196,16 +196,21 @@ function InboundBanner({ inbound, onUpdate }) {
   if (!show || !inbound) return null
 
   const d = inbound.details ?? {}
-  const isFlight = inbound.kind === 'flight'
-  const color = isFlight ? 'var(--kind-flight)' : 'var(--kind-rail)'
-  const icon = isFlight ? '✈' : '🚄'
-  const dest = isFlight ? (d.destination ? airportName(d.destination) : '') : (d.destination || '')
-  const label = [d.flight_number || d.train_number, d.airline || d.operator].filter(Boolean).join(' · ')
+  const kind = inbound.kind
+  const isFlight = kind === 'flight'
+  const isRail = kind === 'rail'
+  const isTransfer = kind === 'transfer'
+
+  const color = isFlight ? 'var(--kind-flight)' : isRail ? 'var(--kind-rail)' : 'var(--kind-transfer)'
+  const vehicleIcon = { bus: '🚌', minibus: '🚌', shuttle: '🚌', taxi: '🚕' }[d.vehicle_type] ?? '🚗'
+  const icon = isFlight ? '✈' : isRail ? '🚄' : vehicleIcon
+  const dest = isFlight ? (d.destination ? airportName(d.destination) : '') : (d.destination || d.end_location || '')
+  const arriveTime = d.arrive_time || (isTransfer ? inbound.scheduled_at : null)
+  const label = [d.flight_number || d.train_number, d.airline || d.operator || d.provider].filter(Boolean).join(' · ')
   const arrivePlace = isFlight
     ? [d.arrive_terminal && `T${d.arrive_terminal}`, d.arrive_gate && `Gate ${d.arrive_gate}`].filter(Boolean).join(' ')
-    : (d.arrive_platform ? `Plat. ${d.arrive_platform}` : '')
-
-  const DetailModal = isFlight ? FlightDetailModal : RailDetailModal
+    : isRail ? (d.arrive_platform ? `Plat. ${d.arrive_platform}` : '')
+    : ''
 
   return (
     <>
@@ -226,7 +231,7 @@ function InboundBanner({ inbound, onUpdate }) {
               Arriving here{dest ? ` · ${dest}` : ''}
             </div>
             <div style={{ color: 'var(--text-muted)' }} className="text-xs mt-0.5 flex gap-3 flex-wrap">
-              {d.arrive_time && <span>{fmtDayTime(d.arrive_time)}{d.arrive_tz ? ` ${d.arrive_tz}` : ''}</span>}
+              {arriveTime && <span>{fmtDayTime(arriveTime)}{d.arrive_tz ? ` ${d.arrive_tz}` : ''}</span>}
               {arrivePlace && <span>{arrivePlace}</span>}
               {label && <span style={{ color: 'var(--text-faint)' }}>{label}</span>}
             </div>
@@ -234,11 +239,13 @@ function InboundBanner({ inbound, onUpdate }) {
         </div>
       </button>
       {showDetail && (
-        <DetailModal
-          item={inbound}
-          onClose={() => setShowDetail(false)}
-          onSave={() => onUpdate?.()}
-        />
+        isFlight ? (
+          <FlightDetailModal item={inbound} onClose={() => setShowDetail(false)} onSave={() => onUpdate?.()} />
+        ) : isRail ? (
+          <RailDetailModal item={inbound} onClose={() => setShowDetail(false)} onSave={() => onUpdate?.()} />
+        ) : (
+          <ItemEditModal item={inbound} onClose={() => setShowDetail(false)} onSave={() => onUpdate?.()} />
+        )
       )}
     </>
   )

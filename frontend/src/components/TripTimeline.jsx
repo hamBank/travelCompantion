@@ -34,18 +34,26 @@ export default function TripTimeline({ tripId }) {
   // Inbound transport: for each stop, the flight/rail (filed on a *different* stop)
   // whose arrival date matches this stop's arrival date — i.e. how you got here.
   const datePart = v => (v ? String(v).split('T')[0] : null)
+  // Arrival time per transport kind: flights/rail carry details.arrive_time;
+  // road transfers have no arrive_time, so fall back to their scheduled time.
+  const arrivalTimeOf = it => {
+    if (it.kind === 'flight' || it.kind === 'rail') return it.details?.arrive_time
+    if (it.kind === 'transfer') return it.details?.arrive_time || it.scheduled_at
+    return null
+  }
   const transport = []
   for (const s of timeline.stops)
-    for (const it of s.items)
-      if ((it.kind === 'flight' || it.kind === 'rail') && it.details?.arrive_time)
-        transport.push({ item: it, stopId: s.id })
+    for (const it of s.items) {
+      const at = arrivalTimeOf(it)
+      if (at) transport.push({ item: it, stopId: s.id, arrive: at })
+    }
 
   function inboundFor(stop) {
     const d = datePart(stop.arrive)
     if (!d) return null
-    const matches = transport.filter(t => t.stopId !== stop.id && datePart(t.item.details.arrive_time) === d)
+    const matches = transport.filter(t => t.stopId !== stop.id && datePart(t.arrive) === d)
     if (!matches.length) return null
-    matches.sort((a, b) => new Date(b.item.details.arrive_time) - new Date(a.item.details.arrive_time))
+    matches.sort((a, b) => new Date(b.arrive) - new Date(a.arrive))
     return matches[0].item
   }
 
