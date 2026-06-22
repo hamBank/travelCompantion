@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { deleteItem, createItem } from '../api.js'
+import { deleteItem, createItem, uploadGpx } from '../api.js'
 import ItemEditModal from './ItemEditModal.jsx'
 import { KIND_VAR, KIND_OPTIONS } from '../kinds.js'
+import { parseKmlRoutes, routeToGpx } from '../kml.js'
 
 function itemSummary(item) {
   if (item.kind === 'accommodation') {
@@ -67,6 +68,32 @@ export default function EditItemsSection({ stopId, items, onRefresh }) {
   const [adding, setAdding] = useState(false)
   const [newItem, setNewItem] = useState({ kind: 'activity', name: '' })
   const [error, setError] = useState(null)
+  const [importing, setImporting] = useState(null)
+
+  async function handleKmlImport(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setError(null)
+    try {
+      const routes = parseKmlRoutes(await file.text())
+      if (!routes.length) { setError('No routes (line geometry) found in that KML.'); return }
+      let done = 0
+      for (const r of routes) {
+        setImporting(`Importing ${done + 1}/${routes.length}: ${r.name}…`)
+        const item = await createItem(stopId, { kind: 'cycling', name: r.name, status: 'pending' })
+        const gpx = routeToGpx(r.name, r.points)
+        const gpxFile = new File([gpx], `${r.name}.gpx`, { type: 'application/gpx+xml' })
+        try { await uploadGpx(item.id, gpxFile) } catch (_) { /* item still created without stats */ }
+        done++
+      }
+      onRefresh()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setImporting(null)
+    }
+  }
 
   async function handleAdd() {
     if (!newItem.name.trim()) return
@@ -127,6 +154,18 @@ export default function EditItemsSection({ stopId, items, onRefresh }) {
         >
           + Add
         </button>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <label
+          style={{ color: 'var(--kind-cycling)', border: '1px solid color-mix(in srgb, var(--kind-cycling) 35%, transparent)', background: 'color-mix(in srgb, var(--kind-cycling) 8%, transparent)', cursor: importing ? 'default' : 'pointer', opacity: importing ? 0.5 : 1 }}
+          className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80 transition-opacity"
+        >
+          {importing ? 'Importing…' : 'Import routes (KML)'}
+          <input type="file" accept=".kml,application/vnd.google-earth.kml+xml" onChange={handleKmlImport} disabled={!!importing} className="hidden" />
+        </label>
+        {importing && <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{importing}</span>}
+        {!importing && <span className="text-xs" style={{ color: 'var(--text-faint)' }}>each route → a cycling record</span>}
       </div>
 
       {editingItem && (
