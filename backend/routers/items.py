@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 from sqlalchemy import nullslast
+from sqlalchemy.orm.attributes import flag_modified
 from typing import List
 import os, io, math, time, xml.etree.ElementTree as ET, httpx
 from ..database import get_session
@@ -50,6 +51,8 @@ def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Item not found")
     for field, value in item_in.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
+        if field == 'details':
+            flag_modified(item, 'details')
     session.add(item)
     session.commit()
     session.refresh(item)

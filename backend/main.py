@@ -92,28 +92,30 @@ def health():
 
 @app.get("/currency/convert")
 async def currency_convert(amount: float, from_currency: str, to_currency: str):
-    import httpx
+    import asyncio, urllib.request, urllib.parse, json as _json
     if from_currency == to_currency:
         return {"rate": 1.0, "result": amount}
-    timeout = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
+
+    def _fetch():
+        params = urllib.parse.urlencode({"amount": amount, "from": from_currency, "to": to_currency})
+        url = f"https://api.frankfurter.app/latest?{params}"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return _json.loads(r.read().decode())
+
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            r = await client.get(
-                "https://api.frankfurter.app/latest",
-                params={"amount": amount, "from": from_currency, "to": to_currency},
-            )
-            r.raise_for_status()
-            data = r.json()
-            result = data["rates"].get(to_currency)
-            if result is None:
-                raise HTTPException(status_code=502, detail=f"No rate for {to_currency}")
-            return {"rate": round(result / amount, 6), "result": round(result, 2)}
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Currency API timed out — try again")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Currency API unreachable: {e}")
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Currency API error: {e.response.status_code}")
+        loop = asyncio.get_event_loop()
+        data = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=10.0)
+        result = data.get("rates", {}).get(to_currency)
+        if result is None:
+            raise HTTPException(status_code=502, detail=f"No rate returned for {to_currency}")
+        return {"rate": round(result / amount, 6), "result": round(result, 2)}
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Currency API timed out")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Currency conversion failed: {e}")
 
 
 # Serve the compiled React frontend — must come after all API routes
