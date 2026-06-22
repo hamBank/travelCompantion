@@ -46,7 +46,7 @@ export default function ItemRow({ item, onItemSaved }) {
             {current.name}
           </span>
           {current.cost && (
-            <CostDisplay item={current} className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }} />
+            <CostDisplay item={current} className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }} compact />
           )}
           {current.scheduled_at && (
             <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0 ml-auto">

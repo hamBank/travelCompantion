@@ -8,7 +8,7 @@ import { formatAmount, parseCost } from '../currency.js'
  *
  * Converted amounts come from item.details.converted_* (written at save time).
  */
-export default function CostDisplay({ item, className = '', showIcon = true }) {
+export default function CostDisplay({ item, className = '', showIcon = true, compact = false }) {
   const cost = item?.cost
   const d = item?.details ?? {}
   const amountPaid    = d.amount_paid
@@ -31,6 +31,33 @@ export default function CostDisplay({ item, className = '', showIcon = true }) {
             {' '}({formatAmount(convertedCost, convertedCurrency)})
           </span>
         )}
+      </span>
+    )
+  }
+
+  // ── Compact inline mode (paid amount present, single line for cards) ────────
+  const parsedPaidCompact = parseCost(amountPaid) ?? { amount: parseFloat(amountPaid), code: parsedCost?.code }
+  const outstandingCompact = parsedCost && parsedPaidCompact.amount != null
+    ? parsedCost.amount - parsedPaidCompact.amount : null
+  const fullyPaidCompact = outstandingCompact != null && outstandingCompact <= 0
+
+  if (compact) {
+    return (
+      <span className={className}>
+        {showIcon && '💳 '}{cost}
+        {showConverted && (
+          <span style={{ color: 'var(--text-faint)', fontSize: '0.85em' }}>
+            {' '}({formatAmount(convertedCost, convertedCurrency)})
+          </span>
+        )}
+        {fullyPaidCompact
+          ? <span style={{ color: 'var(--success)', fontSize: '0.85em' }}> ✓</span>
+          : outstandingCompact != null && outstandingCompact > 0 && (
+            <span style={{ color: 'var(--warning)', fontSize: '0.85em' }}>
+              {' · '}{parsedCost?.code ? formatAmount(outstandingCompact, parsedCost.code) : outstandingCompact.toFixed(2)} outstanding
+            </span>
+          )
+        }
       </span>
     )
   }

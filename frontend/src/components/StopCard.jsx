@@ -327,7 +327,7 @@ function AccomCard({ item: initial, onItemSaved }) {
               {(d.booking_ref || item.cost) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
-                  {item.cost && <CostDisplay item={item} />}
+                  {item.cost && <CostDisplay item={item} compact />}
                 </div>
               )}
             </div>
@@ -512,19 +512,23 @@ function TourCard({ item: initial, onItemSaved }) {
             <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-sm truncate">{item.name}</span>
-                {d.tour_type && (
-                  <span style={{ color: 'var(--kind-tour)' }} className="text-xs shrink-0 opacity-80 capitalize">{d.tour_type}</span>
-                )}
+                <span style={{ color: 'var(--kind-tour)' }} className="text-xs shrink-0 opacity-80 capitalize flex gap-1.5">
+                  {d.operator && <span>{d.operator}</span>}
+                  {d.tour_type && <span>{d.tour_type}</span>}
+                </span>
               </div>
               {d.meeting_point && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">📍 {d.meeting_point}</div>
               )}
-              {(timeStr || d.duration || item.cost || d.operator || d.booking_ref) && (
+              {item.cost && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs">
+                  <CostDisplay item={item} compact />
+                </div>
+              )}
+              {(timeStr || d.duration || d.booking_ref) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                  {timeStr      && <span>{timeStr}</span>}
-                  {d.duration   && <span>⏱ {d.duration}</span>}
-                  {item.cost    && <CostDisplay item={item} />}
-                  {d.operator   && <span>{d.operator}</span>}
+                  {timeStr       && <span>{timeStr}</span>}
+                  {d.duration    && <span>⏱ {d.duration}</span>}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                 </div>
               )}
@@ -606,7 +610,7 @@ function TransferCard({ item: initial, onItemSaved }) {
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
                     {d.distance   && <span>↔ {d.distance}</span>}
                     {d.duration   && <span>⏱ {d.duration}</span>}
-                    {item.cost    && <CostDisplay item={item} />}
+                    {item.cost    && <CostDisplay item={item} compact />}
                     {d.provider   && <span>via {d.provider}</span>}
                     {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                   </div>
@@ -901,7 +905,7 @@ function RestaurantCard({ item: initial, onItemSaved }) {
                   })()}
                   {item.notes && <span>{item.notes}</span>}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
-                  {item.cost && <CostDisplay item={item} />}
+                  {item.cost && <CostDisplay item={item} compact />}
                 </div>
               )}
             </div>
