@@ -476,6 +476,55 @@ def _fmt_dur(secs):
     return f"{h}h {m}m" if h else f"{m}m"
 
 
+def _decode_polyline(s):
+    """Decode a Google encoded polyline string into a list of (lat, lng)."""
+    coords, index, lat, lng = [], 0, 0, 0
+    while index < len(s):
+        for is_lat in (True, False):
+            shift, result = 0, 0
+            while True:
+                b = ord(s[index]) - 63
+                index += 1
+                result |= (b & 0x1f) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            d = ~(result >> 1) if (result & 1) else (result >> 1)
+            if is_lat:
+                lat += d
+            else:
+                lng += d
+        coords.append((lat / 1e5, lng / 1e5))
+    return coords
+
+
+def _route_elevation_gain_loss(coords):
+    """Sample a decoded route and compute total ascent/descent via OpenTopoData.
+    Best-effort — returns (gain_m, loss_m) or (None, None) on any failure."""
+    if len(coords) < 2:
+        return None, None
+    # OpenTopoData allows 100 locations/request — sample evenly.
+    n, MAX = len(coords), 100
+    stride = max(1, n // MAX)
+    sample = coords[::stride]
+    if sample[-1] != coords[-1]:
+        sample.append(coords[-1])
+    locations = "|".join(f"{lat},{lng}" for lat, lng in sample)
+    try:
+        with httpx.Client(timeout=12) as client:
+            r = client.post(_TOPO_API, json={"locations": locations})
+            r.raise_for_status()
+            eles = [res.get("elevation") for res in r.json().get("results", [])]
+        eles = [e for e in eles if e is not None]
+        if len(eles) < 2:
+            return None, None
+        gain = sum(max(0, eles[i] - eles[i - 1]) for i in range(1, len(eles)))
+        loss = sum(max(0, eles[i - 1] - eles[i]) for i in range(1, len(eles)))
+        return round(gain), round(loss)
+    except Exception:
+        return None, None
+
+
 @router.post("/route-distance")
 def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_user)):
     """Real road/path-following distance + duration via the Google Routes API.
@@ -505,7 +554,7 @@ def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_u
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": _ROUTES_KEY,
-        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
+        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline",
     }
     request = urllib.request.Request(_ROUTES_API, data=json.dumps(body).encode(), headers=headers, method="POST")
     try:
@@ -523,11 +572,24 @@ def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_u
     dist_m = routes[0].get("distanceMeters")
     dur_raw = routes[0].get("duration", "")
     secs = int(dur_raw[:-1]) if dur_raw.endswith("s") and dur_raw[:-1].isdigit() else None
+
+    gain_m = loss_m = None
+    encoded = (routes[0].get("polyline") or {}).get("encodedPolyline")
+    if encoded:
+        try:
+            gain_m, loss_m = _route_elevation_gain_loss(_decode_polyline(encoded))
+        except Exception:
+            pass
+
     return {
         "distance_m": dist_m,
         "duration_s": secs,
         "distance_text": _fmt_km(dist_m),
         "duration_text": _fmt_dur(secs),
+        "elevation_gain_m": gain_m,
+        "elevation_loss_m": loss_m,
+        "elevation_gain_text": f"{gain_m} m" if gain_m is not None else None,
+        "elevation_loss_text": f"{loss_m} m" if loss_m is not None else None,
     }
 
 

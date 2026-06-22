@@ -549,7 +549,12 @@ function WalkForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Elev ↓"     value={d('elevation_loss')} onChange={v => setD('elevation_loss', v)} placeholder="400 m" />
       </div>
       <DistanceButton points={routePointsOf(details)} mode="walk" color="var(--kind-walk)"
-        onResult={r => { if (r.distance_text) setD('distance', r.distance_text); if (r.duration_text) setD('duration', r.duration_text) }} />
+        onResult={r => {
+          if (r.distance_text) setD('distance', r.distance_text)
+          if (r.duration_text) setD('duration', r.duration_text)
+          if (r.elevation_gain_text) setD('elevation_gain', r.elevation_gain_text)
+          if (r.elevation_loss_text) setD('elevation_loss', r.elevation_loss_text)
+        }} />
       <div className="flex flex-col gap-1.5">
         <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Difficulty</label>
         <div className="flex gap-2 flex-wrap">
@@ -1030,7 +1035,11 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Elev ↓"     value={d('elevation_loss')} onChange={v => setD('elevation_loss', v)} placeholder="650 m" />
       </div>
       <DistanceButton points={routePointsOf(details)} mode="cycling" color="var(--kind-cycling)"
-        onResult={r => { if (r.distance_text) setD('distance', r.distance_text) }} />
+        onResult={r => {
+          if (r.distance_text) setD('distance', r.distance_text)
+          if (r.elevation_gain_text) setD('elevation_gain', r.elevation_gain_text)
+          if (r.elevation_loss_text) setD('elevation_loss', r.elevation_loss_text)
+        }} />
 
       <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Conditions, kit…" />
 
