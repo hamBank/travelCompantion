@@ -88,7 +88,7 @@ function AccommodationBody({ item }) {
         {d.description && <Row label="Notes">{d.description}</Row>}
       </div>
 
-      {(d.booking_ref || item.link || item.cost || d.amount_paid) && (
+      {(d.booking_ref || item.link || item.cost) && (
         <div
           style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
           className="p-3 mt-4 space-y-1.5"
@@ -115,12 +115,6 @@ function AccommodationBody({ item }) {
             <div className="flex justify-between gap-4 text-sm">
               <span style={{ color: 'var(--text-faint)' }}>Cost</span>
               <CostDisplay item={item} showIcon={false} />
-            </div>
-          )}
-          {d.amount_paid && (
-            <div className="flex justify-between gap-4 text-sm">
-              <span style={{ color: 'var(--text-faint)' }}>Paid</span>
-              <span>{d.amount_paid}</span>
             </div>
           )}
         </div>
