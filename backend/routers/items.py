@@ -634,8 +634,8 @@ def _extract_gpx_stats(content: bytes) -> dict:
 async def upload_gpx(item_id: int, file: UploadFile = File(...), session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     require_item_role(session, user, item_id, TripRole.editor)
     item = session.get(ItineraryItem, item_id)
-    if not item or item.kind != "cycling":
-        raise HTTPException(status_code=404, detail="Cycling item not found")
+    if not item or item.kind not in ("cycling", "walk"):
+        raise HTTPException(status_code=404, detail="GPX supported on cycling and walk/hike items only")
     content = await file.read()
     if not _has_elevation(content):
         content = _add_elevation_to_gpx(content)
@@ -663,8 +663,8 @@ async def upload_gpx(item_id: int, file: UploadFile = File(...), session: Sessio
 def download_gpx(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     require_item_role(session, user, item_id, TripRole.viewer)
     item = session.get(ItineraryItem, item_id)
-    if not item or item.kind != "cycling":
-        raise HTTPException(status_code=404, detail="Cycling item not found")
+    if not item or item.kind not in ("cycling", "walk"):
+        raise HTTPException(status_code=404, detail="GPX supported on cycling and walk/hike items only")
     details = item.details or {}
     fp = os.path.join(_GPX_DIR, f"{item_id}.gpx")
     if not os.path.exists(fp):

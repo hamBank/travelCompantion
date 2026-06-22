@@ -388,11 +388,29 @@ function GenericForm({ core, setCore }) {
 
 const DIFFICULTY = ['easy', 'moderate', 'hard', 'strenuous']
 
-function WalkForm({ core, details, setCore, setDetails }) {
+function WalkForm({ itemId, core, details, setCore, setDetails }) {
   const [mapsUrl, setMapsUrl] = useState('')
   const [mapsMsg, setMapsMsg] = useState(null)
+  const [gpxBusy, setGpxBusy] = useState(false)
+  const [gpxMsg, setGpxMsg] = useState(null)
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+
+  async function handleGpx(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setGpxBusy(true); setGpxMsg(null)
+    try {
+      const updated = await uploadGpx(itemId, file)
+      setDetails(updated.details ?? {})
+      setGpxMsg({ text: `✓ ${file.name} uploaded`, color: 'var(--success)' })
+    } catch (err) {
+      setGpxMsg({ text: err.message, color: 'var(--error)' })
+    } finally {
+      setGpxBusy(false)
+      e.target.value = ''
+    }
+  }
   const diff = d('difficulty')
 
   async function extractMaps() {
@@ -505,6 +523,24 @@ function WalkForm({ core, details, setCore, setDetails }) {
       </div>
       <Field label="Duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="3h 30m" />
       <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Trail conditions, gear needed…" />
+
+      <div className="flex flex-col gap-1.5">
+        <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">GPX File</label>
+        <div className="flex items-center gap-3">
+          <label style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)', cursor: gpxBusy ? 'default' : 'pointer', opacity: gpxBusy ? 0.5 : 1 }}
+            className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity">
+            {gpxBusy ? 'Uploading…' : d('gpx_filename') ? 'Replace GPX' : 'Upload GPX'}
+            <input type="file" accept=".gpx,application/gpx+xml" onChange={handleGpx} disabled={gpxBusy} className="hidden" />
+          </label>
+          {gpxMsg && <span className="text-xs" style={{ color: gpxMsg.color }}>{gpxMsg.text}</span>}
+          {!gpxMsg && d('original_gpx_name') && (
+            <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{d('original_gpx_name')}</span>
+          )}
+        </div>
+        {d('gpx_filename') && !gpxMsg && (
+          <p style={{ color: 'var(--text-faint)' }} className="text-xs">Stats auto-extracted — edit above if needed</p>
+        )}
+      </div>
     </div>
   )
 }
@@ -1106,7 +1142,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
           ) : core.kind === 'activity' ? (
             <ActivityForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'walk' ? (
-            <WalkForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
+            <WalkForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'transfer' ? (
             <TransferForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'tour' ? (
