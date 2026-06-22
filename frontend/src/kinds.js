@@ -28,4 +28,6 @@ export const KIND_LABEL = {
   flight:        'Flight',
 }
 
+// Kind keys ordered alphabetically by their display label (for selection dropdowns).
 export const KIND_OPTIONS = Object.keys(KIND_VAR)
+  .sort((a, b) => KIND_LABEL[a].localeCompare(KIND_LABEL[b]))

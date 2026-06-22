@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem } from '../api.js'
-import { KIND_VAR, KIND_LABEL } from '../kinds.js'
+import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
@@ -1059,7 +1059,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
             }}
             className="text-xs px-2 py-1 rounded-full font-medium outline-none cursor-pointer"
           >
-            {Object.keys(KIND_LABEL).map(k => (
+            {KIND_OPTIONS.map(k => (
               <option key={k} value={k} style={{ background: 'var(--modal-bg)', color: 'var(--text)' }}>
                 {KIND_LABEL[k]}
               </option>
