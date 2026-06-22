@@ -175,27 +175,27 @@ function FlightCard({ item: initial, onItemSaved }) {
               {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
-              {(d.depart_time || d.arrive_time) && (
-                <div style={{ color: 'var(--text-muted)' }} className="text-xs">
-                  {[d.depart_time && fmtDateTime(d.depart_time) + (d.depart_tz ? ` ${d.depart_tz}` : ''),
-                    d.arrive_time && fmtDateTime(d.arrive_time) + (d.arrive_tz ? ` ${d.arrive_tz}` : '')]
-                    .filter(Boolean).join(' → ')}
-                  {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
-                </div>
-              )}
-              {(d.origin_terminal || d.origin_gate || d.arrive_terminal || d.arrive_gate || d.checkin_desk) && (
-                <div style={{ color: 'var(--kind-flight)' }} className="text-xs flex gap-3 opacity-80 flex-wrap">
-                  {(d.origin_terminal || d.origin_gate) && (
-                    <span>Dep{d.origin_terminal ? ` T${d.origin_terminal}` : ''}{d.origin_gate ? ` Gate ${d.origin_gate}` : ''}</span>
-                  )}
+              {(d.depart_time || d.arrive_time) && (() => {
+                const depTerm = [d.origin_terminal && `T${d.origin_terminal}`, d.origin_gate && `Gate ${d.origin_gate}`].filter(Boolean).join(' ')
+                const arrTerm = [d.arrive_terminal && `T${d.arrive_terminal}`, d.arrive_gate && `Gate ${d.arrive_gate}`].filter(Boolean).join(' ')
+                const dep = [
+                  d.depart_time && fmtDateTime(d.depart_time) + (d.depart_tz ? ` ${d.depart_tz}` : ''),
+                  depTerm && `(${depTerm})`,
+                ].filter(Boolean).join(' ')
+                const arr = [
+                  d.arrive_time && fmtDateTime(d.arrive_time) + (d.arrive_tz ? ` ${d.arrive_tz}` : ''),
+                  arrTerm && `(${arrTerm})`,
+                ].filter(Boolean).join(' ')
+                return (
+                  <div style={{ color: 'var(--text-muted)' }} className="text-xs">
+                    {[dep, arr].filter(Boolean).join(' → ')}
+                    {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
+                  </div>
+                )
+              })()}
+              {(d.checkin_desk || d.fare_class || d.seats) && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
                   {d.checkin_desk && <span>Check-in {d.checkin_desk}</span>}
-                  {(d.arrive_terminal || d.arrive_gate) && (
-                    <span>Arr{d.arrive_terminal ? ` T${d.arrive_terminal}` : ''}{d.arrive_gate ? ` Gate ${d.arrive_gate}` : ''}</span>
-                  )}
-                </div>
-              )}
-              {(d.fare_class || d.seats) && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
                   {d.fare_class && <span>{d.fare_class}</span>}
                   {d.seats && <span>Seats: {d.seats}</span>}
                 </div>
