@@ -2,15 +2,9 @@ import { useEffect, useState, useRef } from 'react'
 import { fetchGpxText, downloadGpx } from '../api.js'
 import CostDisplay from './CostDisplay.jsx'
 import DetailActions from './DetailActions.jsx'
+import { fmtDayTime } from '../dates.js'
 
-function fmtDateTime(val) {
-  if (!val) return null
-  const [datePart, timePart] = val.split('T')
-  const dateStr = new Date(datePart + 'T00:00:00').toLocaleDateString('en-GB', {
-    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
-  })
-  return timePart ? `${dateStr}  ${timePart}` : dateStr
-}
+const fmtDateTime = fmtDayTime
 
 function mapsUrl(address) {
   return `https://maps.google.com/?q=${encodeURIComponent(address)}`
@@ -160,13 +154,7 @@ function RestaurantBody({ item }) {
     <>
       <div className="space-y-0">
         {(item.scheduled_at || d.reservation_time) && (
-          <Row label="When">{(() => {
-            if (!item.scheduled_at) return d.reservation_time
-            const [dp, tp] = item.scheduled_at.split('T')
-            const date = new Date(dp + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-            const t = tp?.slice(0, 5)
-            return t && t !== '00:00' ? `${date}  ${t}` : date
-          })()}</Row>
+          <Row label="When">{item.scheduled_at ? fmtDayTime(item.scheduled_at) : d.reservation_time}</Row>
         )}
         {item.notes && <Row label="Notes">{item.notes}</Row>}
         {d.location && (

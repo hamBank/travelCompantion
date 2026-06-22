@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { updateStopStatus, updateItemStatus } from '../api.js'
 import { useHideCompleted } from '../settings.js'
+import { fmtDay, fmtDayTime } from '../dates.js'
 import ItemRow from './ItemRow.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
@@ -13,17 +14,8 @@ import RailDetailModal from './RailDetailModal.jsx'
 
 const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 'planned', cancelled: 'planned' }
 
-function fmtDate(iso) {
-  if (!iso) return null
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-}
-
-function fmtDateTime(val) {
-  if (!val) return null
-  const [datePart, timePart] = val.split('T')
-  const dateStr = new Date(datePart + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-  return timePart ? `${dateStr} ${timePart}` : dateStr
-}
+const fmtDate = fmtDay
+const fmtDateTime = fmtDayTime
 
 export default function StopCard({ stop, index, onUpdate }) {
   const [open, setOpen] = useState(index === 0)
@@ -526,13 +518,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
 
-  const timeStr = (() => {
-    if (!item.scheduled_at) return null
-    const [dp, tp] = item.scheduled_at.split('T')
-    const date = new Date(dp + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-    const t = tp?.slice(0, 5)
-    return t && t !== '00:00' ? `${date} · ${t}` : date
-  })()
+  const timeStr = fmtDayTime(item.scheduled_at)
 
   return (
     <>
@@ -658,12 +644,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
                 )}
                 {item.scheduled_at && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs">
-                    {(() => {
-                      const [dp, tp] = item.scheduled_at.split('T')
-                      const date = new Date(dp + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-                      const t = tp?.slice(0, 5)
-                      return t && t !== '00:00' ? `${date} · ${t}` : date
-                    })()}
+                    {fmtDayTime(item.scheduled_at)}
                   </div>
                 )}
               </div>
@@ -917,13 +898,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
 
-  const timeStr = (() => {
-    if (!item.scheduled_at) return null
-    const [dp, tp] = item.scheduled_at.split('T')
-    const date = new Date(dp + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-    const t = tp?.slice(0, 5)
-    return t && t !== '00:00' ? `${date} · ${t}` : date
-  })()
+  const timeStr = fmtDayTime(item.scheduled_at)
 
   return (
     <>
@@ -942,7 +917,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
             <CardIcon item={item} icon="📝" color="var(--kind-note)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="font-medium text-sm">{item.name}</div>
-              {item.notes && (
+              {item.notes && item.notes.trim() !== item.name?.trim() && (
                 <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }} className="text-xs">{item.notes}</div>
               )}
               {(timeStr || (item.cost && !isFullyPaid(item))) && (
@@ -1021,16 +996,9 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
               )}
               {(item.scheduled_at || d.reservation_time || item.notes || d.booking_ref) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                  {(() => {
-                    if (item.scheduled_at) {
-                      const [dp, tp] = item.scheduled_at.split('T')
-                      const date = new Date(dp + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-                      const t = tp?.slice(0, 5)
-                      return <span key="when">{t && t !== '00:00' ? `${date} · ${t}` : date}</span>
-                    }
-                    if (d.reservation_time) return <span key="when">{d.reservation_time}</span>
-                    return null
-                  })()}
+                  {item.scheduled_at
+                    ? <span key="when">{fmtDayTime(item.scheduled_at)}</span>
+                    : d.reservation_time ? <span key="when">{d.reservation_time}</span> : null}
                   {item.notes && <span>{item.notes}</span>}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                 </div>

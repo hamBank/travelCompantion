@@ -3,15 +3,9 @@ import { checkFlight, updateItem } from '../api.js'
 import { airportName, airportLabel } from '../airportNames.js'
 import DetailActions from './DetailActions.jsx'
 import { getPowerbankPolicy } from '../powerbank.js'
+import { fmtDayTime } from '../dates.js'
 
-function fmtDateTime(val) {
-  if (!val) return null
-  const [datePart, timePart] = val.split('T')
-  const dateStr = new Date(datePart + 'T00:00:00').toLocaleDateString('en-GB', {
-    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
-  })
-  return timePart ? `${dateStr}  ${timePart}` : dateStr
-}
+const fmtDateTime = fmtDayTime
 
 function Row({ label, value }) {
   if (!value) return null

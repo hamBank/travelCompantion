@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { updateItem } from '../api.js'
 import DetailActions from './DetailActions.jsx'
+import { fmtDayTime } from '../dates.js'
 
 const DB_HOSTS = ['https://v6.db.transport.rest', 'https://v5.db.transport.rest']
 const SWISS    = 'https://transport.opendata.ch/v1'
@@ -179,14 +180,7 @@ function buildChecks(d, { stopName, destName, operatorNm, depPlanned, arrPlanned
   ].filter(Boolean)
 }
 
-function fmtDateTime(val) {
-  if (!val) return null
-  const [datePart, timePart] = val.split('T')
-  const dateStr = new Date(datePart + 'T00:00:00').toLocaleDateString('en-GB', {
-    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
-  })
-  return timePart ? `${dateStr}  ${timePart}` : dateStr
-}
+const fmtDateTime = fmtDayTime
 
 function Row({ label, value }) {
   if (!value) return null

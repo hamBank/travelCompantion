@@ -4,6 +4,7 @@ import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal from './ItemEditModal.jsx'
 import CostDisplay from './CostDisplay.jsx'
 import { isFullyPaid } from '../currency.js'
+import { fmtDayTime } from '../dates.js'
 
 const CYCLE = { pending: 'done', done: 'skipped', skipped: 'pending' }
 const ICON = { pending: '○', done: '✓', skipped: '—' }
@@ -51,14 +52,7 @@ export default function ItemRow({ item, onItemSaved, onItemDeleted }) {
           )}
           {current.scheduled_at && (
             <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0 ml-auto">
-              {(() => {
-                const [dp, tp] = current.scheduled_at.split('T')
-                const d = new Date(dp + 'T00:00:00')
-                const weekday = d.toLocaleDateString('en-GB', { weekday: 'short' })
-                const day = d.getDate()
-                const time = tp?.slice(0, 5)
-                return time && time !== '00:00' ? `${weekday} ${day} ${time}` : `${weekday} ${day}`
-              })()}
+              {fmtDayTime(current.scheduled_at)}
             </span>
           )}
         </button>
