@@ -342,6 +342,7 @@ function ActivityForm({ itemId, core, details, setCore, setDetails }) {
       if (suggestions.location && !details.location) { setD('location', suggestions.location); filled++ }
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
       if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
+      if (suggestions.description && !details.description) { setD('description', suggestions.description); filled++ }
       setEnrichMsg(filled
         ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
         : { text: 'Nothing to add', color: 'var(--text-faint)' })
@@ -361,6 +362,7 @@ function ActivityForm({ itemId, core, details, setCore, setDetails }) {
         <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
       </div>
       <Field label="Date & time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
+      <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="What it is, what to expect…" rows={3} />
       <Field label="Address" value={d('location')} onChange={v => setD('location', v)} placeholder="123 Main St, City" />
       <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+1 234 567 8900" />
       <Field label="Website" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />

@@ -917,8 +917,11 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
               {d.location && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">📍 {d.location}</div>
               )}
+              {d.description && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs">{d.description}</div>
+              )}
               {item.notes && (
-                <div style={{ color: 'var(--text-muted)' }} className="text-xs">{item.notes}</div>
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs">{item.notes}</div>
               )}
               {(timeStr || (item.cost && !isFullyPaid(item))) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">

@@ -123,6 +123,7 @@ function ActivityBody({ item }) {
   return (
     <div className="space-y-0">
       {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
+      {d.description && <Row label="Description">{d.description}</Row>}
       {item.notes && <Row label="Notes">{item.notes}</Row>}
       {d.location && (
         <Row label="Address">
