@@ -406,7 +406,7 @@ function WalkCard({ item: initial, onItemSaved }) {
                     <span style={{ color: 'var(--kind-walk)' }} className="text-xs shrink-0 opacity-80 capitalize">{d.difficulty}</span>
                   )}
                 </div>
-                {route && (
+                {route && !d.description && (
                   <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{route}</div>
                 )}
                 {d.description && (
