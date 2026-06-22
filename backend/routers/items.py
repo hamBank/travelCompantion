@@ -75,6 +75,8 @@ def delete_item(item_id: int, session: Session = Depends(get_session), user: dic
 
 
 _PLACES_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
+# Routes API can use a dedicated key; falls back to the Places key if unset.
+_ROUTES_KEY = os.getenv("GOOGLE_ROUTE_API_KEY", "") or _PLACES_KEY
 _PLACES_BASE = "https://maps.googleapis.com/maps/api/place"
 
 _AVIATIONSTACK_KEY = os.getenv("AVIATIONSTACK_KEY", "")
@@ -480,8 +482,8 @@ def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_u
 
     Requires GOOGLE_PLACES_API_KEY with the Routes API enabled in the same project.
     """
-    if not _PLACES_KEY:
-        raise HTTPException(status_code=503, detail="Google API key not configured (set GOOGLE_PLACES_API_KEY)")
+    if not _ROUTES_KEY:
+        raise HTTPException(status_code=503, detail="Routes API key not configured (set GOOGLE_ROUTE_API_KEY or GOOGLE_PLACES_API_KEY)")
     pts = [p.strip() for p in (req.points or []) if p and p.strip()]
     if len(pts) < 2:
         raise HTTPException(status_code=400, detail="Need at least a start and end point")
@@ -502,7 +504,7 @@ def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_u
 
     headers = {
         "Content-Type": "application/json",
-        "X-Goog-Api-Key": _PLACES_KEY,
+        "X-Goog-Api-Key": _ROUTES_KEY,
         "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
     }
     request = urllib.request.Request(_ROUTES_API, data=json.dumps(body).encode(), headers=headers, method="POST")
