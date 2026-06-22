@@ -520,7 +520,7 @@ function TourCard({ item: initial, onItemSaved }) {
               {d.meeting_point && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">📍 {d.meeting_point}</div>
               )}
-              {item.cost && (
+              {item.cost && !isFullyPaid(item) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs">
                   <CostDisplay item={item} compact />
                 </div>
