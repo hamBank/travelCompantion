@@ -9,6 +9,12 @@ import { fmtDayTime } from '../dates.js'
 const CYCLE = { pending: 'done', done: 'skipped', skipped: 'pending' }
 const ICON = { pending: '○', done: '✓', skipped: '—' }
 
+/**
+ * @deprecated FALLBACK ONLY. Every known item kind now has its own boxed card in
+ * StopCard.jsx. If this row ever renders it means an item kind is unhandled —
+ * add a dedicated card for `item.kind` rather than relying on this. The visible
+ * "⚠ unsupported type" badge below is intentional so the gap is obvious in the UI.
+ */
 export default function ItemRow({ item, onItemSaved, onItemDeleted }) {
   const [current, setCurrent] = useState(item)
   const [status, setStatus] = useState(item.status)
@@ -41,10 +47,18 @@ export default function ItemRow({ item, onItemSaved, onItemDeleted }) {
           className="flex-1 min-w-0 text-left hover:opacity-70 transition-opacity flex items-center gap-2"
           style={{ opacity: struck ? 0.4 : 1 }}
         >
+          <span
+            title={`Unsupported item type "${current.kind}" — add a dedicated card`}
+            style={{
+              color: 'var(--warning)',
+              border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
+              fontSize: '0.6rem',
+            }}
+            className="shrink-0 px-1.5 py-0.5 rounded uppercase tracking-wide font-medium"
+          >
+            ⚠ deprecated
+          </span>
           <span className="text-sm truncate" style={{ color: 'var(--text)' }}>
-            {current.kind === 'note' && (
-              <span className="mr-1" style={{ fontSize: '0.8em' }}>📝</span>
-            )}
             {current.name}
           </span>
           {current.cost && !isFullyPaid(current) && (
