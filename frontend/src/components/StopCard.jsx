@@ -610,7 +610,7 @@ function TransferCard({ item: initial, onItemSaved }) {
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
                     {d.distance   && <span>↔ {d.distance}</span>}
                     {d.duration   && <span>⏱ {d.duration}</span>}
-                    {item.cost    && <CostDisplay item={item} compact />}
+                    {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
                     {d.provider   && <span>via {d.provider}</span>}
                     {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                   </div>
@@ -714,7 +714,7 @@ function CyclingCard({ item: initial, onItemSaved }) {
                   {[d.start_location, d.end_location].filter(Boolean).join(' → ')}
                 </div>
               )}
-              {item.cost && (
+              {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
               {(d.distance || d.elevation_gain || d.elevation_loss || d.surface_type) && (
@@ -770,7 +770,7 @@ function PurchaseCard({ item: initial, onItemSaved }) {
               {d.location && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{d.location}</div>
               )}
-              {item.cost && (
+              {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
               {d.description && (
@@ -902,7 +902,7 @@ function RestaurantCard({ item: initial, onItemSaved }) {
               {d.location && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{d.location}</div>
               )}
-              {item.cost && (
+              {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
               {(item.scheduled_at || d.reservation_time || item.notes || d.booking_ref) && (

@@ -3,6 +3,7 @@ import { updateItemStatus } from '../api.js'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal from './ItemEditModal.jsx'
 import CostDisplay from './CostDisplay.jsx'
+import { isFullyPaid } from '../currency.js'
 
 const CYCLE = { pending: 'done', done: 'skipped', skipped: 'pending' }
 const ICON = { pending: '○', done: '✓', skipped: '—' }
@@ -45,7 +46,7 @@ export default function ItemRow({ item, onItemSaved }) {
             )}
             {current.name}
           </span>
-          {current.cost && (
+          {current.cost && !isFullyPaid(current) && (
             <CostDisplay item={current} className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }} compact />
           )}
           {current.scheduled_at && (
