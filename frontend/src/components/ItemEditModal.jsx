@@ -421,6 +421,8 @@ function WalkForm({ itemId, core, details, setCore, setDetails }) {
     if (res.start && !details.start_location) { setD('start_location', res.start); filled++ }
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
     if (mapsUrl) { setD('maps_url', mapsUrl) }
+    // Store the full ordered route (incl. intermediate waypoints) for the map.
+    if (res.waypoints && res.waypoints.length > 2) { setD('route_points', res.waypoints); filled++ }
 
     // middle must be defined before the await so geocodeForRoute can use it for validation
     const middle = res.allCoords ?? []
@@ -644,6 +646,7 @@ function TransferForm({ core, details, setCore, setDetails }) {
     if (res.start && !details.start_location) { setD('start_location', res.start); filled++ }
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
     if (mapsUrl) { setD('maps_url', mapsUrl) }
+    if (res.waypoints && res.waypoints.length > 2) { setD('route_points', res.waypoints); filled++ }
 
     const middle = res.allCoords ?? []
     if ((!res.startCoords && res.start) || (!res.endCoords && res.end))
@@ -822,9 +825,12 @@ function parseMapsUrl(url) {
         const rawEnd   = parts[parts.length - 1]
         // Collect every coordinate waypoint in path order
         const allCoords = parts.filter(p => coordRe.test(p)).map(toCoord)
+        // Full ordered list of stops (start, any intermediate waypoints, end) as text
+        const waypoints = parts.map(p => decodeURIComponent(p.replace(/\+/g, ' ')))
         const result = {
           start: decodeURIComponent(rawStart.replace(/\+/g, ' ')),
           end:   decodeURIComponent(rawEnd.replace(/\+/g, ' ')),
+          waypoints,
           allCoords,
         }
         if (coordRe.test(rawStart)) result.startCoords = toCoord(rawStart)
@@ -837,6 +843,21 @@ function parseMapsUrl(url) {
     if (start || end) return { start: start || '', end: end || '' }
   } catch {}
   return null
+}
+
+// Build a Google Maps directions URL through an ordered list of points (start,
+// intermediate waypoints, end). `mode` is 'w' (walk), 'd' (drive), 'b' (bike).
+// Pass embed=true for the iframe-embeddable variant.
+export function buildMapsUrl(points, mode = 'w', embed = false) {
+  const pts = (points || []).filter(Boolean)
+  if (!pts.length) return null
+  const base = 'https://maps.google.com/maps?'
+  const suffix = embed ? '&output=embed' : ''
+  if (pts.length === 1) return base + new URLSearchParams({ q: pts[0] }).toString() + suffix
+  // Keep the literal "to:" keyword Google uses for multi-stop routes.
+  const saddr = encodeURIComponent(pts[0])
+  const daddr = pts.slice(1).map(encodeURIComponent).join('+to:')
+  return `${base}saddr=${saddr}&daddr=${daddr}&dirflg=${mode}${suffix}`
 }
 
 function haversineKm(c1, c2) {
@@ -890,6 +911,7 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
     let filled = 0
     if (res.start && !details.start_location) { setD('start_location', res.start); filled++ }
     if (res.end   && !details.end_location)   { setD('end_location',   res.end);   filled++ }
+    if (res.waypoints && res.waypoints.length > 2) { setD('route_points', res.waypoints); filled++ }
     setMapsMsg(filled ? { text: `${filled} location${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
                       : { text: 'Nothing to add (fields already filled)', color: 'var(--text-faint)' })
   }

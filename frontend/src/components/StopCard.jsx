@@ -6,7 +6,7 @@ import { useCanEdit } from '../roles.js'
 import ItemRow from './ItemRow.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
-import ItemEditModal from './ItemEditModal.jsx'
+import ItemEditModal, { buildMapsUrl } from './ItemEditModal.jsx'
 import CostDisplay from './CostDisplay.jsx'
 import { isFullyPaid } from '../currency.js'
 import { countryFlag } from '../countryFlag.js'
@@ -454,23 +454,11 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
   const d = item.details ?? {}
   const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
 
-  // Build a Google Maps embed URL from stored start/end locations (walking mode)
-  const embedUrl = d.start_location
-    ? 'https://maps.google.com/maps?' + new URLSearchParams(
-        d.end_location
-          ? { saddr: d.start_location, daddr: d.end_location, dirflg: 'w' }
-          : { q: d.start_location }
-      ).toString() + '&output=embed'
-    : null
-
-  // Link for "Open in Maps" — prefer the stored original URL
-  const mapsLink = d.maps_url || (d.start_location
-    ? 'https://maps.google.com/maps?' + new URLSearchParams(
-        d.end_location
-          ? { saddr: d.start_location, daddr: d.end_location, dirflg: 'w' }
-          : { q: d.start_location }
-      ).toString()
-    : null)
+  // Full ordered route (incl. intermediate waypoints) when available, else start/end.
+  const routePts = d.route_points?.length >= 2 ? d.route_points : [d.start_location, d.end_location].filter(Boolean)
+  const embedUrl = routePts.length ? buildMapsUrl(routePts, 'w', true) : null
+  // Link for "Open in Maps" — prefer the stored original URL (preserves all waypoints)
+  const mapsLink = d.maps_url || (routePts.length ? buildMapsUrl(routePts, 'w', false) : null)
 
   return (
     <>
@@ -639,21 +627,9 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
 
   const vehicleIcon = { bus: '🚌', minibus: '🚌', shuttle: '🚌', taxi: '🚕' }[d.vehicle_type] ?? '🚗'
 
-  const embedUrl = d.start_location
-    ? 'https://maps.google.com/maps?' + new URLSearchParams(
-        d.end_location
-          ? { saddr: d.start_location, daddr: d.end_location, dirflg: 'd' }
-          : { q: d.start_location }
-      ).toString() + '&output=embed'
-    : null
-
-  const mapsLink = d.maps_url || (d.start_location
-    ? 'https://maps.google.com/maps?' + new URLSearchParams(
-        d.end_location
-          ? { saddr: d.start_location, daddr: d.end_location, dirflg: 'd' }
-          : { q: d.start_location }
-      ).toString()
-    : null)
+  const routePts = d.route_points?.length >= 2 ? d.route_points : [d.start_location, d.end_location].filter(Boolean)
+  const embedUrl = routePts.length ? buildMapsUrl(routePts, 'd', true) : null
+  const mapsLink = d.maps_url || (routePts.length ? buildMapsUrl(routePts, 'd', false) : null)
 
   return (
     <>
