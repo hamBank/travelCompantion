@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { checkFlight, updateItem } from '../api.js'
 import { airportName, airportLabel } from '../airportNames.js'
 import DetailActions from './DetailActions.jsx'
+import { getPowerbankPolicy } from '../powerbank.js'
 
 function fmtDateTime(val) {
   if (!val) return null
@@ -175,6 +176,36 @@ function FlightCheckPanel({ item, onItemUpdate }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function PowerbankPanel({ airline }) {
+  const p = getPowerbankPolicy(airline)
+  const rows = [
+    ['Max capacity', p.maxWh],
+    ['Permitted',    p.number],
+    ['Storage',      p.storage],
+    ['In-flight use', p.usage],
+  ]
+  return (
+    <div
+      style={{ background: 'var(--surface)', border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)', borderRadius: '0.5rem' }}
+      className="p-3 mt-4 space-y-1.5"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide font-medium">🔋 Power bank policy</p>
+        <span style={{ color: 'var(--text-faint)' }} className="text-xs">{p.source}</span>
+      </div>
+      {rows.map(([label, value]) => (
+        <div key={label} className="flex gap-3 text-sm">
+          <span style={{ color: 'var(--text-faint)', minWidth: '6.5rem' }} className="shrink-0">{label}</span>
+          <span style={{ color: 'var(--text)' }} className="flex-1">{value}</span>
+        </div>
+      ))}
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs pt-1 italic">
+        Rules change frequently — confirm with the airline before travel.
+      </p>
     </div>
   )
 }
@@ -353,6 +384,8 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
               )}
             </div>
           )}
+
+          <PowerbankPanel airline={d.airline} />
         </div>
 
         <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose} />
