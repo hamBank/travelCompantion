@@ -62,7 +62,7 @@ function extractNumber(str) {
   // Strip anything that isn't a digit, comma, or dot; remove commas used as thousands separators
   const cleaned = str.replace(/[^\d.,]/g, '').replace(/,(?=\d{3}(?:[^\d]|$))/g, '')
   const num = parseFloat(cleaned)
-  return isNaN(num) || num <= 0 ? null : num
+  return isNaN(num) || num < 0 ? null : num
 }
 
 /**

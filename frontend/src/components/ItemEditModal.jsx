@@ -104,7 +104,6 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Check-in" type="datetime-local" value={d('checkin')} onChange={v => setD('checkin', v)} />
         <Field label="Check-out" type="datetime-local" value={d('checkout')} onChange={v => setD('checkout', v)} />
       </div>
-      <Field label="Total cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€450" />
       <Field label="Booking confirmation" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="ABC123XYZ" />
       <SectionBox label="Contact">
         <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+39 06 123456" />
@@ -203,10 +202,7 @@ function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Time" type="time" value={resTime}
           onChange={v => { setResTime(v); applyDateTime(resDate, v) }} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€60" />
-        <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Dietary needs…" />
-      </div>
+      <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Dietary needs…" />
     </div>
   )
 }
@@ -324,7 +320,6 @@ function FlightForm({ core, details, setCore, setDetails }) {
         <Field label="Booking URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Phone" value={d('booking_phone')} onChange={v => setD('booking_phone', v)} placeholder="+61 2 9691 3636" />
-          <Field label="Total cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="214.20 SGD" />
         </div>
       </SectionBox>
     </div>
@@ -370,7 +365,6 @@ function ActivityForm({ itemId, core, details, setCore, setDetails }) {
       <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+1 234 567 8900" />
       <Field label="Website" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
       <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Notes…" />
-      <Field label="Cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€20" />
     </div>
   )
 }
@@ -381,7 +375,6 @@ function GenericForm({ core, setCore }) {
       <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Note title" />
       <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Notes…" />
       <Field label="Link" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
-      <Field label="Cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€20" />
     </div>
   )
 }
@@ -502,10 +495,7 @@ function WalkForm({ core, details, setCore, setDetails }) {
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Duration"  value={d('duration')} onChange={v => setD('duration', v)} placeholder="3h 30m" />
-        <Field label="Cost"      value={core.cost}     onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€0" />
-      </div>
+      <Field label="Duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="3h 30m" />
       <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Trail conditions, gear needed…" />
     </div>
   )
@@ -578,7 +568,6 @@ function TourForm({ itemId, core, details, setCore, setDetails }) {
       <SectionBox label="Booking">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="GYG-12345" />
-          <Field label="Total cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€80" />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Per person" value={d('cost_per_person')} onChange={v => setD('cost_per_person', v)} placeholder="€40" />
@@ -687,10 +676,7 @@ function TransferForm({ core, details, setCore, setDetails }) {
         <Field label="Distance"  value={d('distance')} onChange={v => setD('distance', v)} placeholder="45 km" />
         <Field label="Duration"  value={d('duration')} onChange={v => setD('duration', v)} placeholder="1h 15m" />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Total cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€60" />
-        <Field label="Per person" value={d('cost_per_person')} onChange={v => setD('cost_per_person', v)} placeholder="€30" />
-      </div>
+      <Field label="Per person" value={d('cost_per_person')} onChange={v => setD('cost_per_person', v)} placeholder="€30" />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Booking ref" value={d('booking_ref')}    onChange={v => setD('booking_ref', v)}    placeholder="CONF123" />
         <Field label="Provider"    value={d('provider')}        onChange={v => setD('provider', v)}        placeholder="Local taxis" />
@@ -747,10 +733,7 @@ function RailForm({ core, details, setCore, setDetails }) {
           <Field label="Phone"       value={d('booking_phone')} onChange={v => setD('booking_phone', v)} placeholder="+44 3432 186186" />
         </div>
         <Field label="Booking URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Total cost"  value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="€250" />
-          <Field label="Notes"       value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
-        </div>
+        <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
       </SectionBox>
     </div>
   )
@@ -914,10 +897,7 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Elev ↓"     value={d('elevation_loss')} onChange={v => setD('elevation_loss', v)} placeholder="650 m" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Cost"  value={core.cost}  onChange={v => setCore(c => ({ ...c, cost: v }))}  placeholder="€0" />
-        <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Conditions, kit…" />
-      </div>
+      <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Conditions, kit…" />
 
       <div className="flex flex-col gap-1.5">
         <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">GPX File</label>
@@ -950,10 +930,7 @@ function PurchaseForm({ core, details, setCore, setDetails }) {
       <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Silk scarf" />
       <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="What it is, why you want it…" rows={3} />
       <Field label="Shop / Location" value={d('location')} onChange={v => setD('location', v)} placeholder="Night market, Chatuchak…" />
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Cost" value={core.cost} onChange={v => setCore(c => ({ ...c, cost: v }))} placeholder="฿350" />
-        <Field label="Link / URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
-      </div>
+      <Field label="Link / URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
     </div>
   )
 }
@@ -1008,10 +985,12 @@ export default function ItemEditModal({ item, onSave, onClose }) {
             finalDetails = { ...finalDetails, converted_cost: converted, converted_currency: homeCurrency }
           }
           // Re-convert amount_paid if it changed or no conversion stored yet
-          if ((costChanged || paidChanged || finalDetails.converted_amount_paid == null) && finalDetails.amount_paid) {
+          if ((costChanged || paidChanged || finalDetails.converted_amount_paid == null) && finalDetails.amount_paid != null) {
             const parsedPaid = parseCost(finalDetails.amount_paid)
-            const paidAmount = parsedPaid ? parsedPaid.amount : parseFloat(finalDetails.amount_paid)
-            if (paidAmount > 0) {
+            const paidAmount = parsedPaid != null ? parsedPaid.amount : parseFloat(finalDetails.amount_paid)
+            if (paidAmount === 0) {
+              finalDetails = { ...finalDetails, converted_amount_paid: 0 }
+            } else if (paidAmount > 0) {
               const convertedPaid = await convertCurrency(paidAmount, parsed.code, homeCurrency)
               finalDetails = { ...finalDetails, converted_amount_paid: convertedPaid }
             }
@@ -1101,9 +1080,15 @@ export default function ItemEditModal({ item, onSave, onClose }) {
           ) : (
             <GenericForm core={core} setCore={setCore} />
           )}
-          {core.cost && (
-            <div style={{ borderTop: '1px solid var(--border)' }} className="mt-4 pt-4">
-              <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Payment</p>
+          <div style={{ borderTop: '1px solid var(--border)' }} className="mt-4 pt-4">
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Payment</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field
+                label="Total cost"
+                value={core.cost ?? ''}
+                onChange={v => setCore(c => ({ ...c, cost: v || '' }))}
+                placeholder="€450"
+              />
               <Field
                 label="Amount paid"
                 value={details.amount_paid ?? ''}
@@ -1111,7 +1096,7 @@ export default function ItemEditModal({ item, onSave, onClose }) {
                 placeholder="€225"
               />
             </div>
-          )}
+          </div>
           {error && <p style={{ color: 'var(--error)' }} className="text-xs mt-3">{error}</p>}
         </div>
 
