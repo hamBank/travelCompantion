@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react'
 import { getTripTimeline, backfillAccommodations } from '../api.js'
 import StopCard from './StopCard.jsx'
 import { RoleContext, canEdit } from '../roles.js'
+import { useShowInbound } from '../settings.js'
 
 export default function TripTimeline({ tripId }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const showInbound = useShowInbound()
 
   useEffect(() => { load() }, [tripId])
 
@@ -47,6 +49,18 @@ export default function TripTimeline({ tripId }) {
     return matches[0].item
   }
 
+  // Resolve each stop's inbound banner up front, and collect the item ids used so a
+  // flight/rail shown as a banner is NOT also rendered as a normal card elsewhere.
+  // Only when the feature is enabled — otherwise items must keep their normal cards.
+  const inboundByStop = {}
+  const bannerItemIds = new Set()
+  if (showInbound) {
+    for (const stop of timeline.stops) {
+      const inb = inboundFor(stop)
+      if (inb) { inboundByStop[stop.id] = inb; bannerItemIds.add(inb.id) }
+    }
+  }
+
   return (
     <RoleContext.Provider value={timeline.role ?? 'owner'}>
       <div>
@@ -66,7 +80,8 @@ export default function TripTimeline({ tripId }) {
 
         <div className="space-y-1.5">
           {timeline.stops.map((stop, i) => (
-            <StopCard key={stop.id} stop={stop} index={i} onUpdate={load} inbound={inboundFor(stop)} />
+            <StopCard key={stop.id} stop={stop} index={i} onUpdate={load}
+              inbound={inboundByStop[stop.id]} hiddenItemIds={bannerItemIds} />
           ))}
         </div>
       </div>
