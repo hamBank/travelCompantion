@@ -1087,13 +1087,11 @@ export default function ItemEditModal({ item, onSave, onClose }) {
                 label="Total cost"
                 value={core.cost ?? ''}
                 onChange={v => setCore(c => ({ ...c, cost: v || '' }))}
-                placeholder="€450"
               />
               <Field
                 label="Amount paid"
                 value={details.amount_paid ?? ''}
                 onChange={v => setDetails(d => ({ ...d, amount_paid: v || undefined }))}
-                placeholder="€225"
               />
             </div>
           </div>
