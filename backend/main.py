@@ -97,8 +97,7 @@ async def currency_convert(amount: float, from_currency: str, to_currency: str):
         return {"rate": 1.0, "result": amount}
 
     def _fetch():
-        params = urllib.parse.urlencode({"amount": amount, "from": from_currency, "to": to_currency})
-        url = f"https://api.frankfurter.app/latest?{params}"
+        url = f"https://open.er-api.com/v6/latest/{from_currency}"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=8) as r:
             return _json.loads(r.read().decode())
@@ -106,10 +105,13 @@ async def currency_convert(amount: float, from_currency: str, to_currency: str):
     try:
         loop = asyncio.get_event_loop()
         data = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=10.0)
-        result = data.get("rates", {}).get(to_currency)
-        if result is None:
+        if data.get("result") == "error":
+            raise HTTPException(status_code=502, detail=data.get("error-type", "unknown error"))
+        rate = data.get("rates", {}).get(to_currency)
+        if rate is None:
             raise HTTPException(status_code=502, detail=f"No rate returned for {to_currency}")
-        return {"rate": round(result / amount, 6), "result": round(result, 2)}
+        result = round(amount * rate, 2)
+        return {"rate": round(rate, 6), "result": result}
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Currency API timed out")
     except HTTPException:
