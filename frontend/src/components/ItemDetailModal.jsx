@@ -114,7 +114,7 @@ function AccommodationBody({ item }) {
           {item.cost && (
             <div className="flex justify-between gap-4 text-sm">
               <span style={{ color: 'var(--text-faint)' }}>Cost</span>
-              <CostDisplay item={item} />
+              <CostDisplay item={item} showIcon={false} />
             </div>
           )}
           {d.amount_paid && (
@@ -217,7 +217,7 @@ function RestaurantBody({ item }) {
           {item.cost && (
             <div className="flex justify-between gap-4 text-sm">
               <span style={{ color: 'var(--text-faint)' }}>Cost</span>
-              <CostDisplay item={item} />
+              <CostDisplay item={item} showIcon={false} />
             </div>
           )}
         </div>
@@ -475,7 +475,7 @@ function CyclingBody({ item }) {
         )}
         {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
         {item.notes && <Row label="Notes">{item.notes}</Row>}
-        {item.cost  && <Row label="Cost"><CostDisplay item={item} /></Row>}
+        {item.cost  && <Row label="Cost"><CostDisplay item={item} showIcon={false} /></Row>}
         {d.gpx_filename && (
           <Row label="GPX">
             <button onClick={() => downloadGpx(item.id, d.original_gpx_name)}

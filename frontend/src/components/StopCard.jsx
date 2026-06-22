@@ -523,7 +523,7 @@ function TourCard({ item: initial, onItemSaved }) {
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
                   {timeStr      && <span>{timeStr}</span>}
                   {d.duration   && <span>⏱ {d.duration}</span>}
-                  {item.cost    && <span>💳 <CostDisplay item={item} /></span>}
+                  {item.cost    && <CostDisplay item={item} />}
                   {d.operator   && <span>{d.operator}</span>}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                 </div>
@@ -606,7 +606,7 @@ function TransferCard({ item: initial, onItemSaved }) {
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
                     {d.distance   && <span>↔ {d.distance}</span>}
                     {d.duration   && <span>⏱ {d.duration}</span>}
-                    {item.cost    && <span>💳 <CostDisplay item={item} /></span>}
+                    {item.cost    && <CostDisplay item={item} />}
                     {d.provider   && <span>via {d.provider}</span>}
                     {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                   </div>

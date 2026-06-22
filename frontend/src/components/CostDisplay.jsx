@@ -8,7 +8,7 @@ import { formatAmount, parseCost } from '../currency.js'
  *
  * Converted amounts come from item.details.converted_* (written at save time).
  */
-export default function CostDisplay({ item, className = '' }) {
+export default function CostDisplay({ item, className = '', showIcon = true }) {
   const cost = item?.cost
   const d = item?.details ?? {}
   const amountPaid    = d.amount_paid
@@ -25,7 +25,7 @@ export default function CostDisplay({ item, className = '' }) {
   if (!amountPaid) {
     return (
       <span className={className}>
-        {cost}
+        {showIcon && '💳 '}{cost}
         {showConverted && (
           <span style={{ color: 'var(--text-faint)', fontSize: '0.85em' }}>
             {' '}({formatAmount(convertedCost, convertedCurrency)})
@@ -49,6 +49,7 @@ export default function CostDisplay({ item, className = '' }) {
 
       {/* Total */}
       <div className="flex items-baseline gap-1.5 flex-wrap">
+        {showIcon && <span>💳</span>}
         <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>Total</span>
         <span>{cost}</span>
         {showConverted && (
