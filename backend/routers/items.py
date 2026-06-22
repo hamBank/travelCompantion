@@ -4,7 +4,8 @@ from sqlmodel import Session, select
 from sqlalchemy import nullslast
 from sqlalchemy.orm.attributes import flag_modified
 from typing import List
-import os, io, math, time, xml.etree.ElementTree as ET, httpx
+import os, io, math, time, re, json, urllib.request, urllib.error, xml.etree.ElementTree as ET, httpx
+from pydantic import BaseModel
 from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
@@ -448,6 +449,84 @@ def route_elevation(lat1: float, lng1: float, lat2: float, lng2: float):
     except Exception:
         pass
     raise HTTPException(status_code=503, detail="Elevation lookup unavailable")
+
+
+_ROUTES_API = "https://routes.googleapis.com/directions/v2:computeRoutes"
+_COORD_RE = re.compile(r'^\s*-?\d+\.?\d*\s*,\s*-?\d+\.?\d*\s*$')
+_TRAVEL_MODE = {"walk": "WALK", "cycling": "BICYCLE", "bike": "BICYCLE", "transfer": "DRIVE", "drive": "DRIVE"}
+
+
+class RouteDistanceRequest(BaseModel):
+    points: List[str]
+    mode: str = "walk"
+
+
+def _fmt_km(m):
+    if m is None:
+        return None
+    return f"{m / 1000:.1f} km"
+
+
+def _fmt_dur(secs):
+    if not secs:
+        return None
+    h, m = divmod(round(secs / 60), 60)
+    return f"{h}h {m}m" if h else f"{m}m"
+
+
+@router.post("/route-distance")
+def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_user)):
+    """Real road/path-following distance + duration via the Google Routes API.
+
+    Requires GOOGLE_PLACES_API_KEY with the Routes API enabled in the same project.
+    """
+    if not _PLACES_KEY:
+        raise HTTPException(status_code=503, detail="Google API key not configured (set GOOGLE_PLACES_API_KEY)")
+    pts = [p.strip() for p in (req.points or []) if p and p.strip()]
+    if len(pts) < 2:
+        raise HTTPException(status_code=400, detail="Need at least a start and end point")
+
+    def waypoint(s):
+        if _COORD_RE.match(s):
+            lat, lng = [float(x) for x in s.split(",")]
+            return {"location": {"latLng": {"latitude": lat, "longitude": lng}}}
+        return {"address": s}
+
+    body = {
+        "origin": waypoint(pts[0]),
+        "destination": waypoint(pts[-1]),
+        "travelMode": _TRAVEL_MODE.get(req.mode.lower(), "DRIVE"),
+    }
+    if len(pts) > 2:
+        body["intermediates"] = [waypoint(p) for p in pts[1:-1]]
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": _PLACES_KEY,
+        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
+    }
+    request = urllib.request.Request(_ROUTES_API, data=json.dumps(body).encode(), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=15) as r:
+            data = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode()[:300] if e.fp else str(e)
+        raise HTTPException(status_code=502, detail=f"Routes API error {e.code}: {detail}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Routes API request failed: {e}")
+
+    routes = data.get("routes") or []
+    if not routes:
+        raise HTTPException(status_code=404, detail="No route found for those points")
+    dist_m = routes[0].get("distanceMeters")
+    dur_raw = routes[0].get("duration", "")
+    secs = int(dur_raw[:-1]) if dur_raw.endswith("s") and dur_raw[:-1].isdigit() else None
+    return {
+        "distance_m": dist_m,
+        "duration_s": secs,
+        "distance_text": _fmt_km(dist_m),
+        "duration_text": _fmt_dur(secs),
+    }
 
 
 @router.get("/items/{item_id}/enrich")

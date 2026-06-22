@@ -72,6 +72,9 @@ export const fetchRouteElevation = (lat1, lng1, lat2, lng2) =>
 export const fetchGeocode = (q) =>
   req(`/geocode?q=${encodeURIComponent(q)}`)
 
+export const routeDistance = (points, mode) =>
+  req('/route-distance', { method: 'POST', body: JSON.stringify({ points, mode }) })
+
 export async function uploadGpx(id, file) {
   const token = getToken()
   const form = new FormData()

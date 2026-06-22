@@ -1,8 +1,49 @@
 import { useState } from 'react'
-import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem } from '../api.js'
+import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance } from '../api.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 import RailLookupModal from './RailLookupModal.jsx'
+
+// Calculate real road/path distance + duration via Google Routes API.
+function DistanceButton({ points, mode, onResult, color = 'var(--accent)' }) {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+  async function calc() {
+    const pts = (points || []).filter(Boolean)
+    if (busy) return
+    if (pts.length < 2) { setMsg({ text: 'Add start and end first', color: 'var(--error)' }); return }
+    setBusy(true); setMsg(null)
+    try {
+      const r = await routeDistance(pts, mode)
+      onResult(r)
+      setMsg({ text: `✓ ${r.distance_text}${r.duration_text ? ' · ' + r.duration_text : ''}`, color: 'var(--success)' })
+    } catch (e) {
+      setMsg({ text: e.message, color: 'var(--error)' })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <button
+        type="button"
+        onClick={calc}
+        disabled={busy}
+        style={{ color, border: `1px solid color-mix(in srgb, ${color} 35%, transparent)`, background: `color-mix(in srgb, ${color} 8%, transparent)` }}
+        className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+      >
+        {busy ? 'Calculating…' : 'Calculate distance (Google)'}
+      </button>
+      {msg && <span className="text-xs" style={{ color: msg.color }}>{msg.text}</span>}
+    </div>
+  )
+}
+
+// Ordered route points for a distance lookup: full captured route if present, else start/end.
+function routePointsOf(details) {
+  if (details.route_points?.length >= 2) return details.route_points
+  return [details.start_location, details.end_location].filter(Boolean)
+}
 
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
   return (
@@ -507,6 +548,8 @@ function WalkForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Elev ↑"     value={d('elevation_gain')} onChange={v => setD('elevation_gain', v)} placeholder="600 m" />
         <Field label="Elev ↓"     value={d('elevation_loss')} onChange={v => setD('elevation_loss', v)} placeholder="400 m" />
       </div>
+      <DistanceButton points={routePointsOf(details)} mode="walk" color="var(--kind-walk)"
+        onResult={r => { if (r.distance_text) setD('distance', r.distance_text); if (r.duration_text) setD('duration', r.duration_text) }} />
       <div className="flex flex-col gap-1.5">
         <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Difficulty</label>
         <div className="flex gap-2 flex-wrap">
@@ -723,6 +766,8 @@ function TransferForm({ core, details, setCore, setDetails }) {
         <Field label="Distance"  value={d('distance')} onChange={v => setD('distance', v)} placeholder="45 km" />
         <Field label="Duration"  value={d('duration')} onChange={v => setD('duration', v)} placeholder="1h 15m" />
       </div>
+      <DistanceButton points={routePointsOf(details)} mode="transfer" color="var(--kind-transfer)"
+        onResult={r => { if (r.distance_text) setD('distance', r.distance_text); if (r.duration_text) setD('duration', r.duration_text) }} />
       <Field label="Per person" value={d('cost_per_person')} onChange={v => setD('cost_per_person', v)} placeholder="€30" />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Booking ref" value={d('booking_ref')}    onChange={v => setD('booking_ref', v)}    placeholder="CONF123" />
@@ -984,6 +1029,8 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Elev ↑"     value={d('elevation_gain')} onChange={v => setD('elevation_gain', v)} placeholder="800 m" />
         <Field label="Elev ↓"     value={d('elevation_loss')} onChange={v => setD('elevation_loss', v)} placeholder="650 m" />
       </div>
+      <DistanceButton points={routePointsOf(details)} mode="cycling" color="var(--kind-cycling)"
+        onResult={r => { if (r.distance_text) setD('distance', r.distance_text) }} />
 
       <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Conditions, kit…" />
 
