@@ -1,60 +1,74 @@
-import { formatAmount, parseCost } from '../currency.js'
+import { formatCurrencyAmount, parseCost, getHomeCurrency } from '../currency.js'
 
 /**
  * Renders cost information from stored values only — no API calls.
  *
  * Without amount_paid: inline  "€450 (£375)"
- * With amount_paid:    block breakdown showing total, paid, outstanding
+ * With amount_paid + compact:  "€450 (£375) · €225 outstanding (£190)"
+ * With amount_paid + full:     block breakdown — Total / Paid / Outstanding rows
  *
- * Converted amounts come from item.details.converted_* (written at save time).
+ * Uses formatCurrencyAmount to disambiguate conflicting symbols (A$ vs US$).
  */
 export default function CostDisplay({ item, className = '', showIcon = true, compact = false }) {
   const cost = item?.cost
   const d = item?.details ?? {}
-  const amountPaid    = d.amount_paid
-  const convertedCost = d.converted_cost
-  const convertedPaid = d.converted_amount_paid
+  const amountPaid        = d.amount_paid
+  const convertedCost     = d.converted_cost
+  const convertedPaid     = d.converted_amount_paid
   const convertedCurrency = d.converted_currency
 
   if (!cost) return null
 
+  const homeCode   = getHomeCurrency()
   const parsedCost = parseCost(cost)
-  const showConverted = convertedCost != null && convertedCurrency && convertedCurrency !== parsedCost?.code
+  const costCode   = parsedCost?.code ?? ''
+  const showConverted = convertedCost != null && convertedCurrency && convertedCurrency !== costCode
 
-  // ── Simple inline mode (no paid amount) ────────────────────────────────────
+  // Helper: format an amount in the cost's original currency (foreign — disambiguate vs home)
+  const fmtCost = (amt) => formatCurrencyAmount(amt, costCode, homeCode)
+  // Helper: format an amount in the home currency
+  const fmtHome = (amt) => formatCurrencyAmount(amt, convertedCurrency, '')
+
+  // ── No paid amount — simple inline ─────────────────────────────────────────
   if (!amountPaid) {
     return (
       <span className={className}>
         {showIcon && '💳 '}{cost}
         {showConverted && (
           <span style={{ color: 'var(--text-faint)', fontSize: '0.85em' }}>
-            {' '}({formatAmount(convertedCost, convertedCurrency)})
+            {' '}({fmtHome(convertedCost)})
           </span>
         )}
       </span>
     )
   }
 
-  // ── Compact inline mode (paid amount present, single line for cards) ────────
-  const parsedPaidCompact = parseCost(amountPaid) ?? { amount: parseFloat(amountPaid), code: parsedCost?.code }
-  const outstandingCompact = parsedCost && parsedPaidCompact.amount != null
-    ? parsedCost.amount - parsedPaidCompact.amount : null
-  const fullyPaidCompact = outstandingCompact != null && outstandingCompact <= 0
+  // ── Shared calculations ─────────────────────────────────────────────────────
+  const parsedPaid = parseCost(amountPaid) ?? { amount: parseFloat(amountPaid) ?? 0, code: costCode }
+  const outstanding         = parsedCost && parsedPaid.amount != null ? parsedCost.amount - parsedPaid.amount : null
+  const convertedOutstanding = convertedCost != null && convertedPaid != null
+    ? Math.round((convertedCost - convertedPaid) * 100) / 100 : null
+  const fullyPaid = outstanding != null && outstanding <= 0
 
+  // ── Compact inline (for cards) ──────────────────────────────────────────────
   if (compact) {
     return (
       <span className={className}>
         {showIcon && '💳 '}{cost}
         {showConverted && (
           <span style={{ color: 'var(--text-faint)', fontSize: '0.85em' }}>
-            {' '}({formatAmount(convertedCost, convertedCurrency)})
+            {' '}({fmtHome(convertedCost)})
           </span>
         )}
-        {fullyPaidCompact
+        {fullyPaid
           ? <span style={{ color: 'var(--success)', fontSize: '0.85em' }}> ✓</span>
-          : outstandingCompact != null && outstandingCompact > 0 && (
+          : outstanding != null && outstanding > 0 && (
             <span style={{ color: 'var(--warning)', fontSize: '0.85em' }}>
-              {' · '}{parsedCost?.code ? formatAmount(outstandingCompact, parsedCost.code) : outstandingCompact.toFixed(2)} outstanding
+              {' · '}{fmtCost(outstanding)}
+              {convertedOutstanding != null && convertedOutstanding > 0 && convertedCurrency && (
+                <span style={{ color: 'var(--text-faint)' }}> ({fmtHome(convertedOutstanding)})</span>
+              )}
+              {' outstanding'}
             </span>
           )
         }
@@ -62,42 +76,27 @@ export default function CostDisplay({ item, className = '', showIcon = true, com
     )
   }
 
-  // ── Breakdown mode (paid amount present) ───────────────────────────────────
-  const parsedPaid = parseCost(amountPaid) ?? { amount: parseFloat(amountPaid), code: parsedCost?.code }
-  const outstanding    = parsedCost && parsedPaid.amount != null ? parsedCost.amount - parsedPaid.amount : null
-  const convertedOutstanding = convertedCost != null && convertedPaid != null
-    ? Math.round((convertedCost - convertedPaid) * 100) / 100
-    : null
-
-  const fullyPaid = outstanding != null && outstanding <= 0
-
+  // ── Full block breakdown (for detail views) ─────────────────────────────────
   return (
     <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
 
-      {/* Total */}
       <div className="flex items-baseline gap-1.5 flex-wrap">
         {showIcon && <span>💳</span>}
         <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>Total</span>
         <span>{cost}</span>
         {showConverted && (
-          <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>
-            ({formatAmount(convertedCost, convertedCurrency)})
-          </span>
+          <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>({fmtHome(convertedCost)})</span>
         )}
       </div>
 
-      {/* Paid */}
       <div className="flex items-baseline gap-1.5 flex-wrap">
         <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>Paid</span>
         <span>{amountPaid}</span>
         {convertedPaid != null && convertedCurrency && (
-          <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>
-            ({formatAmount(convertedPaid, convertedCurrency)})
-          </span>
+          <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>({fmtHome(convertedPaid)})</span>
         )}
       </div>
 
-      {/* Outstanding / Fully paid */}
       {fullyPaid ? (
         <div>
           <span style={{ color: 'var(--success)', fontSize: '0.8em' }}>Fully paid ✓</span>
@@ -105,13 +104,9 @@ export default function CostDisplay({ item, className = '', showIcon = true, com
       ) : outstanding != null && outstanding > 0 ? (
         <div className="flex items-baseline gap-1.5 flex-wrap">
           <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>Outstanding</span>
-          <span style={{ color: 'var(--warning)', fontWeight: 500 }}>
-            {parsedCost?.code ? formatAmount(outstanding, parsedCost.code) : outstanding.toFixed(2)}
-          </span>
+          <span style={{ color: 'var(--warning)', fontWeight: 500 }}>{fmtCost(outstanding)}</span>
           {convertedOutstanding != null && convertedOutstanding > 0 && convertedCurrency && (
-            <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>
-              ({formatAmount(convertedOutstanding, convertedCurrency)})
-            </span>
+            <span style={{ color: 'var(--text-faint)', fontSize: '0.8em' }}>({fmtHome(convertedOutstanding)})</span>
           )}
         </div>
       ) : null}

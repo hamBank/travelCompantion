@@ -81,17 +81,72 @@ export async function convertCurrency(amount, fromCode, toCode) {
   return data.result
 }
 
-/** Format a numeric amount in a given ISO currency code for display. */
-export function formatAmount(amount, code) {
+// Currencies with unambiguous globally-recognised symbols
+const UNIQUE_SYMBOLS = {
+  EUR: '€', GBP: '£', JPY: '¥', KRW: '₩', INR: '₹',
+  THB: '฿', TRY: '₺', VND: '₫', RUB: '₽', UAH: '₴',
+  NGN: '₦', ILS: '₪', BRL: 'R$', MYR: 'RM', IDR: 'Rp',
+  PLN: 'zł', CZK: 'Kč', HUF: 'Ft',
+}
+
+// Currencies that share "$" — [natural symbol, disambiguating prefix]
+const DOLLAR_CURRENCIES = {
+  USD: ['$', 'US$'], AUD: ['$', 'A$'], CAD: ['$', 'C$'],
+  NZD: ['$', 'NZ$'], SGD: ['$', 'S$'], HKD: ['$', 'HK$'],
+  MXN: ['$', 'Mex$'], TWD: ['$', 'NT$'],
+}
+
+// Currencies that share "kr"
+const KR_CURRENCIES = {
+  SEK: 'kr', NOK: 'kr', DKK: 'kr',
+}
+
+// Currencies with no known symbol — zero-decimal
+const ZERO_DECIMAL = new Set(['JPY', 'KRW', 'VND', 'IDR', 'CLP', 'GNF', 'ISK', 'PYG', 'RWF', 'UGX', 'XAF', 'XOF'])
+
+/**
+ * Format amount in `code`, disambiguating against `homeCode` where symbols conflict.
+ * When `code === homeCode`, always uses the natural/short symbol.
+ */
+export function formatCurrencyAmount(amount, code, homeCode = '') {
+  if (!code) return amount.toFixed(2)
+  const decimals = ZERO_DECIMAL.has(code) ? 0 : 2
+  const n = amount.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+
+  // Unique symbol — no ambiguity possible
+  if (UNIQUE_SYMBOLS[code]) {
+    const sym = UNIQUE_SYMBOLS[code]
+    // suffix symbols (zł, Kč, Ft, kr)
+    return sym.length > 2 || sym === 'zł' || sym === 'Kč' || sym === 'Ft'
+      ? `${n} ${sym}` : `${sym}${n}`
+  }
+
+  // Dollar-family — use prefix when foreign vs home
+  if (DOLLAR_CURRENCIES[code]) {
+    const [natural, prefix] = DOLLAR_CURRENCIES[code]
+    const ambiguous = homeCode && DOLLAR_CURRENCIES[homeCode] && code !== homeCode
+    return `${ambiguous ? prefix : natural}${n}`
+  }
+
+  // Kr-family — disambiguate with ISO code when foreign vs home
+  if (KR_CURRENCIES[code]) {
+    const ambiguous = homeCode && KR_CURRENCIES[homeCode] && code !== homeCode
+    return ambiguous ? `${n} ${code}` : `${n} kr`
+  }
+
+  // Fallback: Intl then bare ISO code
   try {
     return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: code,
-      maximumFractionDigits: 2,
+      style: 'currency', currency: code, maximumFractionDigits: decimals,
     }).format(amount)
   } catch {
-    return `${code} ${amount}`
+    return `${code} ${n}`
   }
+}
+
+/** @deprecated Use formatCurrencyAmount instead */
+export function formatAmount(amount, code) {
+  return formatCurrencyAmount(amount, code)
 }
 
 export const HOME_CURRENCY_KEY = 'tc-home-currency'
