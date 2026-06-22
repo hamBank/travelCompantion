@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { HOME_CURRENCY_KEY } from '../currency.js'
-import { getHideCompleted, setHideCompleted } from '../settings.js'
+import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound } from '../settings.js'
 
 const COMMON_CURRENCIES = [
   'AED', 'ARS', 'AUD', 'BDT', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY',
@@ -11,17 +11,43 @@ const COMMON_CURRENCIES = [
   'UAH', 'USD', 'VND', 'ZAR',
 ]
 
+function Toggle({ label, on, onToggle }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5"
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+    >
+      <span style={{ color: 'var(--text)' }} className="text-sm text-left">{label}</span>
+      <span
+        style={{
+          width: '2.5rem', height: '1.4rem', borderRadius: '9999px', flexShrink: 0, position: 'relative',
+          background: on ? 'var(--accent)' : 'var(--border)', transition: 'background 0.15s',
+        }}
+      >
+        <span style={{
+          position: 'absolute', top: '0.15rem', left: on ? '1.25rem' : '0.15rem',
+          width: '1.1rem', height: '1.1rem', borderRadius: '9999px', background: '#fff',
+          transition: 'left 0.15s',
+        }} />
+      </span>
+    </button>
+  )
+}
+
 export default function UserSettings({ onClose }) {
   const [currency, setCurrency] = useState(
     () => localStorage.getItem(HOME_CURRENCY_KEY) || ''
   )
   const [filter, setFilter] = useState('')
   const [hideCompleted, setHideCompletedState] = useState(getHideCompleted)
+  const [showInbound, setShowInboundState] = useState(getShowInbound)
 
   function save() {
     if (currency) localStorage.setItem(HOME_CURRENCY_KEY, currency)
     else localStorage.removeItem(HOME_CURRENCY_KEY)
     setHideCompleted(hideCompleted)
+    setShowInbound(showInbound)
     onClose()
   }
 
@@ -45,28 +71,10 @@ export default function UserSettings({ onClose }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          <div>
-            <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Display</p>
-            <button
-              onClick={() => setHideCompletedState(v => !v)}
-              className="w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-            >
-              <span style={{ color: 'var(--text)' }} className="text-sm text-left">Hide completed items</span>
-              <span
-                style={{
-                  width: '2.5rem', height: '1.4rem', borderRadius: '9999px', flexShrink: 0, position: 'relative',
-                  background: hideCompleted ? 'var(--accent)' : 'var(--border)',
-                  transition: 'background 0.15s',
-                }}
-              >
-                <span style={{
-                  position: 'absolute', top: '0.15rem', left: hideCompleted ? '1.25rem' : '0.15rem',
-                  width: '1.1rem', height: '1.1rem', borderRadius: '9999px', background: '#fff',
-                  transition: 'left 0.15s',
-                }} />
-              </span>
-            </button>
+          <div className="space-y-2">
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Display</p>
+            <Toggle label="Hide completed items" on={hideCompleted} onToggle={() => setHideCompletedState(v => !v)} />
+            <Toggle label="Show inbound flight/train on destination stop" on={showInbound} onToggle={() => setShowInboundState(v => !v)} />
           </div>
 
           <div>

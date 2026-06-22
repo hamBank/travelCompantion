@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { updateStopStatus, updateItemStatus } from '../api.js'
-import { useHideCompleted } from '../settings.js'
+import { useHideCompleted, useShowInbound } from '../settings.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
 import { useCanEdit } from '../roles.js'
 import ItemRow from './ItemRow.jsx'
@@ -18,7 +18,7 @@ const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 
 const fmtDate = fmtDay
 const fmtDateTime = fmtDayTime
 
-export default function StopCard({ stop, index, onUpdate }) {
+export default function StopCard({ stop, index, onUpdate, inbound }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
@@ -96,6 +96,8 @@ export default function StopCard({ stop, index, onUpdate }) {
 
       {open && (
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
+          <InboundBanner inbound={inbound} onUpdate={onUpdate} />
+
           {timeline.length > 0 && (
             <div className="space-y-1">
               {timeline.map(item => {
@@ -181,6 +183,62 @@ function EditPencil({ onClick, absolute = true }) {
       style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
       title="Edit"
     >✎</button>
+  )
+}
+
+// "Arriving here" banner — surfaces the inbound flight/rail's arrival details on the
+// destination stop. Read-only summary; tapping opens the full detail modal.
+function InboundBanner({ inbound, onUpdate }) {
+  const show = useShowInbound()
+  const [showDetail, setShowDetail] = useState(false)
+  if (!show || !inbound) return null
+
+  const d = inbound.details ?? {}
+  const isFlight = inbound.kind === 'flight'
+  const color = isFlight ? 'var(--kind-flight)' : 'var(--kind-rail)'
+  const icon = isFlight ? '✈' : '🚄'
+  const dest = isFlight ? (d.destination ? airportName(d.destination) : '') : (d.destination || '')
+  const label = [d.flight_number || d.train_number, d.airline || d.operator].filter(Boolean).join(' · ')
+  const arrivePlace = isFlight
+    ? [d.arrive_terminal && `T${d.arrive_terminal}`, d.arrive_gate && `Gate ${d.arrive_gate}`].filter(Boolean).join(' ')
+    : (d.arrive_platform ? `Plat. ${d.arrive_platform}` : '')
+
+  const DetailModal = isFlight ? FlightDetailModal : RailDetailModal
+
+  return (
+    <>
+      <button
+        onClick={() => setShowDetail(true)}
+        className="w-full text-left hover:opacity-80 transition-opacity"
+        style={{
+          background: `color-mix(in srgb, ${color} 10%, var(--surface-2))`,
+          border: `1px dashed color-mix(in srgb, ${color} 45%, transparent)`,
+          borderRadius: '0.5rem',
+          padding: '0.6rem 0.75rem',
+        }}
+      >
+        <div className="flex items-start gap-2.5">
+          <span style={{ color, fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>{icon}</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-medium" style={{ color }}>
+              Arriving here{dest ? ` · ${dest}` : ''}
+            </div>
+            <div style={{ color: 'var(--text-muted)' }} className="text-xs mt-0.5 flex gap-3 flex-wrap">
+              {d.arrive_time && <span>{fmtDayTime(d.arrive_time)}{d.arrive_tz ? ` ${d.arrive_tz}` : ''}</span>}
+              {arrivePlace && <span>{arrivePlace}</span>}
+              {label && <span style={{ color: 'var(--text-faint)' }}>{label}</span>}
+            </div>
+          </div>
+        </div>
+      </button>
+      {showDetail && (
+        <DetailModal
+          item={inbound}
+          onClose={() => setShowDetail(false)}
+          onSave={() => onUpdate?.()}
+        />
+      )}
+    </>
   )
 }
 

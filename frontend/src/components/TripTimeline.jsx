@@ -29,6 +29,24 @@ export default function TripTimeline({ tripId }) {
   const completed = timeline.stops.filter(s => s.status === 'completed').length
   const total = timeline.stops.length
 
+  // Inbound transport: for each stop, the flight/rail (filed on a *different* stop)
+  // whose arrival date matches this stop's arrival date — i.e. how you got here.
+  const datePart = v => (v ? String(v).split('T')[0] : null)
+  const transport = []
+  for (const s of timeline.stops)
+    for (const it of s.items)
+      if ((it.kind === 'flight' || it.kind === 'rail') && it.details?.arrive_time)
+        transport.push({ item: it, stopId: s.id })
+
+  function inboundFor(stop) {
+    const d = datePart(stop.arrive)
+    if (!d) return null
+    const matches = transport.filter(t => t.stopId !== stop.id && datePart(t.item.details.arrive_time) === d)
+    if (!matches.length) return null
+    matches.sort((a, b) => new Date(b.item.details.arrive_time) - new Date(a.item.details.arrive_time))
+    return matches[0].item
+  }
+
   return (
     <RoleContext.Provider value={timeline.role ?? 'owner'}>
       <div>
@@ -48,7 +66,7 @@ export default function TripTimeline({ tripId }) {
 
         <div className="space-y-1.5">
           {timeline.stops.map((stop, i) => (
-            <StopCard key={stop.id} stop={stop} index={i} onUpdate={load} />
+            <StopCard key={stop.id} stop={stop} index={i} onUpdate={load} inbound={inboundFor(stop)} />
           ))}
         </div>
       </div>
