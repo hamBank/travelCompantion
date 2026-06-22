@@ -608,9 +608,9 @@ function TransferCard({ item: initial, onItemSaved }) {
                 )}
                 {(item.cost || d.distance || d.duration || d.provider || d.booking_ref) && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
-                    {item.cost    && <CostDisplay item={item} compact />}
                     {d.distance   && <span>↔ {d.distance}</span>}
                     {d.duration   && <span>⏱ {d.duration}</span>}
+                    {item.cost    && <CostDisplay item={item} compact />}
                     {d.provider   && <span>via {d.provider}</span>}
                     {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                   </div>
