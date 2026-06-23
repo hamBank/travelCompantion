@@ -6,7 +6,7 @@ import { RoleContext, canEdit } from '../roles.js'
 import { useShowInbound } from '../settings.js'
 import { fmtDay } from '../dates.js'
 
-export default function TripTimeline({ tripId }) {
+export default function TripTimeline({ tripId, onStats }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -16,6 +16,16 @@ export default function TripTimeline({ tripId }) {
   const showInbound = useShowInbound()
 
   useEffect(() => { load() }, [tripId])
+
+  // Surface stop counts to the header (shown in the minimal title bar).
+  useEffect(() => {
+    if (timeline?.stops) {
+      onStats?.({
+        total: timeline.stops.length,
+        completed: timeline.stops.filter(s => s.status === 'completed').length,
+      })
+    }
+  }, [timeline, onStats])
 
   async function load() {
     setLoading(true)
@@ -33,9 +43,6 @@ export default function TripTimeline({ tripId }) {
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading timeline…</p>
   if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
   if (!timeline?.stops?.length) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">No stops yet.</p>
-
-  const completed = timeline.stops.filter(s => s.status === 'completed').length
-  const total = timeline.stops.length
 
   // Inbound transport: for each stop, the flight/rail (filed on a *different* stop)
   // whose arrival date matches this stop's arrival date — i.e. how you got here.
@@ -78,20 +85,6 @@ export default function TripTimeline({ tripId }) {
   return (
     <RoleContext.Provider value={timeline.role ?? 'owner'}>
       <div>
-        {total > 0 && (
-          <div className="flex items-center justify-between mb-5">
-            <p style={{ color: 'var(--text-faint)' }} className="text-xs">
-              {total} stops · {completed} completed
-            </p>
-            <div style={{ background: 'var(--border)' }} className="rounded-full h-1.5 w-32 overflow-hidden">
-              <div
-                style={{ background: 'var(--success)', width: `${(completed / total) * 100}%` }}
-                className="h-full rounded-full transition-all"
-              />
-            </div>
-          </div>
-        )}
-
         {editable && warnings.length > 0 && !dismissed && (
           <div
             style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)' }}
