@@ -28,7 +28,7 @@ from ..models import Trip, Stop, ItemKind, TripRole
 router = APIRouter()
 
 _ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-_MODEL = "claude-opus-4-8"
+_MODEL = "claude-sonnet-4-6"
 _MAX_TEXT_CHARS = 60_000  # bound token usage on huge HTML emails
 
 # Detail-key hints per kind, mirroring the keys the edit forms read/write so the
