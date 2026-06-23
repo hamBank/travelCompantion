@@ -134,6 +134,10 @@ def test_date_warnings_flags_out_of_range_item(client: TestClient, trip):
     stop = client.post(f"/trips/{trip['id']}/stops", json={
         "location": "Lyon", "arrive": "2026-08-04T00:00:00", "depart": "2026-08-06T00:00:00", "status": "planned"
     }).json()
+    # A later stop, so Lyon is NOT the final stop (its "after departure" still flags).
+    home = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Home", "arrive": "2026-08-20T00:00:00", "depart": "2026-08-22T00:00:00", "status": "planned"
+    }).json()
     # In range — no warning.
     client.post(f"/stops/{stop['id']}/items", json={
         "kind": "activity", "name": "Good", "status": "pending", "scheduled_at": "2026-08-05T10:00:00"
@@ -142,10 +146,15 @@ def test_date_warnings_flags_out_of_range_item(client: TestClient, trip):
     client.post(f"/stops/{stop['id']}/items", json={
         "kind": "activity", "name": "Typo", "status": "pending", "scheduled_at": "2025-08-05T17:05:00"
     })
-    # Rail uses details.depart_time, after departure.
+    # Rail uses details.depart_time, after Lyon's departure (Lyon isn't last → flagged).
     client.post(f"/stops/{stop['id']}/items", json={
         "kind": "rail", "name": "LateTrain", "status": "pending",
         "details": {"depart_time": "2026-08-09T09:00"}
+    })
+    # Homeward flight departs after the FINAL stop — exempt, no warning.
+    client.post(f"/stops/{home['id']}/items", json={
+        "kind": "flight", "name": "FlightHome", "status": "pending",
+        "details": {"depart_time": "2026-08-25T09:00"}
     })
     warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
     names = {w["name"]: w["reason"] for w in warnings}
