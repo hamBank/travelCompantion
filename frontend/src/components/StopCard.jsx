@@ -376,14 +376,6 @@ function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
                   {[d.train_number, d.operator].filter(Boolean).join(' · ')}
                 </span>
               </div>
-              {(d.depart_time || d.arrive_time) && (
-                <div style={{ color: 'var(--text-muted)' }} className="text-xs">
-                  {[d.depart_time && fmtDateTime(d.depart_time),
-                    d.arrive_time && fmtDateTime(d.arrive_time)]
-                    .filter(Boolean).join(' → ')}
-                  {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
-                </div>
-              )}
               {(d.depart_platform || d.arrive_platform) && (
                 <div style={{ color: 'var(--kind-rail)' }} className="text-xs flex gap-3 opacity-80">
                   {d.depart_platform && <span>Dep Plat. {d.depart_platform}</span>}
@@ -394,6 +386,14 @@ function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3">
                   {d.rail_class && <span>{d.rail_class}</span>}
                   {d.seats && <span>Seats: {d.seats}</span>}
+                </div>
+              )}
+              {(d.depart_time || d.arrive_time) && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs">
+                  {[d.depart_time && fmtDateTime(d.depart_time),
+                    d.arrive_time && fmtDateTime(d.arrive_time)]
+                    .filter(Boolean).join(' → ')}
+                  {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
                 </div>
               )}
             </div>
@@ -476,6 +476,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showMap, setShowMap] = useState(false)
   const d = item.details ?? {}
   const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
+  const timeStr = fmtDayTime(item.scheduled_at)
 
   // Full ordered route (incl. intermediate waypoints) when available, else start/end.
   const routePts = d.route_points?.length >= 2 ? d.route_points : [d.start_location, d.end_location].filter(Boolean)
@@ -515,8 +516,9 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
                 {d.description && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs"><RichText>{d.description}</RichText></div>
                 )}
-                {(d.distance || d.elevation_gain || d.elevation_loss || d.duration) && (
+                {(timeStr || d.distance || d.elevation_gain || d.elevation_loss || d.duration) && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                    {timeStr          && <span style={{ color: 'var(--text-muted)' }}>{timeStr}</span>}
                     {d.distance       && <span>↔ {d.distance}</span>}
                     {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
                     {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
@@ -758,6 +760,7 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
+  const timeStr = fmtDayTime(item.scheduled_at)
 
   return (
     <>
@@ -784,8 +787,9 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
               {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
-              {(d.distance || d.elevation_gain || d.elevation_loss || d.surface_type) && (
+              {(timeStr || d.distance || d.elevation_gain || d.elevation_loss || d.surface_type) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                  {timeStr          && <span style={{ color: 'var(--text-muted)' }}>{timeStr}</span>}
                   {d.distance       && <span>{d.distance}</span>}
                   {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
                   {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
