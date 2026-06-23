@@ -187,6 +187,32 @@ def test_date_warnings_accommodation_span_overlaps_window(client: TestClient, tr
     assert names == {"Wrong Year Hotel": "before stop arrival"}
 
 
+def test_date_warnings_transit_span_overlaps_window(client: TestClient, trip):
+    # Lyon: arrive early 4 Aug, depart 6 Aug. A later stop keeps Lyon off the
+    # "final stop" exemption.
+    lyon = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Lyon", "arrive": "2026-08-04T07:00:00", "depart": "2026-08-06T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Home", "arrive": "2026-08-20T00:00:00", "depart": "2026-08-22T00:00:00", "status": "planned"
+    })
+    # Overnight train INTO Lyon: leaves the previous city the evening of the 3rd,
+    # arrives Lyon the morning of the 4th. Filed on Lyon. Its departure alone is
+    # "before arrival", but the journey arrives within the window — must NOT flag.
+    client.post(f"/stops/{lyon['id']}/items", json={
+        "kind": "rail", "name": "Night Train In", "status": "pending",
+        "details": {"depart_time": "2026-08-03T22:30", "arrive_time": "2026-08-04T06:30"},
+    })
+    # A train whose whole journey is after Lyon's departure is genuinely misfiled.
+    client.post(f"/stops/{lyon['id']}/items", json={
+        "kind": "rail", "name": "Late Train", "status": "pending",
+        "details": {"depart_time": "2026-08-09T09:00", "arrive_time": "2026-08-09T12:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    names = {w["name"]: w["reason"] for w in warnings}
+    assert names == {"Late Train": "after stop departure"}
+
+
 def test_delete_stop(client: TestClient, trip):
     stop = client.post(f"/trips/{trip['id']}/stops", json={
         "location": "Temp", "status": "planned"

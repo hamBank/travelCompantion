@@ -1304,15 +1304,21 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
   const color = KIND_VAR[core.kind] ?? 'var(--text-muted)'
 
   // Warn if the item's date span sits outside the (selected) stop's window.
-  // Most items are a single point; accommodations span check-in → check-out, so a
-  // hotel booked the night before arrival (or checking out on departure day) still
-  // overlaps its stop and isn't flagged.
+  // Most items are a single point; some legitimately straddle a stop boundary:
+  // accommodations span check-in → check-out (a hotel booked the night before arrival
+  // or checking out on departure day still overlaps its stop), and transit spans
+  // departure → arrival (an overnight train arriving in the morning left the previous
+  // city the evening before). A span that overlaps the window at all isn't flagged.
   const stopForCheck = stops.find(s => s.id === targetStop)
+  const isTransit = core.kind === 'flight' || core.kind === 'rail' || core.kind === 'transfer'
   const spanStart =
     (core.kind === 'flight' || core.kind === 'rail') ? details.depart_time
     : core.kind === 'accommodation' ? (details.checkin || core.scheduled_at)
     : core.scheduled_at
-  const spanEnd = core.kind === 'accommodation' ? (details.checkout || spanStart) : spanStart
+  const spanEnd =
+    core.kind === 'accommodation' ? (details.checkout || spanStart)
+    : isTransit ? (details.arrive_time || spanStart)
+    : spanStart
   // Final stop is exempt from "after departure" (the journey home departs after it).
   const lastStopId = stops.reduce((best, s) => {
     const k = s.depart || s.arrive
