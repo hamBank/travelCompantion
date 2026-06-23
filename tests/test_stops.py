@@ -116,6 +116,20 @@ def test_stops_same_arrival_break_on_departure(client: TestClient, trip):
     assert [s["location"] for s in stops] == ["Shorter", "Longer"]
 
 
+def test_stops_same_arrival_date_ignores_arrival_time(client: TestClient, trip):
+    # Same arrival DATE but different arrival times must still break on departure
+    # date, not arrival time (regression: Lyon arr 4 Aug AM / dep 6 Aug should sit
+    # after Geneva arr 4 Aug PM / dep 4 Aug).
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Lyon", "arrive": "2026-08-04T09:00:00", "depart": "2026-08-06T00:00:00", "status": "planned"
+    })
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Geneva", "arrive": "2026-08-04T14:00:00", "depart": "2026-08-04T18:00:00", "status": "planned"
+    })
+    stops = client.get(f"/trips/{trip['id']}/stops").json()
+    assert [s["location"] for s in stops] == ["Geneva", "Lyon"]
+
+
 def test_delete_stop(client: TestClient, trip):
     stop = client.post(f"/trips/{trip['id']}/stops", json={
         "location": "Temp", "status": "planned"

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
-from sqlalchemy import nullslast
+from sqlalchemy import nullslast, func
 from sqlalchemy.orm.attributes import flag_modified
 from typing import List
 import os, io, math, time, re, json, urllib.request, urllib.error, xml.etree.ElementTree as ET, httpx
@@ -81,7 +81,7 @@ def sibling_stops(item_id: int, session: Session = Depends(get_session), user: d
     item = session.get(ItineraryItem, item_id)
     stop = session.get(Stop, item.stop_id)
     return session.exec(
-        select(Stop).where(Stop.trip_id == stop.trip_id).order_by(nullslast(Stop.arrive), nullslast(Stop.depart), Stop.sort_order)
+        select(Stop).where(Stop.trip_id == stop.trip_id).order_by(nullslast(func.date(Stop.arrive)), nullslast(func.date(Stop.depart)), Stop.sort_order)
     ).all()
 
 

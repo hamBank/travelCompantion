@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
-from sqlalchemy import nullslast
+from sqlalchemy import nullslast, func
 from typing import List
 from ..database import get_session
 from ..auth import get_current_user
@@ -150,7 +150,7 @@ def trip_timeline(trip_id: int, session: Session = Depends(get_session), user: d
         .where(Stop.trip_id == trip_id)
         # Chronological by arrival, then earliest departure; undated stops fall to
         # the end, sort_order breaks remaining ties.
-        .order_by(nullslast(Stop.arrive), nullslast(Stop.depart), Stop.sort_order)
+        .order_by(nullslast(func.date(Stop.arrive)), nullslast(func.date(Stop.depart)), Stop.sort_order)
     ).all()
 
     stops_with_items = []

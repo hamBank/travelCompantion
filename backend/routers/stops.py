@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
-from sqlalchemy import nullslast
+from sqlalchemy import nullslast, func
 from typing import List
 from ..database import get_session
 from sqlmodel import SQLModel as _SQLModel
@@ -15,7 +15,7 @@ router = APIRouter()
 def list_stops(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     require_trip_role(session, user, trip_id, TripRole.viewer)
     return session.exec(
-        select(Stop).where(Stop.trip_id == trip_id).order_by(nullslast(Stop.arrive), nullslast(Stop.depart), Stop.sort_order)
+        select(Stop).where(Stop.trip_id == trip_id).order_by(nullslast(func.date(Stop.arrive)), nullslast(func.date(Stop.depart)), Stop.sort_order)
     ).all()
 
 
