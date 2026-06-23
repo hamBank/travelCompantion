@@ -5,6 +5,42 @@ import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 import { fmtDay } from '../dates.js'
 import RailLookupModal from './RailLookupModal.jsx'
 
+// Parse a timezone field like "GMT+8", "UTC+5:30", "+08:00" → offset in minutes.
+// Returns null if it can't be parsed (so we know whether TZ info is available).
+function parseTzOffsetMin(tz) {
+  if (!tz) return null
+  const s = String(tz).trim().toUpperCase().replace(/\s+/g, '')
+  const m = s.match(/^(?:GMT|UTC)?([+-])(\d{1,2})(?::?(\d{2}))?$/)
+  if (!m) return null
+  const sign = m[1] === '-' ? -1 : 1
+  return sign * (parseInt(m[2], 10) * 60 + (m[3] ? parseInt(m[3], 10) : 0))
+}
+
+// "YYYY-MM-DDTHH:MM" → minutes since epoch, parsed as wall-clock (no local TZ shift).
+function localToMin(s) {
+  const m = String(s ?? '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  if (!m) return null
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) / 60000
+}
+
+function fmtDurationMin(mins) {
+  if (mins == null || mins <= 0) return null
+  const h = Math.floor(mins / 60), m = mins % 60
+  return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`
+}
+
+// Minutes between two local datetimes. If both TZ offsets are given the times are
+// normalised to UTC first; otherwise the difference is taken as-is (wall-clock).
+function durationBetween(departLocal, arriveLocal, departTz, arriveTz) {
+  const dep = localToMin(departLocal), arr = localToMin(arriveLocal)
+  if (dep == null || arr == null) return null
+  const depOff = parseTzOffsetMin(departTz), arrOff = parseTzOffsetMin(arriveTz)
+  const diff = (depOff != null && arrOff != null)
+    ? (arr - arrOff) - (dep - depOff)
+    : arr - dep
+  return diff > 0 ? diff : null
+}
+
 // Calculate real road/path distance + duration via Google Routes API.
 function DistanceButton({ points, mode, onResult, color = 'var(--accent)' }) {
   const [busy, setBusy] = useState(false)
@@ -1131,6 +1167,24 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
     setSaving(true); setSavingMsg(''); setError(null)
     try {
       let finalDetails = { ...details }
+
+      // Auto-fill duration from depart/arrive times when the user left it blank.
+      // Rail: same-region surface travel — naive wall-clock difference. Flight:
+      // only when both timezone fields are set, since a naive diff across zones is
+      // wrong and there's no easy in-app TZ lookup.
+      if (!finalDetails.duration && finalDetails.depart_time && finalDetails.arrive_time) {
+        if (core.kind === 'rail') {
+          const dur = fmtDurationMin(durationBetween(finalDetails.depart_time, finalDetails.arrive_time))
+          if (dur) finalDetails.duration = dur
+        } else if (core.kind === 'flight'
+          && parseTzOffsetMin(finalDetails.depart_tz) != null
+          && parseTzOffsetMin(finalDetails.arrive_tz) != null) {
+          const dur = fmtDurationMin(durationBetween(
+            finalDetails.depart_time, finalDetails.arrive_time,
+            finalDetails.depart_tz, finalDetails.arrive_tz))
+          if (dur) finalDetails.duration = dur
+        }
+      }
 
       const homeCurrency = getHomeCurrency()
       const costChanged = core.cost !== (item.cost ?? '')
