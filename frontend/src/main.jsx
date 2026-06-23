@@ -4,17 +4,33 @@ import App from './App.jsx'
 import './index.css'
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {})
-  // Auto-reload once when an updated service worker takes control, so new deploys
-  // appear without a manual hard-refresh (which isn't even possible in an iOS PWA).
+  let reloading = false
+  // Reload when an updated worker takes control — but not while the user is typing
+  // in a field (would lose unsaved input); retry shortly until they're idle.
+  const reload = () => {
+    if (reloading) return
+    const el = document.activeElement
+    if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) {
+      setTimeout(reload, 5000)
+      return
+    }
+    reloading = true
+    window.location.reload()
+  }
+
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    // Poll for a new deploy so an already-open app updates itself without a re-open.
+    const check = () => reg.update().catch(() => {})
+    setInterval(check, 60 * 1000)
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') check()
+    })
+  }).catch(() => {})
+
   // Guarded by an existing controller so a first install doesn't trigger a reload.
   if (navigator.serviceWorker.controller) {
-    let reloading = false
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloading) return
-      reloading = true
-      window.location.reload()
-    })
+    navigator.serviceWorker.addEventListener('controllerchange', reload)
   }
 }
 
