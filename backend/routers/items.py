@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
-from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, Stop, TripRole
+from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, Stop, StopRead, TripRole
 
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _GPX_DIR  = os.path.join(_APP_ROOT, 'uploads', 'gpx')
@@ -72,6 +72,38 @@ def delete_item(item_id: int, session: Session = Depends(get_session), user: dic
             session.add(stop)
     session.delete(item)
     session.commit()
+
+
+@router.get("/items/{item_id}/sibling-stops", response_model=List[StopRead])
+def sibling_stops(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Stops in the same trip as this item — for the 'move to stop' picker."""
+    require_item_role(session, user, item_id, TripRole.viewer)
+    item = session.get(ItineraryItem, item_id)
+    stop = session.get(Stop, item.stop_id)
+    return session.exec(
+        select(Stop).where(Stop.trip_id == stop.trip_id).order_by(Stop.sort_order, Stop.arrive)
+    ).all()
+
+
+class MoveItemRequest(BaseModel):
+    stop_id: int
+
+
+@router.post("/items/{item_id}/move", response_model=ItemRead)
+def move_item(item_id: int, req: MoveItemRequest, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Move an item to another stop in the same trip. Requires editor on both ends."""
+    require_item_role(session, user, item_id, TripRole.editor)
+    require_stop_role(session, user, req.stop_id, TripRole.editor)
+    item = session.get(ItineraryItem, item_id)
+    src = session.get(Stop, item.stop_id)
+    dst = session.get(Stop, req.stop_id)
+    if not dst or dst.trip_id != src.trip_id:
+        raise HTTPException(status_code=400, detail="Target stop must be in the same trip")
+    item.stop_id = req.stop_id
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
 
 
 _PLACES_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
