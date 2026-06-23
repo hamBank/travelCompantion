@@ -557,15 +557,12 @@ def _route_elevation_gain_loss(coords):
         return None, None
 
 
-@router.post("/route-distance")
-def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_user)):
-    """Real road/path-following distance + duration via the Google Routes API.
-
-    Requires GOOGLE_PLACES_API_KEY with the Routes API enabled in the same project.
-    """
+def _fetch_route(points, mode):
+    """Call the Google Routes API and return the first route dict (distanceMeters,
+    duration, polyline.encodedPolyline). Raises HTTPException on any failure."""
     if not _ROUTES_KEY:
         raise HTTPException(status_code=503, detail="Routes API key not configured (set GOOGLE_ROUTE_API_KEY or GOOGLE_PLACES_API_KEY)")
-    pts = [p.strip() for p in (req.points or []) if p and p.strip()]
+    pts = [p.strip() for p in (points or []) if p and p.strip()]
     if len(pts) < 2:
         raise HTTPException(status_code=400, detail="Need at least a start and end point")
 
@@ -578,7 +575,7 @@ def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_u
     body = {
         "origin": waypoint(pts[0]),
         "destination": waypoint(pts[-1]),
-        "travelMode": _TRAVEL_MODE.get(req.mode.lower(), "DRIVE"),
+        "travelMode": _TRAVEL_MODE.get(mode.lower(), "DRIVE"),
     }
     if len(pts) > 2:
         body["intermediates"] = [waypoint(p) for p in pts[1:-1]]
@@ -601,12 +598,22 @@ def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_u
     routes = data.get("routes") or []
     if not routes:
         raise HTTPException(status_code=404, detail="No route found for those points")
-    dist_m = routes[0].get("distanceMeters")
-    dur_raw = routes[0].get("duration", "")
+    return routes[0]
+
+
+@router.post("/route-distance")
+def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_user)):
+    """Real road/path-following distance + duration via the Google Routes API.
+
+    Requires GOOGLE_PLACES_API_KEY with the Routes API enabled in the same project.
+    """
+    route = _fetch_route(req.points, req.mode)
+    dist_m = route.get("distanceMeters")
+    dur_raw = route.get("duration", "")
     secs = int(dur_raw[:-1]) if dur_raw.endswith("s") and dur_raw[:-1].isdigit() else None
 
     gain_m = loss_m = None
-    encoded = (routes[0].get("polyline") or {}).get("encodedPolyline")
+    encoded = (route.get("polyline") or {}).get("encodedPolyline")
     if encoded:
         try:
             gain_m, loss_m = _route_elevation_gain_loss(_decode_polyline(encoded))
@@ -824,6 +831,60 @@ async def upload_gpx(item_id: int, file: UploadFile = File(...), session: Sessio
     for key in ('distance', 'elevation_gain', 'elevation_loss'):
         if stats.get(key) and not details.get(key):
             details[key] = stats[key]
+    details['gpx_distance_m'] = stats.get('gpx_distance_m')
+    details['gpx_gain_m']     = stats.get('gpx_gain_m')
+    details['gpx_loss_m']     = stats.get('gpx_loss_m')
+    item.details = details
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+class RouteGpxRequest(BaseModel):
+    points: List[str]
+    mode: str = "cycling"
+
+
+def _coords_to_gpx(name, coords):
+    """Build a minimal GPX 1.1 track from decoded (lat, lng) route points."""
+    safe = (name or "Route").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    trkpts = "".join(f'<trkpt lat="{lat}" lon="{lng}"></trkpt>' for lat, lng in coords)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<gpx version="1.1" creator="TravelCompanion" xmlns="http://www.topografix.com/GPX/1/1">'
+        f'<trk><name>{safe}</name><trkseg>{trkpts}</trkseg></trk></gpx>'
+    ).encode()
+
+
+@router.post("/items/{item_id}/route-gpx", response_model=ItemRead)
+def route_to_gpx(item_id: int, req: RouteGpxRequest, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Generate and store a GPX track for an item from the Google Routes geometry —
+    the same route used for the distance calculation. Adds elevation and stats just
+    like an uploaded GPX, overwriting distance/elevation with the route's values."""
+    require_item_role(session, user, item_id, TripRole.editor)
+    item = session.get(ItineraryItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    route = _fetch_route(req.points, req.mode)
+    encoded = (route.get("polyline") or {}).get("encodedPolyline")
+    coords = _decode_polyline(encoded) if encoded else []
+    if len(coords) < 2:
+        raise HTTPException(status_code=422, detail="Route had no usable geometry to convert")
+
+    content = _add_elevation_to_gpx(_coords_to_gpx(item.name, coords))
+    os.makedirs(_GPX_DIR, exist_ok=True)
+    with open(os.path.join(_GPX_DIR, f"{item_id}.gpx"), 'wb') as f:
+        f.write(content)
+
+    details = dict(item.details or {})
+    details['gpx_filename'] = f"{item_id}.gpx"
+    details['original_gpx_name'] = f"{item.name or 'route'}.gpx"
+    stats = _extract_gpx_stats(content)
+    for key in ('distance', 'elevation_gain', 'elevation_loss'):
+        if stats.get(key):
+            details[key] = stats[key]  # generated from the route — overwrite
     details['gpx_distance_m'] = stats.get('gpx_distance_m')
     details['gpx_gain_m']     = stats.get('gpx_gain_m')
     details['gpx_loss_m']     = stats.get('gpx_loss_m')
