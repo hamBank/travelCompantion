@@ -474,6 +474,58 @@ function ActivityForm({ itemId, core, details, setCore, setDetails }) {
   )
 }
 
+function ShowForm({ itemId, core, details, setCore, setDetails }) {
+  const [enriching, setEnriching] = useState(false)
+  const [enrichMsg, setEnrichMsg] = useState(null)
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+
+  async function autoFill() {
+    if (enriching) return
+    setEnriching(true); setEnrichMsg(null)
+    try {
+      const suggestions = await enrichItem(itemId)
+      let filled = 0
+      if (suggestions.location && !details.location) { setD('location', suggestions.location); filled++ }
+      if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
+      if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
+      if (suggestions.description && !details.description) { setD('description', suggestions.description); filled++ }
+      setEnrichMsg(filled
+        ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
+        : { text: 'Nothing to add', color: 'var(--text-faint)' })
+    } catch (e) {
+      setEnrichMsg({ text: e.message, color: 'var(--error)' })
+    } finally {
+      setEnriching(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Show / performance name" />
+        </div>
+        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Start time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
+        <Field label="Doors / duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="Doors 19:00 · 2h" />
+      </div>
+      <Field label="Venue" value={d('location')} onChange={v => setD('location', v)} placeholder="Théâtre du Châtelet, Paris" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Ticket numbers" value={d('tickets')} onChange={v => setD('tickets', v)} placeholder="TKT-001, TKT-002" />
+        <Field label="Seats" value={d('seats')} onChange={v => setD('seats', v)} placeholder="Stalls F12–F13" />
+      </div>
+      <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="ABC123" />
+      <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="What's on, performers…" rows={3} />
+      <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+33 1 23 45 67 89" />
+      <Field label="Website / tickets URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+      <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Notes…" />
+    </div>
+  )
+}
+
 function GenericForm({ core, details, setCore, setDetails }) {
   const important = !!details?.important
   return (
@@ -1378,6 +1430,8 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
             <AccommodationForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'restaurant' ? (
             <RestaurantForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'show' ? (
+            <ShowForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'activity' ? (
             <ActivityForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'walk' ? (

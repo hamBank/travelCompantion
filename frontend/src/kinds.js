@@ -11,6 +11,7 @@ export const KIND_VAR = {
   note:          'var(--kind-note)',
   accommodation: 'var(--kind-accommodation)',
   flight:        'var(--kind-flight)',
+  show:          'var(--kind-show)',
 }
 
 export const KIND_LABEL = {
@@ -26,6 +27,7 @@ export const KIND_LABEL = {
   note:          'Note',
   accommodation: 'Accommodation',
   flight:        'Flight',
+  show:          'Show',
 }
 
 // Kind keys ordered alphabetically by their display label (for selection dropdowns).

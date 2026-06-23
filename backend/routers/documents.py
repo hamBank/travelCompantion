@@ -45,6 +45,7 @@ _DETAIL_HINTS = {
     "transfer": "start_location, end_location, depart_time, arrive_time, duration, distance, provider, booking_ref",
     "tour": "meeting_point, reservation_time, duration, description, contact_phone, booking_ref",
     "activity": "location, description, duration, contact_phone, contact_email",
+    "show": "location (venue), tickets (ticket numbers), seats, duration, booking_ref, description, contact_phone",
     "restaurant": "location, reservation_time, description, contact_phone, contact_email",
     "food": "description",
     "purchase": "location, description",
