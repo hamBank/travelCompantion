@@ -50,6 +50,7 @@ export default function StopCard({ stop, index, onUpdate, inbound }) {
     .sort((a, b) => sortKey(a) - sortKey(b))
   const foodItems = visibleItems.filter(i => i.kind === 'food')
   const purchaseItems = visibleItems.filter(i => i.kind === 'purchase')
+  const checkoutAccom = items.find(i => i.kind === 'accommodation' && i.details?.checkout)
 
   const flag = countryFlag(stop.country)
 
@@ -131,6 +132,22 @@ export default function StopCard({ stop, index, onUpdate, inbound }) {
 
           {timeline.length === 0 && foodItems.length === 0 && purchaseItems.length === 0 && (
             <p style={{ color: 'var(--text-faint)' }} className="text-xs">No details recorded.</p>
+          )}
+
+          {checkoutAccom && (
+            <div
+              style={{
+                background: 'color-mix(in srgb, var(--kind-accommodation) 8%, var(--surface-2))',
+                border: '1px dashed color-mix(in srgb, var(--kind-accommodation) 40%, transparent)',
+                borderRadius: '0.5rem',
+              }}
+              className="px-3 py-2 flex items-center gap-2 text-xs"
+            >
+              <span style={{ color: 'var(--kind-accommodation)' }}>🛏</span>
+              <span style={{ color: 'var(--kind-accommodation)' }} className="font-medium">Check out</span>
+              <span style={{ color: 'var(--text)' }} className="truncate">{checkoutAccom.name}</span>
+              <span style={{ color: 'var(--text-faint)' }} className="ml-auto shrink-0">{fmtDayTime(checkoutAccom.details.checkout)}</span>
+            </div>
           )}
         </div>
       )}
