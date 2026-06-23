@@ -129,6 +129,14 @@ def remove_member(trip_id: int, email: str, session: Session = Depends(get_sessi
     session.commit()
 
 
+@router.get("/{trip_id}/date-warnings")
+def trip_date_warnings(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Items whose date falls outside their stop's arrive→depart window."""
+    require_trip_role(session, user, trip_id, TripRole.viewer)
+    from ..validation import date_warnings
+    return {"warnings": date_warnings(session, trip_id)}
+
+
 # ── Timeline ──────────────────────────────────────────────────────────────────
 
 class StopWithItems(StopRead):

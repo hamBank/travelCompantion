@@ -1256,6 +1256,22 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
 
   const color = KIND_VAR[core.kind] ?? 'var(--text-muted)'
 
+  // Warn if the item's primary date sits outside the (selected) stop's window.
+  const stopForCheck = stops.find(s => s.id === targetStop)
+  const primaryDate =
+    (core.kind === 'flight' || core.kind === 'rail') ? details.depart_time
+    : core.kind === 'accommodation' ? (details.checkin || core.scheduled_at)
+    : core.scheduled_at
+  const dateWarning = (() => {
+    if (!stopForCheck || !primaryDate) return null
+    const day = String(primaryDate).slice(0, 10)
+    const a = stopForCheck.arrive ? String(stopForCheck.arrive).slice(0, 10) : null
+    const d = stopForCheck.depart ? String(stopForCheck.depart).slice(0, 10) : null
+    if (a && day < a) return `Date is before this stop begins (${fmtDay(stopForCheck.arrive)})`
+    if (d && day > d) return `Date is after this stop ends (${fmtDay(stopForCheck.depart)})`
+    return null
+  })()
+
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-50 p-4"
@@ -1295,6 +1311,15 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
+          {dateWarning && (
+            <div
+              style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)', color: 'var(--text)' }}
+              className="mb-4 rounded-lg px-3 py-2 text-xs flex items-center gap-2"
+            >
+              <span style={{ color: 'var(--warning)' }}>⚠</span>
+              <span>{dateWarning}</span>
+            </div>
+          )}
           {core.kind === 'accommodation' ? (
             <AccommodationForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'restaurant' ? (

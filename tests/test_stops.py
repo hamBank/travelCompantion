@@ -130,6 +130,28 @@ def test_stops_same_arrival_date_ignores_arrival_time(client: TestClient, trip):
     assert [s["location"] for s in stops] == ["Geneva", "Lyon"]
 
 
+def test_date_warnings_flags_out_of_range_item(client: TestClient, trip):
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Lyon", "arrive": "2026-08-04T00:00:00", "depart": "2026-08-06T00:00:00", "status": "planned"
+    }).json()
+    # In range — no warning.
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "activity", "name": "Good", "status": "pending", "scheduled_at": "2026-08-05T10:00:00"
+    })
+    # Year typo — a year early, outside the window.
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "activity", "name": "Typo", "status": "pending", "scheduled_at": "2025-08-05T17:05:00"
+    })
+    # Rail uses details.depart_time, after departure.
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "rail", "name": "LateTrain", "status": "pending",
+        "details": {"depart_time": "2026-08-09T09:00"}
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    names = {w["name"]: w["reason"] for w in warnings}
+    assert names == {"Typo": "before stop arrival", "LateTrain": "after stop departure"}
+
+
 def test_delete_stop(client: TestClient, trip):
     stop = client.post(f"/trips/{trip['id']}/stops", json={
         "location": "Temp", "status": "planned"
