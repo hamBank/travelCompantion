@@ -43,11 +43,16 @@ export default function StopCard({ stop, index, onUpdate, inbound }) {
     else                                                dt = item.scheduled_at
     return dt ? new Date(dt).getTime() : Infinity
   }
-  // Accommodation now flows chronologically with everything else (by check-in /
-  // arrival) instead of being pinned to the top. Food & purchases stay grouped.
+  // Important notes are pinned to the very top of the stop; everything else flows
+  // chronologically (by check-in / arrival). Food & purchases stay grouped.
+  const isImportant = i => i.kind === 'note' && i.details?.important
   const timeline = visibleItems
     .filter(i => i.kind !== 'food' && i.kind !== 'purchase')
-    .sort((a, b) => sortKey(a) - sortKey(b))
+    .sort((a, b) => {
+      const ia = isImportant(a) ? 0 : 1, ib = isImportant(b) ? 0 : 1
+      if (ia !== ib) return ia - ib
+      return sortKey(a) - sortKey(b)
+    })
   const foodItems = visibleItems.filter(i => i.kind === 'food')
   const purchaseItems = visibleItems.filter(i => i.kind === 'purchase')
   const checkoutAccom = items.find(i => i.kind === 'accommodation' && i.details?.checkout)
@@ -986,36 +991,59 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showEdit, setShowEdit] = useState(false)
 
   const timeStr = fmtDayTime(item.scheduled_at)
+  const important = !!item.details?.important
+  const extraNote = item.notes && item.notes.trim() !== item.name?.trim() ? item.notes.trim() : ''
 
   return (
     <>
       <div className="relative group">
-        <button
-          onClick={() => setShowDetail(true)}
-          className="w-full text-left hover:opacity-80 transition-opacity"
-          style={{
-            background: 'color-mix(in srgb, var(--kind-note) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-note) 35%, transparent)',
-            borderRadius: '0.5rem',
-            padding: '0.75rem',
-          }}
-        >
-          <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="📝" color="var(--kind-note)" setItem={setItem} onItemSaved={onItemSaved} />
-            <div className="flex-1 min-w-0 space-y-1">
-              <div className="font-medium text-sm">{item.name}</div>
-              {item.notes && item.notes.trim() !== item.name?.trim() && (
-                <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }} className="text-xs">{item.notes}</div>
-              )}
-              {(timeStr || (item.cost && !isFullyPaid(item))) && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
-                  {timeStr && <span>{timeStr}</span>}
-                  {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
-                </div>
-              )}
+        {important ? (
+          <button
+            onClick={() => setShowDetail(true)}
+            className="w-full text-left hover:opacity-80 transition-opacity"
+            style={{
+              background: 'color-mix(in srgb, var(--warning) 14%, var(--surface-2))',
+              border: '1px solid color-mix(in srgb, var(--warning) 55%, transparent)',
+              borderRadius: '0.5rem',
+              padding: '0.6rem 0.75rem',
+            }}
+          >
+            <div className="flex items-center gap-2.5">
+              <CardIcon item={item} icon="📌" color="var(--warning)" setItem={setItem} onItemSaved={onItemSaved} />
+              <div className="flex-1 min-w-0 text-sm">
+                <span style={{ color: 'var(--text)' }} className="font-semibold">{item.name}</span>
+                {extraNote && <span style={{ color: 'var(--text-muted)' }}>: {extraNote}</span>}
+              </div>
             </div>
-          </div>
-        </button>
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowDetail(true)}
+            className="w-full text-left hover:opacity-80 transition-opacity"
+            style={{
+              background: 'color-mix(in srgb, var(--kind-note) 6%, var(--surface-2))',
+              border: '1px solid color-mix(in srgb, var(--kind-note) 35%, transparent)',
+              borderRadius: '0.5rem',
+              padding: '0.75rem',
+            }}
+          >
+            <div className="flex items-start gap-2.5">
+              <CardIcon item={item} icon="📝" color="var(--kind-note)" setItem={setItem} onItemSaved={onItemSaved} />
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="font-medium text-sm">{item.name}</div>
+                {extraNote && (
+                  <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }} className="text-xs">{extraNote}</div>
+                )}
+                {(timeStr || (item.cost && !isFullyPaid(item))) && (
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
+                    {timeStr && <span>{timeStr}</span>}
+                    {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
+                  </div>
+                )}
+              </div>
+            </div>
+          </button>
+        )}
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
       {showDetail && (

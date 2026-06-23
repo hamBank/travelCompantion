@@ -463,13 +463,26 @@ function ActivityForm({ itemId, core, details, setCore, setDetails }) {
   )
 }
 
-function GenericForm({ core, setCore }) {
+function GenericForm({ core, details, setCore, setDetails }) {
+  const important = !!details?.important
   return (
     <div className="space-y-3">
       <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Note title" />
       <Field label="Date & time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
       <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Notes…" rows={3} />
       <Field label="Link" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+      <button
+        type="button"
+        onClick={() => setDetails(d => ({ ...d, important: important ? undefined : true }))}
+        style={{
+          color: important ? 'var(--warning)' : 'var(--text-faint)',
+          border: `1px solid ${important ? 'var(--warning)' : 'var(--border)'}`,
+          background: important ? 'color-mix(in srgb, var(--warning) 12%, transparent)' : 'transparent',
+        }}
+        className="w-full px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-colors"
+      >
+        {important ? '📌 Important — pinned to top' : 'Flag as important (pin to top)'}
+      </button>
     </div>
   )
 }
@@ -1350,7 +1363,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
           ) : core.kind === 'food' ? (
             <FoodForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : (
-            <GenericForm core={core} setCore={setCore} />
+            <GenericForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           )}
           <div style={{ borderTop: '1px solid var(--border)' }} className="mt-4 pt-4">
             <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Payment</p>
