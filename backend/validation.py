@@ -52,11 +52,17 @@ def _item_span(item: ItineraryItem):
 
     `end` is None when an accommodation has no check-out: a lone check-in is an
     open-ended stay through the stop, not a zero-night one, so it must not be read
-    as ending before arrival."""
+    as ending before arrival. A check-out earlier than the check-in is contradictory
+    data (you cannot check out before you check in — usually a wrong stop departure
+    date, from which check-out is derived) and is likewise treated as open-ended, so
+    it never makes a stay look like it ended before the stop began."""
     start = _item_primary_dt(item)
     d = item.details or {}
     if item.kind == "accommodation":
-        return start, _to_dt(d.get("checkout"))
+        checkout = _to_dt(d.get("checkout"))
+        if checkout and start and checkout < start:
+            checkout = None
+        return start, checkout
     if item.kind in ("flight", "rail", "transfer"):
         return start, _to_dt(d.get("arrive_time")) or start
     return start, start
