@@ -75,7 +75,7 @@ function AppShell({ user, onLogout }) {
             >
               ←
             </button>
-            <h1 style={{ color: 'var(--accent)' }} className="font-semibold text-sm truncate shrink min-w-0">
+            <h1 style={{ color: 'var(--accent)' }} className="font-semibold text-xs truncate shrink min-w-0">
               {selectedTrip.name}
             </h1>
             {!editing && stats && (

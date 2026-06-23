@@ -110,18 +110,6 @@ export default function TripTimeline({ tripId, onStats }) {
           </div>
         )}
 
-        {editable && (
-          <div className="mb-4">
-            <button
-              onClick={() => setImporting(true)}
-              style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
-              className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80 transition-opacity"
-            >
-              ⇪ Import from document
-            </button>
-          </div>
-        )}
-
         {importing && (
           <DocumentImportModal
             tripId={tripId}
@@ -136,6 +124,18 @@ export default function TripTimeline({ tripId, onStats }) {
               inbound={inboundByStop[stop.id]} />
           ))}
         </div>
+
+        {editable && (
+          <div className="mt-4">
+            <button
+              onClick={() => setImporting(true)}
+              style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80 transition-opacity"
+            >
+              ⇪ Import from document
+            </button>
+          </div>
+        )}
       </div>
     </RoleContext.Provider>
   )
