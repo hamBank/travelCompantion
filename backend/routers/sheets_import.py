@@ -22,8 +22,8 @@ class SheetsImportResult(TripRead):
 def import_from_sheets(req: SheetsImportRequest, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     try:
         sheets_raw = fetch_sheets()
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Sheets fetch failed: {e}")
 
     trip = import_sheets(session, req.trip_name, sheets_raw)
 
@@ -48,8 +48,8 @@ def import_flights_only(trip_id: int, session: Session = Depends(get_session), u
     require_trip_role(session, user, trip_id, TripRole.editor)
     try:
         sheets_raw = fetch_sheets()
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Sheets fetch failed: {e}")
 
     try:
         count = import_flights(session, trip_id, sheets_raw)
@@ -68,8 +68,8 @@ def update_stop_dates_from_sheets(trip_id: int, session: Session = Depends(get_s
     require_trip_role(session, user, trip_id, TripRole.editor)
     try:
         sheets_raw = fetch_sheets()
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Sheets fetch failed: {e}")
 
     try:
         result = update_stop_dates(session, trip_id, sheets_raw)
@@ -88,8 +88,8 @@ def preview_flight_assignments(trip_id: int, session: Session = Depends(get_sess
     require_trip_role(session, user, trip_id, TripRole.viewer)
     try:
         sheets_raw = fetch_sheets()
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Sheets fetch failed: {e}")
 
     stops = list(session.exec(select(Stop).where(Stop.trip_id == trip_id)).all())
     if not stops:
@@ -123,8 +123,8 @@ def preview_sheets():
     """
     try:
         sheets_raw = fetch_sheets()
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Sheets fetch failed: {e}")
 
     import csv, io
     result = {}
