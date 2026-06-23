@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance } from '../api.js'
+import { useState, useEffect } from 'react'
+import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, getItemStops, moveItem } from '../api.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
+import { fmtDay } from '../dates.js'
 import RailLookupModal from './RailLookupModal.jsx'
 
 // Calculate real road/path distance + duration via Google Routes API.
@@ -1106,6 +1107,12 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
   const [error, setError] = useState(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [stops, setStops] = useState([])
+  const [targetStop, setTargetStop] = useState(item.stop_id)
+
+  useEffect(() => {
+    getItemStops(item.id).then(setStops).catch(() => {})
+  }, [item.id])
 
   async function handleDelete() {
     if (deleting) return
@@ -1163,7 +1170,11 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
         }
       }
 
-      const updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
+      let updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
+      if (targetStop && targetStop !== item.stop_id) {
+        setSavingMsg('Moving…')
+        updated = await moveItem(item.id, targetStop)
+      }
       onSave(updated)
     } catch (e) {
       setError(e.message)
@@ -1253,6 +1264,26 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
               />
             </div>
           </div>
+          {stops.length > 1 && (
+            <div style={{ borderTop: '1px solid var(--border)' }} className="mt-4 pt-4">
+              <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Move to stop</p>
+              <select
+                value={targetStop ?? ''}
+                onChange={e => setTargetStop(Number(e.target.value))}
+                style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+              >
+                {stops.map(s => (
+                  <option key={s.id} value={s.id} style={{ background: 'var(--modal-bg)', color: 'var(--text)' }}>
+                    {s.location}{s.arrive ? ` · ${fmtDay(s.arrive)}` : ''}{s.id === item.stop_id ? ' (current)' : ''}
+                  </option>
+                ))}
+              </select>
+              {targetStop !== item.stop_id && (
+                <p style={{ color: 'var(--text-faint)' }} className="text-xs mt-1">Saved on Save.</p>
+              )}
+            </div>
+          )}
           {error && <p style={{ color: 'var(--error)' }} className="text-xs mt-3">{error}</p>}
         </div>
 
