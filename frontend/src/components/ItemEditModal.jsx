@@ -82,13 +82,23 @@ function routePointsOf(details) {
   return [details.start_location, details.end_location].filter(Boolean)
 }
 
+// A datetime-local input only renders YYYY-MM-DDTHH:MM. Stored values can be
+// date-only ("2026-08-16", e.g. from import) or have seconds / a space separator,
+// which the input silently drops — making the field look empty. Coerce them.
+function toLocalInput(v) {
+  if (!v) return ''
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/)
+  return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4] ?? '00'}:${m[5] ?? '00'}` : ''
+}
+
 function Field({ label, value, onChange, placeholder, type = 'text' }) {
+  const displayValue = type === 'datetime-local' ? toLocalInput(value) : (value ?? '')
   return (
     <div className="flex flex-col gap-0.5">
       <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">{label}</label>
       <input
         type={type}
-        value={value ?? ''}
+        value={displayValue}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}

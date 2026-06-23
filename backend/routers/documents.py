@@ -41,11 +41,11 @@ _DETAIL_HINTS = {
               "origin_terminal, arrive_terminal, origin_gate, arrive_gate, checkin_desk, depart_tz, "
               "arrive_tz, duration, seats, layover, connects_to, aircraft, fare_class, baggage, meal, "
               "passengers, loyalty_info, booking_ref, booking_airline, booking_phone",
-    "accommodation": "location, checkin, checkout, booking_ref",
-    "transfer": "start_location, end_location, depart_time, arrive_time, duration, distance",
-    "tour": "meeting_point, reservation_time, duration, description",
-    "activity": "location, description, duration, contact_phone",
-    "restaurant": "location, reservation_time, description, contact_phone",
+    "accommodation": "location, checkin, checkout, booking_ref, contact_phone, contact_email, description",
+    "transfer": "start_location, end_location, depart_time, arrive_time, duration, distance, provider, booking_ref",
+    "tour": "meeting_point, reservation_time, duration, description, contact_phone, booking_ref",
+    "activity": "location, description, duration, contact_phone, contact_email",
+    "restaurant": "location, reservation_time, description, contact_phone, contact_email",
     "food": "description",
     "purchase": "location, description",
     "note": "description",
