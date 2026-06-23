@@ -1355,12 +1355,24 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
 
   const color = KIND_VAR[core.kind] ?? 'var(--text-muted)'
 
-  // Warn if the item's primary date sits outside the (selected) stop's window.
+  // Warn if the item's date span sits outside the (selected) stop's window.
+  // Most items are a single point; some legitimately straddle a stop boundary:
+  // accommodations span check-in → check-out (a hotel booked the night before arrival
+  // or checking out on departure day still overlaps its stop), and transit spans
+  // departure → arrival (an overnight train arriving in the morning left the previous
+  // city the evening before). A span that overlaps the window at all isn't flagged.
+  // An accommodation with no check-out is open-ended (a lone check-in is an ongoing
+  // stay, not zero nights), so it is never flagged as ending before arrival.
   const stopForCheck = stops.find(s => s.id === targetStop)
-  const primaryDate =
+  const isTransit = core.kind === 'flight' || core.kind === 'rail' || core.kind === 'transfer'
+  const spanStart =
     (core.kind === 'flight' || core.kind === 'rail') ? details.depart_time
     : core.kind === 'accommodation' ? (details.checkin || core.scheduled_at)
     : core.scheduled_at
+  const spanEnd =
+    core.kind === 'accommodation' ? (details.checkout || null)
+    : isTransit ? (details.arrive_time || spanStart)
+    : spanStart
   // Final stop is exempt from "after departure" (the journey home departs after it).
   const lastStopId = stops.reduce((best, s) => {
     const k = s.depart || s.arrive
@@ -1369,12 +1381,13 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
     return (!bk || String(k) > String(bk)) ? s : best
   }, null)?.id
   const dateWarning = (() => {
-    if (!stopForCheck || !primaryDate) return null
-    const day = String(primaryDate).slice(0, 10)
+    if (!stopForCheck || !spanStart) return null
+    const startDay = String(spanStart).slice(0, 10)
+    const endDay = spanEnd ? String(spanEnd).slice(0, 10) : null
     const a = stopForCheck.arrive ? String(stopForCheck.arrive).slice(0, 10) : null
     const d = stopForCheck.depart ? String(stopForCheck.depart).slice(0, 10) : null
-    if (a && day < a) return `Date is before this stop begins (${fmtDay(stopForCheck.arrive)})`
-    if (d && day > d && stopForCheck.id !== lastStopId) return `Date is after this stop ends (${fmtDay(stopForCheck.depart)})`
+    if (a && endDay && endDay < a) return `Date is before this stop begins (${fmtDay(stopForCheck.arrive)})`
+    if (d && startDay > d && stopForCheck.id !== lastStopId) return `Date is after this stop ends (${fmtDay(stopForCheck.depart)})`
     return null
   })()
 
