@@ -183,6 +183,7 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Check-in" type="datetime-local" value={d('checkin')} onChange={v => setD('checkin', v)} />
         <Field label="Check-out" type="datetime-local" value={d('checkout')} onChange={v => setD('checkout', v)} />
       </div>
+      <Field label="Bag drop" type="datetime-local" value={d('bag_drop')} onChange={v => setD('bag_drop', v)} />
       <Field label="Booking confirmation" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="ABC123XYZ" />
       <SectionBox label="Contact">
         <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+39 06 123456" />

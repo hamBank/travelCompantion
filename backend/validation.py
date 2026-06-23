@@ -34,7 +34,7 @@ def _item_primary_dt(item: ItineraryItem):
     if item.kind in ("flight", "rail"):
         return _to_dt(d.get("depart_time")) or _to_dt(item.scheduled_at)
     if item.kind == "accommodation":
-        return _to_dt(d.get("checkin")) or _to_dt(item.scheduled_at)
+        return _to_dt(d.get("bag_drop")) or _to_dt(d.get("checkin")) or _to_dt(item.scheduled_at)
     return _to_dt(item.scheduled_at)
 
 

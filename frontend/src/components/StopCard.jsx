@@ -40,7 +40,7 @@ export default function StopCard({ stop, index, onUpdate, inbound }) {
   const sortKey = item => {
     let dt
     if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
-    else if (item.kind === 'accommodation')             dt = item.details?.checkin || item.scheduled_at
+    else if (item.kind === 'accommodation')             dt = item.details?.bag_drop || item.details?.checkin || item.scheduled_at
     else                                                dt = item.scheduled_at
     return dt ? new Date(dt).getTime() : Infinity
   }
@@ -443,9 +443,10 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
               {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
-              {(d.checkin || d.checkout) && (
+              {(d.bag_drop || d.checkin || d.checkout) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs">
-                  {[d.checkin && `In: ${fmtDateTime(d.checkin)}`,
+                  {[d.bag_drop && `Bag drop: ${fmtDateTime(d.bag_drop)}`,
+                    d.checkin && `In: ${fmtDateTime(d.checkin)}`,
                     d.checkout && `Out: ${fmtDateTime(d.checkout)}`]
                     .filter(Boolean).join('  ·  ')}
                 </div>

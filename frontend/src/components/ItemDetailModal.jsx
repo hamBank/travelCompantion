@@ -29,7 +29,7 @@ function AccommodationBody({ item }) {
   const d = item.details ?? {}
   return (
     <>
-      {(d.checkin || d.checkout) && (
+      {(d.bag_drop || d.checkin || d.checkout) && (
         <div
           style={{
             background: 'var(--surface)',
@@ -38,6 +38,12 @@ function AccommodationBody({ item }) {
           }}
           className="p-3 mb-4 space-y-1"
         >
+          {d.bag_drop && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-faint)' }}>Bag drop</span>
+              <span>{fmtDateTime(d.bag_drop)}</span>
+            </div>
+          )}
           {d.checkin && (
             <div className="flex justify-between gap-4 text-sm">
               <span style={{ color: 'var(--text-faint)' }}>Check-in</span>
