@@ -40,12 +40,21 @@ def _item_primary_dt(item: ItineraryItem):
 
 def _item_span(item: ItineraryItem):
     """The (start, end) datetimes an item occupies. For most items this is a single
-    point (start == end). Accommodations span check-in → check-out, so a hotel booked
-    the night before arrival or checking out on departure day still overlaps its stop."""
+    point (start == end). Some items legitimately straddle a stop boundary:
+
+      * accommodations span check-in → check-out, so a hotel booked the night before
+        arrival or checking out on departure day still overlaps its stop;
+      * transit (flight / rail / transfer) spans departure → arrival, so an overnight
+        train arriving into a stop in the morning (it left the previous city the
+        evening before) still overlaps the stop it arrives at.
+
+    A span that overlaps the stop window at all is not flagged."""
     start = _item_primary_dt(item)
+    d = item.details or {}
     if item.kind == "accommodation":
-        end = _to_dt((item.details or {}).get("checkout")) or start
-        return start, end
+        return start, _to_dt(d.get("checkout")) or start
+    if item.kind in ("flight", "rail", "transfer"):
+        return start, _to_dt(d.get("arrive_time")) or start
     return start, start
 
 
