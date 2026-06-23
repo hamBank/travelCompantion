@@ -161,6 +161,32 @@ def test_date_warnings_flags_out_of_range_item(client: TestClient, trip):
     assert names == {"Typo": "before stop arrival", "LateTrain": "after stop departure"}
 
 
+def test_date_warnings_accommodation_span_overlaps_window(client: TestClient, trip):
+    # Paris: arrive 14 Aug (after an overnight flight), depart 17 Aug. Not the last
+    # stop, so "after departure" still applies here.
+    paris = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Paris", "arrive": "2026-08-14T08:00:00", "depart": "2026-08-17T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Home", "arrive": "2026-08-20T00:00:00", "depart": "2026-08-22T00:00:00", "status": "planned"
+    })
+    # Hotel booked from the night of the 13th (room ready for the dawn arrival) through
+    # checkout on departure day. Check-in alone is "before arrival", but the stay
+    # overlaps the stop — must NOT be flagged.
+    client.post(f"/stops/{paris['id']}/items", json={
+        "kind": "accommodation", "name": "Hotel Lutetia", "status": "pending",
+        "details": {"checkin": "2026-08-13T15:00", "checkout": "2026-08-17T10:00"},
+    })
+    # A stay that ends before the stop even begins is genuinely misfiled — still flagged.
+    client.post(f"/stops/{paris['id']}/items", json={
+        "kind": "accommodation", "name": "Wrong Year Hotel", "status": "pending",
+        "details": {"checkin": "2025-08-13T15:00", "checkout": "2025-08-17T10:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    names = {w["name"]: w["reason"] for w in warnings}
+    assert names == {"Wrong Year Hotel": "before stop arrival"}
+
+
 def test_delete_stop(client: TestClient, trip):
     stop = client.post(f"/trips/{trip['id']}/stops", json={
         "location": "Temp", "status": "planned"

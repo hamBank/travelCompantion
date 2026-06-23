@@ -1303,12 +1303,16 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
 
   const color = KIND_VAR[core.kind] ?? 'var(--text-muted)'
 
-  // Warn if the item's primary date sits outside the (selected) stop's window.
+  // Warn if the item's date span sits outside the (selected) stop's window.
+  // Most items are a single point; accommodations span check-in → check-out, so a
+  // hotel booked the night before arrival (or checking out on departure day) still
+  // overlaps its stop and isn't flagged.
   const stopForCheck = stops.find(s => s.id === targetStop)
-  const primaryDate =
+  const spanStart =
     (core.kind === 'flight' || core.kind === 'rail') ? details.depart_time
     : core.kind === 'accommodation' ? (details.checkin || core.scheduled_at)
     : core.scheduled_at
+  const spanEnd = core.kind === 'accommodation' ? (details.checkout || spanStart) : spanStart
   // Final stop is exempt from "after departure" (the journey home departs after it).
   const lastStopId = stops.reduce((best, s) => {
     const k = s.depart || s.arrive
@@ -1317,12 +1321,13 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
     return (!bk || String(k) > String(bk)) ? s : best
   }, null)?.id
   const dateWarning = (() => {
-    if (!stopForCheck || !primaryDate) return null
-    const day = String(primaryDate).slice(0, 10)
+    if (!stopForCheck || !spanStart) return null
+    const startDay = String(spanStart).slice(0, 10)
+    const endDay = String(spanEnd || spanStart).slice(0, 10)
     const a = stopForCheck.arrive ? String(stopForCheck.arrive).slice(0, 10) : null
     const d = stopForCheck.depart ? String(stopForCheck.depart).slice(0, 10) : null
-    if (a && day < a) return `Date is before this stop begins (${fmtDay(stopForCheck.arrive)})`
-    if (d && day > d && stopForCheck.id !== lastStopId) return `Date is after this stop ends (${fmtDay(stopForCheck.depart)})`
+    if (a && endDay < a) return `Date is before this stop begins (${fmtDay(stopForCheck.arrive)})`
+    if (d && startDay > d && stopForCheck.id !== lastStopId) return `Date is after this stop ends (${fmtDay(stopForCheck.depart)})`
     return null
   })()
 
