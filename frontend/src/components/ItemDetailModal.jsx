@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { fetchGpxText, downloadGpx } from '../api.js'
 import CostDisplay from './CostDisplay.jsx'
 import DetailActions from './DetailActions.jsx'
+import RichText from './RichText.jsx'
 import { fmtDayTime } from '../dates.js'
 
 const fmtDateTime = fmtDayTime
@@ -17,7 +18,9 @@ function Row({ label, children }) {
       <span style={{ color: 'var(--text-faint)', minWidth: '8rem' }} className="text-xs uppercase tracking-wide shrink-0 pt-0.5">
         {label}
       </span>
-      <span style={{ color: 'var(--text)' }} className="text-sm break-words min-w-0 flex-1">{children}</span>
+      <span style={{ color: 'var(--text)' }} className="text-sm break-words min-w-0 flex-1">
+        {typeof children === 'string' ? <RichText>{children}</RichText> : children}
+      </span>
     </div>
   )
 }
@@ -216,8 +219,8 @@ function NoteBody({ item }) {
     <div className="space-y-0">
       {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
       {item.notes && (
-        <div style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }} className="text-sm py-1">
-          {item.notes}
+        <div style={{ color: 'var(--text)' }} className="text-sm py-1">
+          <RichText>{item.notes}</RichText>
         </div>
       )}
       {item.link && (
