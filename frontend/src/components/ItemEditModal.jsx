@@ -1262,13 +1262,20 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
     (core.kind === 'flight' || core.kind === 'rail') ? details.depart_time
     : core.kind === 'accommodation' ? (details.checkin || core.scheduled_at)
     : core.scheduled_at
+  // Final stop is exempt from "after departure" (the journey home departs after it).
+  const lastStopId = stops.reduce((best, s) => {
+    const k = s.depart || s.arrive
+    if (!k) return best
+    const bk = best ? (best.depart || best.arrive) : null
+    return (!bk || String(k) > String(bk)) ? s : best
+  }, null)?.id
   const dateWarning = (() => {
     if (!stopForCheck || !primaryDate) return null
     const day = String(primaryDate).slice(0, 10)
     const a = stopForCheck.arrive ? String(stopForCheck.arrive).slice(0, 10) : null
     const d = stopForCheck.depart ? String(stopForCheck.depart).slice(0, 10) : null
     if (a && day < a) return `Date is before this stop begins (${fmtDay(stopForCheck.arrive)})`
-    if (d && day > d) return `Date is after this stop ends (${fmtDay(stopForCheck.depart)})`
+    if (d && day > d && stopForCheck.id !== lastStopId) return `Date is after this stop ends (${fmtDay(stopForCheck.depart)})`
     return null
   })()
 

@@ -40,8 +40,14 @@ def _item_primary_dt(item: ItineraryItem):
 
 def date_warnings(session: Session, trip_id: int) -> list[dict]:
     """Items whose primary date (by day) sits before their stop's arrival or after
-    its departure. Stops without dates are skipped."""
+    its departure. Stops without dates are skipped.
+
+    The trip's final stop is exempt from "after departure" warnings — the journey
+    home (connecting flights, transfers) legitimately departs after the last stop,
+    and there's no later stop for those items to belong to."""
     stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
+    dated = [s for s in stops if s.arrive or s.depart]
+    last_stop_id = max(dated, key=lambda s: s.depart or s.arrive).id if dated else None
     out: list[dict] = []
     for stop in stops:
         a = stop.arrive.date() if stop.arrive else None
@@ -57,7 +63,7 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
             reason = None
             if a and day < a:
                 reason = "before stop arrival"
-            elif d and day > d:
+            elif d and day > d and stop.id != last_stop_id:
                 reason = "after stop departure"
             if reason:
                 out.append({
