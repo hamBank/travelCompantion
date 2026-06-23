@@ -8,6 +8,7 @@ import FlightDetailModal from './FlightDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal, { buildMapsUrl } from './ItemEditModal.jsx'
 import CostDisplay from './CostDisplay.jsx'
+import RichText from './RichText.jsx'
 import { isFullyPaid } from '../currency.js'
 import { countryFlag } from '../countryFlag.js'
 import { airportName } from '../airportNames.js'
@@ -511,7 +512,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
                   <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{route}</div>
                 )}
                 {d.description && (
-                  <div style={{ color: 'var(--text-faint)' }} className="text-xs">{d.description}</div>
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs"><RichText>{d.description}</RichText></div>
                 )}
                 {(d.distance || d.elevation_gain || d.elevation_loss || d.duration) && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
@@ -835,7 +836,7 @@ function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
               {d.description && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs">{d.description}</div>
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs"><RichText>{d.description}</RichText></div>
               )}
               {item.link && (
                 <a
@@ -901,7 +902,7 @@ function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
                 )}
               </div>
               {d.description && (
-                <div style={{ color: 'var(--text-muted)' }} className="text-xs">{d.description}</div>
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs"><RichText>{d.description}</RichText></div>
               )}
             </div>
           </div>
@@ -948,10 +949,10 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">📍 {d.location}</div>
               )}
               {d.description && (
-                <div style={{ color: 'var(--text-muted)' }} className="text-xs">{d.description}</div>
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs"><RichText>{d.description}</RichText></div>
               )}
               {item.notes && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs">{item.notes}</div>
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs"><RichText>{item.notes}</RichText></div>
               )}
               {(timeStr || d.duration || (item.cost && !isFullyPaid(item))) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
@@ -1032,7 +1033,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="font-medium text-sm">{item.name}</div>
                 {extraNote && (
-                  <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }} className="text-xs">{extraNote}</div>
+                  <div style={{ color: 'var(--text-muted)' }} className="text-xs"><RichText>{extraNote}</RichText></div>
                 )}
                 {(timeStr || (item.cost && !isFullyPaid(item))) && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
