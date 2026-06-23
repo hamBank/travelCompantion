@@ -250,7 +250,7 @@ function InboundBanner({ inbound, onUpdate }) {
           <span style={{ color, fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>{icon}</span>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium" style={{ color }}>
-              Arriving here{dest ? ` · ${dest}` : ''}
+              Arriving{dest ? ` · ${dest}` : ''}
             </div>
             <div style={{ color: 'var(--text-muted)' }} className="text-xs mt-0.5 flex gap-3 flex-wrap">
               {arriveTime && <span>{fmtDayTime(arriveTime)}{d.arrive_tz ? ` ${d.arrive_tz}` : ''}</span>}
