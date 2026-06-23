@@ -18,6 +18,15 @@ if ('serviceWorker' in navigator) {
     window.location.reload()
   }
 
+  // Always listen for the controller changing. Skip only the very first claim on a
+  // page that loaded uncontrolled (a fresh install / hard refresh — not an update);
+  // every later change is a new deploy taking over → reload.
+  let hadController = !!navigator.serviceWorker.controller
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) { hadController = true; return }
+    reload()
+  })
+
   navigator.serviceWorker.register('/sw.js').then(reg => {
     // Poll for a new deploy so an already-open app updates itself without a re-open.
     const check = () => reg.update().catch(() => {})
@@ -27,11 +36,6 @@ if ('serviceWorker' in navigator) {
       if (document.visibilityState === 'visible') check()
     })
   }).catch(() => {})
-
-  // Guarded by an existing controller so a first install doesn't trigger a reload.
-  if (navigator.serviceWorker.controller) {
-    navigator.serviceWorker.addEventListener('controllerchange', reload)
-  }
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
