@@ -18,14 +18,9 @@ if ('serviceWorker' in navigator) {
     window.location.reload()
   }
 
-  // Always listen for the controller changing. Skip only the very first claim on a
-  // page that loaded uncontrolled (a fresh install / hard refresh — not an update);
-  // every later change is a new deploy taking over → reload.
-  let hadController = !!navigator.serviceWorker.controller
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController) { hadController = true; return }
-    reload()
-  })
+  // A new worker taking control means a new deploy is live → reload to use it.
+  // (On a brand-new install this fires once, harmlessly, before any interaction.)
+  navigator.serviceWorker.addEventListener('controllerchange', reload)
 
   navigator.serviceWorker.register('/sw.js').then(reg => {
     // Poll for a new deploy so an already-open app updates itself without a re-open.
