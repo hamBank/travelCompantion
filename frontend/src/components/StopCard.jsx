@@ -119,6 +119,7 @@ export default function StopCard({ stop, index, onUpdate, inbound }) {
                 if (item.kind === 'tour')      return <TourCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
                 if (item.kind === 'note')      return <NoteCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
                 if (item.kind === 'activity')  return <ActivityCard  key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
+                if (item.kind === 'show')      return <ShowCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
                 return <ItemRow key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
               })}
             </div>
@@ -955,6 +956,77 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
               )}
               {d.description && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs"><RichText>{d.description}</RichText></div>
+              )}
+              {item.notes && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs"><RichText>{item.notes}</RichText></div>
+              )}
+              {(timeStr || d.duration || (item.cost && !isFullyPaid(item))) && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
+                  {timeStr && <span>{timeStr}</span>}
+                  {d.duration && <span>⏱ {d.duration}</span>}
+                  {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
+                </div>
+              )}
+            </div>
+          </div>
+        </button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
+      </div>
+      {showDetail && (
+        <ItemDetailModal
+          item={item}
+          onClose={() => setShowDetail(false)}
+          onEdit={() => { setShowDetail(false); setShowEdit(true) }}
+          onDeleted={onItemDeleted}
+        />
+      )}
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
+        />
+      )}
+    </>
+  )
+}
+
+function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
+  const [item, setItem] = useState(initial)
+  const [showDetail, setShowDetail] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const d = item.details ?? {}
+  const timeStr = fmtDayTime(item.scheduled_at)
+
+  return (
+    <>
+      <div className="relative group">
+        <button
+          onClick={() => setShowDetail(true)}
+          className="w-full text-left hover:opacity-80 transition-opacity"
+          style={{
+            background: 'color-mix(in srgb, var(--kind-show) 6%, var(--surface-2))',
+            border: '1px solid color-mix(in srgb, var(--kind-show) 35%, transparent)',
+            borderRadius: '0.5rem',
+            padding: '0.75rem',
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            <CardIcon item={item} icon="🎭" color="var(--kind-show)" setItem={setItem} onItemSaved={onItemSaved} />
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="font-medium text-sm">{item.name}</div>
+              {d.location && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">📍 {d.location}</div>
+              )}
+              {d.description && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs"><RichText>{d.description}</RichText></div>
+              )}
+              {(d.seats || d.tickets) && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                  {d.seats && <span>🎫 {d.seats}</span>}
+                  {d.tickets && <span>{d.tickets}</span>}
+                </div>
               )}
               {item.notes && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs"><RichText>{item.notes}</RichText></div>

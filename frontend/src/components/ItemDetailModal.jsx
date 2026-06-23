@@ -159,6 +159,41 @@ function ActivityBody({ item }) {
   )
 }
 
+function ShowBody({ item }) {
+  const d = item.details ?? {}
+  return (
+    <div className="space-y-0">
+      {item.scheduled_at && <Row label="Start time">{fmtDateTime(item.scheduled_at)}</Row>}
+      {d.duration && <Row label="Doors / duration">{d.duration}</Row>}
+      {d.location && (
+        <Row label="Venue">
+          <a href={mapsUrl(d.location)} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="hover:underline">{d.location}</a>
+        </Row>
+      )}
+      {d.tickets && <Row label="Tickets">{d.tickets}</Row>}
+      {d.seats && <Row label="Seats">{d.seats}</Row>}
+      {d.booking_ref && <Row label="Booking ref">{d.booking_ref}</Row>}
+      {d.description && <Row label="Description">{d.description}</Row>}
+      {item.notes && <Row label="Notes">{item.notes}</Row>}
+      {d.contact_phone && (
+        <Row label="Phone">
+          <a href={`tel:${d.contact_phone}`} style={{ color: 'var(--accent)' }} className="hover:underline">
+            {d.contact_phone}
+          </a>
+        </Row>
+      )}
+      {item.link && (
+        <Row label="Tickets URL">
+          <a href={item.link} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="hover:underline break-all">{item.link}</a>
+        </Row>
+      )}
+      {item.cost && <Row label="Cost"><CostDisplay item={item} /></Row>}
+    </div>
+  )
+}
+
 function RestaurantBody({ item }) {
   const d = item.details ?? {}
   return (
@@ -537,6 +572,7 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
         <div className="px-5 py-4">
           {item.kind === 'accommodation' && <AccommodationBody item={item} />}
           {item.kind === 'activity'      && <ActivityBody item={item} />}
+          {item.kind === 'show'          && <ShowBody item={item} />}
           {item.kind === 'restaurant'    && <RestaurantBody item={item} />}
           {item.kind === 'note'          && <NoteBody item={item} />}
           {item.kind === 'cycling'       && <CyclingBody item={item} />}
