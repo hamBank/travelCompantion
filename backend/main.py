@@ -8,8 +8,10 @@ from .database import create_db_and_tables
 from .routers import trips, stops, items, sheets_import, documents
 from .routers.auth_router import router as auth_router
 
-# Paths that never require authentication (static assets + public endpoints)
-_PUBLIC_PREFIXES = ("/auth/", "/health", "/currency/", "/assets/", "/sw.", "/registerSW.", "/manifest.")
+# Paths that never require authentication (static assets + public endpoints).
+# Service-worker scripts and their importScripts deps (workbox-*, sw-update) must
+# be reachable without a token or the SW can't install/update.
+_PUBLIC_PREFIXES = ("/auth/", "/health", "/currency/", "/assets/", "/sw.", "/sw-update", "/workbox-", "/registerSW.", "/manifest.")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
                     "/favicon.ico", "/icon-192.png", "/icon-512.png",
                     "/apple-touch-icon.png", "/deploy"}
