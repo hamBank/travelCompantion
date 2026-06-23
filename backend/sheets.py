@@ -129,6 +129,7 @@ def fetch_sheets() -> dict[str, str]:
         csv.writer(buf, quoting=csv.QUOTE_ALL).writerows(rows)
         return buf.getvalue()
 
+    errors = []  # capture the real cause so a 403 / disabled-API isn't masked as "no data"
     try:
         # Single grid read with cell metadata. We read each cell's typed value and
         # number-format so real DATE/DATE_TIME cells can be emitted as ISO from
@@ -159,7 +160,8 @@ def fetch_sheets() -> dict[str, str]:
             row_data = data[0].get("rowData", []) if data else []
             rows = [[_cell_to_str(c) for c in (rd.get("values") or [])] for rd in row_data]
             results[name] = _rows_to_csv(rows)
-    except Exception:
+    except Exception as e:
+        errors.append(f"grid read: {e}")
         # Fall back to the old formatted-string fetch so import never hard-breaks.
         for name in wanted:
             try:
@@ -170,16 +172,20 @@ def fetch_sheets() -> dict[str, str]:
                     dateTimeRenderOption="FORMATTED_STRING",
                 ).execute()
                 results[name] = _rows_to_csv(resp.get("values", []))
-            except Exception:
+            except Exception as e2:
+                if len(errors) < 3:
+                    errors.append(f"{name}: {e2}")
                 results[name] = ""
 
     if not any(results.values()):
+        detail = ("\n".join(errors)) if errors else "(no underlying error reported)"
         raise RuntimeError(
-            f"No data returned from the Sheets API. Check that:\n"
-            f"• The Sheets API is enabled in your Google Cloud project\n"
-            f"• The spreadsheet ID is correct: {SPREADSHEET_ID}\n"
-            f"• You have access to the spreadsheet\n"
-            f"To re-authenticate, delete: {TOKEN_PATH}"
+            "No data returned from the Sheets API.\n"
+            f"Underlying error: {detail}\n\n"
+            "Most common cause: the spreadsheet isn't shared with the service account. "
+            "Open the Sheet → Share and add the service account's client_email as Viewer. "
+            "Also confirm the Google Sheets API is enabled in the project and the ID is correct: "
+            f"{SPREADSHEET_ID}"
         )
 
     return results
