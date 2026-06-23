@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getTripTimeline, backfillAccommodations } from '../api.js'
 import StopCard from './StopCard.jsx'
+import DocumentImportModal from './DocumentImportModal.jsx'
 import { RoleContext, canEdit } from '../roles.js'
 import { useShowInbound } from '../settings.js'
 
@@ -8,6 +9,7 @@ export default function TripTimeline({ tripId }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [importing, setImporting] = useState(false)
   const showInbound = useShowInbound()
 
   useEffect(() => { load() }, [tripId])
@@ -67,6 +69,8 @@ export default function TripTimeline({ tripId }) {
     }
   }
 
+  const editable = canEdit(timeline.role)
+
   return (
     <RoleContext.Provider value={timeline.role ?? 'owner'}>
       <div>
@@ -82,6 +86,26 @@ export default function TripTimeline({ tripId }) {
               />
             </div>
           </div>
+        )}
+
+        {editable && (
+          <div className="mb-4">
+            <button
+              onClick={() => setImporting(true)}
+              style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80 transition-opacity"
+            >
+              ⇪ Import from document
+            </button>
+          </div>
+        )}
+
+        {importing && (
+          <DocumentImportModal
+            tripId={tripId}
+            onClose={() => setImporting(false)}
+            onCreated={() => { setImporting(false); load() }}
+          />
         )}
 
         <div className="space-y-1.5">

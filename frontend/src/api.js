@@ -89,6 +89,22 @@ export async function uploadGpx(id, file) {
   return body
 }
 
+export async function parseDocument(tripId, file) {
+  const token = getToken()
+  const form = new FormData()
+  form.append('file', file)
+  const r = await fetch(`/trips/${tripId}/parse-document`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  const text = await r.text()
+  let body
+  try { body = JSON.parse(text) } catch { throw new Error(`Server error ${r.status}`) }
+  if (!r.ok) throw new Error(Array.isArray(body.detail) ? body.detail.map(e => e.msg).join('; ') : (body.detail ?? r.statusText))
+  return body
+}
+
 export async function downloadGpx(id, filename) {
   const token = getToken()
   const r = await fetch(`/items/${id}/gpx`, {
