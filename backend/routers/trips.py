@@ -148,7 +148,8 @@ def trip_timeline(trip_id: int, session: Session = Depends(get_session), user: d
     stops = session.exec(
         select(Stop)
         .where(Stop.trip_id == trip_id)
-        .order_by(Stop.sort_order, Stop.arrive)
+        # Chronological by arrival; undated stops fall to the end, sort_order breaks ties.
+        .order_by(nullslast(Stop.arrive), Stop.sort_order)
     ).all()
 
     stops_with_items = []
