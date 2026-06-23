@@ -38,17 +38,30 @@ function renderLine(line, keyBase) {
   )
 }
 
+const BULLET_RE = /^\s*-\s+(.*)$/  // "- item" → bullet line
+
 export default function RichText({ children, className, style }) {
   const text = children == null ? '' : String(children)
   const lines = text.split('\n')
+  // Each line is its own block span (valid inside both <div> and <span> parents),
+  // so bullets and line breaks render without needing <ul>/<li>.
   return (
     <span className={className} style={style}>
-      {lines.map((line, i) => (
-        <Fragment key={i}>
-          {i > 0 && <br />}
-          {renderLine(line, `l${i}`)}
-        </Fragment>
-      ))}
+      {lines.map((line, i) => {
+        const b = line.match(BULLET_RE)
+        if (b) {
+          return (
+            <span key={i} style={{ display: 'block', paddingLeft: '1.15em', textIndent: '-0.95em' }}>
+              {'• '}{renderLine(b[1], `b${i}`)}
+            </span>
+          )
+        }
+        return (
+          <span key={i} style={{ display: 'block' }}>
+            {line.trim() === '' ? ' ' : renderLine(line, `l${i}`)}
+          </span>
+        )
+      })}
     </span>
   )
 }
