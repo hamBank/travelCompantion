@@ -15,7 +15,7 @@ router = APIRouter()
 def list_stops(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     require_trip_role(session, user, trip_id, TripRole.viewer)
     return session.exec(
-        select(Stop).where(Stop.trip_id == trip_id).order_by(nullslast(Stop.arrive), Stop.sort_order)
+        select(Stop).where(Stop.trip_id == trip_id).order_by(nullslast(Stop.arrive), nullslast(Stop.depart), Stop.sort_order)
     ).all()
 
 
