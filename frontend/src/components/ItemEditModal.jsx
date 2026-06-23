@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, getItemStops, moveItem } from '../api.js'
+import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem } from '../api.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 import { fmtDay } from '../dates.js'
@@ -1049,6 +1049,24 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
     }
   }
 
+  async function handleGenGpx() {
+    const points = routePointsOf(details)
+    if (points.length < 2) {
+      setGpxMsg({ text: 'Add a route first (paste a Google Maps directions URL above)', color: 'var(--error)' })
+      return
+    }
+    setGpxBusy(true); setGpxMsg(null)
+    try {
+      const updated = await routeToGpx(itemId, points, 'cycling')
+      setDetails(updated.details ?? {})
+      setGpxMsg({ text: '✓ GPX generated from route', color: 'var(--success)' })
+    } catch (err) {
+      setGpxMsg({ text: err.message, color: 'var(--error)' })
+    } finally {
+      setGpxBusy(false)
+    }
+  }
+
   const surface = d('surface_type')
 
   return (
@@ -1112,12 +1130,17 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
 
       <div className="flex flex-col gap-1.5">
         <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">GPX File</label>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <label style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)', cursor: gpxBusy ? 'default' : 'pointer', opacity: gpxBusy ? 0.5 : 1 }}
             className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity">
             {gpxBusy ? 'Uploading…' : d('gpx_filename') ? 'Replace GPX' : 'Upload GPX'}
             <input type="file" accept=".gpx,application/gpx+xml" onChange={handleGpx} disabled={gpxBusy} className="hidden" />
           </label>
+          <button type="button" onClick={handleGenGpx} disabled={gpxBusy}
+            style={{ color: 'var(--kind-cycling)', border: '1px solid color-mix(in srgb, var(--kind-cycling) 35%, transparent)', background: 'color-mix(in srgb, var(--kind-cycling) 8%, transparent)', opacity: gpxBusy ? 0.5 : 1 }}
+            className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity">
+            Generate from route
+          </button>
           {gpxMsg && <span className="text-xs" style={{ color: gpxMsg.color }}>{gpxMsg.text}</span>}
           {!gpxMsg && d('original_gpx_name') && (
             <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{d('original_gpx_name')}</span>
