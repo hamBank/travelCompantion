@@ -68,19 +68,40 @@ def test_update_stop_dates(client: TestClient, trip):
     assert "2026-08-10" in r.json()["arrive"]
 
 
-def test_update_stop_accommodation(client: TestClient, trip):
+def test_accommodation_is_an_item(client: TestClient, trip):
+    # Accommodation is no longer a Stop field — it's an ItineraryItem (kind=accommodation),
+    # with check-in/out stored in the item's free-form `details`.
     stop = client.post(f"/trips/{trip['id']}/stops", json={
         "location": "Florence", "status": "planned"
     }).json()
-    r = client.patch(f"/stops/{stop['id']}", json={
-        "accommodation": "Hotel Dante",
-        "check_in": "15:00",
-        "check_out": "10:00",
+    r = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "accommodation",
+        "name": "Hotel Dante",
+        "status": "pending",
+        "details": {"checkin": "2026-08-10T15:00", "checkout": "2026-08-13T10:00"},
     })
-    assert r.status_code == 200
+    assert r.status_code == 201
     data = r.json()
-    assert data["accommodation"] == "Hotel Dante"
-    assert data["check_in"] == "15:00"
+    assert data["kind"] == "accommodation"
+    assert data["name"] == "Hotel Dante"
+    assert data["details"]["checkin"] == "2026-08-10T15:00"
+
+    # And it shows up under the stop.
+    items = client.get(f"/stops/{stop['id']}/items").json()
+    assert any(i["kind"] == "accommodation" and i["name"] == "Hotel Dante" for i in items)
+
+
+def test_stops_ordered_chronologically(client: TestClient, trip):
+    # A stop added later but dated earlier must sort into its chronological place,
+    # regardless of creation order / sort_order.
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Late", "arrive": "2026-08-20T00:00:00", "sort_order": 0, "status": "planned"
+    })
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Early", "arrive": "2026-08-10T00:00:00", "sort_order": 99, "status": "planned"
+    })
+    stops = client.get(f"/trips/{trip['id']}/stops").json()
+    assert [s["location"] for s in stops] == ["Early", "Late"]
 
 
 def test_delete_stop(client: TestClient, trip):
