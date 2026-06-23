@@ -104,6 +104,18 @@ def test_stops_ordered_chronologically(client: TestClient, trip):
     assert [s["location"] for s in stops] == ["Early", "Late"]
 
 
+def test_stops_same_arrival_break_on_departure(client: TestClient, trip):
+    # Same arrival date → earliest departure sorts first.
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Longer", "arrive": "2026-08-10T00:00:00", "depart": "2026-08-14T00:00:00", "status": "planned"
+    })
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Shorter", "arrive": "2026-08-10T00:00:00", "depart": "2026-08-11T00:00:00", "status": "planned"
+    })
+    stops = client.get(f"/trips/{trip['id']}/stops").json()
+    assert [s["location"] for s in stops] == ["Shorter", "Longer"]
+
+
 def test_delete_stop(client: TestClient, trip):
     stop = client.post(f"/trips/{trip['id']}/stops", json={
         "location": "Temp", "status": "planned"

@@ -81,7 +81,7 @@ def sibling_stops(item_id: int, session: Session = Depends(get_session), user: d
     item = session.get(ItineraryItem, item_id)
     stop = session.get(Stop, item.stop_id)
     return session.exec(
-        select(Stop).where(Stop.trip_id == stop.trip_id).order_by(nullslast(Stop.arrive), Stop.sort_order)
+        select(Stop).where(Stop.trip_id == stop.trip_id).order_by(nullslast(Stop.arrive), nullslast(Stop.depart), Stop.sort_order)
     ).all()
 
 
