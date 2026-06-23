@@ -51,8 +51,9 @@ export default function RichText({ children, className, style }) {
         const b = line.match(BULLET_RE)
         if (b) {
           return (
-            <span key={i} style={{ display: 'block', paddingLeft: '1.15em', textIndent: '-0.95em' }}>
-              {'• '}{renderLine(b[1], `b${i}`)}
+            <span key={i} style={{ display: 'flex', gap: '0.5em', paddingLeft: '0.25em' }}>
+              <span aria-hidden="true" style={{ flexShrink: 0, color: 'var(--text-muted)' }}>•</span>
+              <span style={{ flex: 1, minWidth: 0 }}>{renderLine(b[1], `b${i}`)}</span>
             </span>
           )
         }
