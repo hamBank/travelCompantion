@@ -33,6 +33,7 @@ export const updateTrip = (id, data) =>
   req(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 
 export const getTripTimeline = (id) => req(`/trips/${id}/timeline`)
+export const getDateWarnings = (id) => req(`/trips/${id}/date-warnings`)
 
 export const getTripMembers = (id) => req(`/trips/${id}/members`)
 export const addTripMember = (id, user_email, role) =>

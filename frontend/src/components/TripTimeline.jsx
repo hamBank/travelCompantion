@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react'
-import { getTripTimeline, backfillAccommodations } from '../api.js'
+import { getTripTimeline, backfillAccommodations, getDateWarnings } from '../api.js'
 import StopCard from './StopCard.jsx'
 import DocumentImportModal from './DocumentImportModal.jsx'
 import { RoleContext, canEdit } from '../roles.js'
 import { useShowInbound } from '../settings.js'
+import { fmtDay } from '../dates.js'
 
 export default function TripTimeline({ tripId }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [warnings, setWarnings] = useState([])
+  const [dismissed, setDismissed] = useState(false)
   const showInbound = useShowInbound()
 
   useEffect(() => { load() }, [tripId])
@@ -21,6 +24,7 @@ export default function TripTimeline({ tripId }) {
       setTimeline(tl)
       // Legacy accommodation backfill — editors only (timeline also lazy-migrates).
       if (canEdit(tl.role)) { try { await backfillAccommodations(tripId) } catch (_) {} }
+      try { const w = await getDateWarnings(tripId); setWarnings(w.warnings ?? []) } catch (_) {}
     }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
@@ -84,6 +88,31 @@ export default function TripTimeline({ tripId }) {
                 style={{ background: 'var(--success)', width: `${(completed / total) * 100}%` }}
                 className="h-full rounded-full transition-all"
               />
+            </div>
+          </div>
+        )}
+
+        {editable && warnings.length > 0 && !dismissed && (
+          <div
+            style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)' }}
+            className="mb-4 rounded-lg px-3 py-2.5"
+          >
+            <div className="flex items-start gap-2">
+              <span style={{ color: 'var(--warning)' }} className="text-sm">⚠</span>
+              <div className="flex-1 min-w-0">
+                <p style={{ color: 'var(--text)' }} className="text-xs font-medium mb-1">
+                  {warnings.length} item{warnings.length > 1 ? 's' : ''} dated outside their stop
+                </p>
+                <ul style={{ color: 'var(--text-faint)' }} className="text-xs space-y-0.5">
+                  {warnings.map(w => (
+                    <li key={w.item_id}>
+                      <span style={{ color: 'var(--text-muted)' }}>{w.stop_location}:</span>{' '}
+                      {w.name} — {fmtDay(w.item_date)} ({w.reason})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button onClick={() => setDismissed(true)} style={{ color: 'var(--text-faint)' }} className="text-sm leading-none hover:opacity-70">✕</button>
             </div>
           </div>
         )}
