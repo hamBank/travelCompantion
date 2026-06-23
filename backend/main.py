@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from .database import create_db_and_tables
-from .routers import trips, stops, items, sheets_import
+from .routers import trips, stops, items, sheets_import, documents
 from .routers.auth_router import router as auth_router
 
 # Paths that never require authentication (static assets + public endpoints)
@@ -31,6 +31,7 @@ app.include_router(trips.router, prefix="/trips", tags=["trips"])
 app.include_router(stops.router, tags=["stops"])
 app.include_router(items.router, tags=["items"])
 app.include_router(sheets_import.router)
+app.include_router(documents.router, tags=["documents"])
 
 
 @app.post("/deploy")
