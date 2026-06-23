@@ -62,8 +62,13 @@ def _strip_html(s: str) -> str:
 
 
 def _text_from_eml(raw: bytes) -> str:
-    """Pull readable text out of a MIME email — prefer text/plain, fall back to
-    stripped text/html."""
+    """Pull readable text out of a MIME email.
+
+    Include BOTH the text/plain and the stripped text/html parts — many providers
+    (SNCF, for one) put the payment receipt in text/plain but the actual itinerary
+    (times, platforms, train number) only in the HTML part, so preferring one drops
+    half the booking.
+    """
     msg = message_from_bytes(raw, policy=email_default)
     subject = (msg.get("subject") or "").strip()
 
@@ -84,9 +89,16 @@ def _text_from_eml(raw: bytes) -> str:
         elif ctype == "text/html":
             htmls.append(body)
 
-    body_text = "\n".join(plain).strip() or _strip_html("\n".join(htmls))
-    header = f"Subject: {subject}\n\n" if subject else ""
-    return (header + body_text).strip()
+    parts = []
+    if subject:
+        parts.append(f"Subject: {subject}")
+    plain_text = "\n".join(plain).strip()
+    if plain_text:
+        parts.append(plain_text)
+    html_text = _strip_html("\n".join(htmls)) if htmls else ""
+    if html_text:
+        parts.append(html_text)
+    return "\n\n".join(parts).strip()
 
 
 def _build_prompt(stops, kinds) -> str:
