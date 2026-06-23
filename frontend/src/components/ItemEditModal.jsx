@@ -1309,6 +1309,8 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
   // or checking out on departure day still overlaps its stop), and transit spans
   // departure → arrival (an overnight train arriving in the morning left the previous
   // city the evening before). A span that overlaps the window at all isn't flagged.
+  // An accommodation with no check-out is open-ended (a lone check-in is an ongoing
+  // stay, not zero nights), so it is never flagged as ending before arrival.
   const stopForCheck = stops.find(s => s.id === targetStop)
   const isTransit = core.kind === 'flight' || core.kind === 'rail' || core.kind === 'transfer'
   const spanStart =
@@ -1316,7 +1318,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
     : core.kind === 'accommodation' ? (details.checkin || core.scheduled_at)
     : core.scheduled_at
   const spanEnd =
-    core.kind === 'accommodation' ? (details.checkout || spanStart)
+    core.kind === 'accommodation' ? (details.checkout || null)
     : isTransit ? (details.arrive_time || spanStart)
     : spanStart
   // Final stop is exempt from "after departure" (the journey home departs after it).
@@ -1329,10 +1331,10 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
   const dateWarning = (() => {
     if (!stopForCheck || !spanStart) return null
     const startDay = String(spanStart).slice(0, 10)
-    const endDay = String(spanEnd || spanStart).slice(0, 10)
+    const endDay = spanEnd ? String(spanEnd).slice(0, 10) : null
     const a = stopForCheck.arrive ? String(stopForCheck.arrive).slice(0, 10) : null
     const d = stopForCheck.depart ? String(stopForCheck.depart).slice(0, 10) : null
-    if (a && endDay < a) return `Date is before this stop begins (${fmtDay(stopForCheck.arrive)})`
+    if (a && endDay && endDay < a) return `Date is before this stop begins (${fmtDay(stopForCheck.arrive)})`
     if (d && startDay > d && stopForCheck.id !== lastStopId) return `Date is after this stop ends (${fmtDay(stopForCheck.depart)})`
     return null
   })()

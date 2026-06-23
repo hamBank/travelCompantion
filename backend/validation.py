@@ -48,11 +48,15 @@ def _item_span(item: ItineraryItem):
         train arriving into a stop in the morning (it left the previous city the
         evening before) still overlaps the stop it arrives at.
 
-    A span that overlaps the stop window at all is not flagged."""
+    A span that overlaps the stop window at all is not flagged.
+
+    `end` is None when an accommodation has no check-out: a lone check-in is an
+    open-ended stay through the stop, not a zero-night one, so it must not be read
+    as ending before arrival."""
     start = _item_primary_dt(item)
     d = item.details or {}
     if item.kind == "accommodation":
-        return start, _to_dt(d.get("checkout")) or start
+        return start, _to_dt(d.get("checkout"))
     if item.kind in ("flight", "rail", "transfer"):
         return start, _to_dt(d.get("arrive_time")) or start
     return start, start
@@ -66,7 +70,8 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
     start == end; for accommodations the span is check-in → check-out, so a hotel
     booked the night before arrival or checking out on the departure day still
     overlaps its stop and is not flagged. Only stays that fall *entirely* outside
-    the window are warned.
+    the window are warned. An accommodation with no check-out is open-ended, so it
+    is never flagged as ending before arrival.
 
     The trip's final stop is exempt from "after departure" warnings — the journey
     home (connecting flights, transfers) legitimately departs after the last stop,
@@ -85,9 +90,10 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
             start, end = _item_span(it)
             if not start:
                 continue
-            start_day, end_day = start.date(), end.date()
+            start_day = start.date()
+            end_day = end.date() if end else None
             reason = None
-            if a and end_day < a:
+            if a and end_day is not None and end_day < a:
                 reason = "before stop arrival"
             elif d and start_day > d and stop.id != last_stop_id:
                 reason = "after stop departure"

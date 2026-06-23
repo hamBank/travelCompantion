@@ -187,6 +187,32 @@ def test_date_warnings_accommodation_span_overlaps_window(client: TestClient, tr
     assert names == {"Wrong Year Hotel": "before stop arrival"}
 
 
+def test_date_warnings_accommodation_without_checkout_not_flagged(client: TestClient, trip):
+    # Lyon: arrive 5 Aug, depart 8 Aug. A later stop keeps Lyon off the
+    # "final stop" exemption.
+    lyon = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Lyon", "arrive": "2026-08-05T14:00:00", "depart": "2026-08-08T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Home", "arrive": "2026-08-20T00:00:00", "depart": "2026-08-22T00:00:00", "status": "planned"
+    })
+    # Pullman Lyon: checked in the night before arrival, with no checkout recorded.
+    # A lone check-in is an open-ended stay through the stop, not a zero-night one,
+    # so it must NOT be flagged "before stop arrival".
+    client.post(f"/stops/{lyon['id']}/items", json={
+        "kind": "accommodation", "name": "Pullman Lyon", "status": "pending",
+        "details": {"checkin": "2026-08-04T22:00"},
+    })
+    # A check-in after the stop has ended is still genuinely wrong, even with no checkout.
+    client.post(f"/stops/{lyon['id']}/items", json={
+        "kind": "accommodation", "name": "Way Late Hotel", "status": "pending",
+        "details": {"checkin": "2026-08-12T15:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    names = {w["name"]: w["reason"] for w in warnings}
+    assert names == {"Way Late Hotel": "after stop departure"}
+
+
 def test_date_warnings_transit_span_overlaps_window(client: TestClient, trip):
     # Lyon: arrive early 4 Aug, depart 6 Aug. A later stop keeps Lyon off the
     # "final stop" exemption.
