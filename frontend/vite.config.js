@@ -1,8 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { execSync } from 'node:child_process'
+
+let BUILD_SHA = 'dev'
+try { BUILD_SHA = execSync('git rev-parse --short HEAD').toString().trim() } catch {}
 
 export default defineConfig({
+  define: { __BUILD_SHA__: JSON.stringify(BUILD_SHA) },
   plugins: [
     react(),
     VitePWA({
