@@ -39,37 +39,68 @@ CREDS_PATH = pathlib.Path(__file__).parent.parent / "credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
+# Interactive OAuth (browser consent) only runs when explicitly allowed — never on
+# a headless server, where it would hang/500. Set SHEETS_ALLOW_INTERACTIVE=1 locally
+# to mint a token.
+import os as _os
+_ALLOW_INTERACTIVE = _os.getenv("SHEETS_ALLOW_INTERACTIVE") == "1"
+
+
 def _get_credentials():
+    if not CREDS_PATH.exists():
+        raise RuntimeError(
+            f"credentials.json not found at: {CREDS_PATH}\n"
+            "Provide a Google service-account key (recommended for servers) or an OAuth "
+            "Desktop client. See: https://console.cloud.google.com → APIs & Services → Credentials"
+        )
+
+    import json as _json
+    try:
+        blob = _json.loads(CREDS_PATH.read_text())
+    except Exception:
+        blob = {}
+
+    # Service account — headless, no token, no expiry. Share the spreadsheet with the
+    # service account's client_email (Viewer) for this to work.
+    if blob.get("type") == "service_account":
+        try:
+            from google.oauth2 import service_account
+        except ImportError:
+            raise RuntimeError("Run: pip install google-auth google-api-python-client")
+        return service_account.Credentials.from_service_account_file(str(CREDS_PATH), scopes=SCOPES)
+
+    # OAuth installed/desktop client — needs a cached token from a one-time browser consent.
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
-        from google_auth_oauthlib.flow import InstalledAppFlow
     except ImportError:
-        raise RuntimeError(
-            "Run: pip install google-auth google-auth-oauthlib google-api-python-client"
-        )
+        raise RuntimeError("Run: pip install google-auth google-auth-oauthlib google-api-python-client")
 
     creds = None
     if TOKEN_PATH.exists():
-        from google.oauth2.credentials import Credentials
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            from google.auth.transport.requests import Request
+    if creds and creds.valid:
+        return creds
+    if creds and creds.expired and creds.refresh_token:
+        try:
             creds.refresh(Request())
-        else:
-            if not CREDS_PATH.exists():
-                raise RuntimeError(
-                    f"credentials.json not found at: {CREDS_PATH}\n\n"
-                    "Create a Google Cloud OAuth 2.0 Desktop app credential and save it there.\n"
-                    "See: https://console.cloud.google.com → APIs & Services → Credentials"
-                )
-            from google_auth_oauthlib.flow import InstalledAppFlow
-            flow = InstalledAppFlow.from_client_secrets_file(str(CREDS_PATH), SCOPES)
-            creds = flow.run_local_server(port=0)
+        except Exception as e:
+            raise RuntimeError(f"Google token expired and refresh failed — re-authenticate: {e}")
         TOKEN_PATH.write_text(creds.to_json())
+        return creds
 
+    if not _ALLOW_INTERACTIVE:
+        raise RuntimeError(
+            "No usable Google Sheets authorization on this server. credentials.json is an "
+            "interactive OAuth client, which can't authorize headless. Use a service account "
+            "(recommended): create one, share the spreadsheet with its email, and replace "
+            f"credentials.json with its JSON key — or generate a token locally and copy it to {TOKEN_PATH}."
+        )
+
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    flow = InstalledAppFlow.from_client_secrets_file(str(CREDS_PATH), SCOPES)
+    creds = flow.run_local_server(port=0)
+    TOKEN_PATH.write_text(creds.to_json())
     return creds
 
 
