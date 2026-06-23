@@ -63,7 +63,7 @@ function AppShell({ user, onLogout }) {
       )}
 
       <header
-        className="px-4 py-2 flex items-baseline gap-2 sticky top-0 z-20"
+        className="px-4 py-1.5 flex items-center gap-2 sticky top-0 z-20"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         {selectedTrip ? (
@@ -71,7 +71,7 @@ function AppShell({ user, onLogout }) {
             <button
               onClick={goBack}
               style={{ color: 'var(--text-faint)' }}
-              className="text-xs hover:opacity-70 transition-opacity shrink-0 self-center"
+              className="text-xs hover:opacity-70 transition-opacity shrink-0"
             >
               ←
             </button>
@@ -96,7 +96,7 @@ function AppShell({ user, onLogout }) {
           <button
             onClick={onLogout}
             title={user.email}
-            className="shrink-0 hover:opacity-70 transition-opacity self-center"
+            className="shrink-0 hover:opacity-70 transition-opacity"
           >
             {user.picture
               ? <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full" />
