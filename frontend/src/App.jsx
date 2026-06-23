@@ -43,12 +43,13 @@ function AppShell({ user, onLogout }) {
   const [theme, setTheme] = useTheme()
   const [showSettings, setShowSettings] = useState(false)
   const [showShare, setShowShare] = useState(false)
+  const [stats, setStats] = useState(null)
   const online = useOnline()
 
   const [userChoseList, setUserChoseList] = useState(false)
 
-  function openTrip(trip) { setSelectedTrip(trip); setEditing(false) }
-  function goBack() { setSelectedTrip(null); setEditing(false); setUserChoseList(true) }
+  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setStats(null) }
+  function goBack() { setSelectedTrip(null); setEditing(false); setStats(null); setUserChoseList(true) }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
@@ -62,7 +63,7 @@ function AppShell({ user, onLogout }) {
       )}
 
       <header
-        className="px-4 py-3 flex items-center gap-3 sticky top-0 z-20"
+        className="px-4 py-2 flex items-baseline gap-2 sticky top-0 z-20"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         {selectedTrip ? (
@@ -70,64 +71,35 @@ function AppShell({ user, onLogout }) {
             <button
               onClick={goBack}
               style={{ color: 'var(--text-faint)' }}
-              className="text-sm hover:opacity-70 transition-opacity shrink-0"
+              className="text-xs hover:opacity-70 transition-opacity shrink-0 self-center"
             >
-              ← Trips
+              ←
             </button>
-            <h1 style={{ color: 'var(--accent)' }} className="font-semibold text-base flex-1 truncate">
+            <h1 style={{ color: 'var(--accent)' }} className="font-semibold text-sm truncate shrink min-w-0">
               {selectedTrip.name}
             </h1>
+            {!editing && stats && (
+              <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0 whitespace-nowrap">
+                {stats.total} stops · {stats.completed} completed
+              </span>
+            )}
           </>
         ) : (
-          <h1 style={{ color: 'var(--accent)' }} className="font-semibold text-base flex-1">
+          <h1 style={{ color: 'var(--accent)' }} className="font-semibold text-sm">
             ✈ Travel Companion
           </h1>
         )}
 
-        <ThemePicker current={theme} onChange={setTheme} />
-        <button
-          onClick={() => setShowSettings(true)}
-          style={{ color: 'var(--text-faint)' }}
-          className="text-base hover:opacity-70 transition-opacity shrink-0"
-          title="Settings"
-        >
-          ⚙
-        </button>
-
-        {selectedTrip && online && canManage(selectedTrip.role) && (
-          <button
-            onClick={() => setShowShare(true)}
-            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-            className="px-3 py-1 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity shrink-0"
-            title="Share trip"
-          >
-            Share
-          </button>
-        )}
-
-        {selectedTrip && online && canEdit(selectedTrip.role) && (
-          <button
-            onClick={() => setEditing(e => !e)}
-            style={{
-              background: editing ? 'var(--accent)' : 'transparent',
-              color: editing ? 'var(--accent-fg)' : 'var(--text-muted)',
-              border: '1px solid',
-              borderColor: editing ? 'var(--accent)' : 'var(--border)',
-            }}
-            className="px-3 py-1 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity shrink-0"
-          >
-            {editing ? 'View' : 'Edit'}
-          </button>
-        )}
+        <div className="flex-1" />
 
         {user && (
           <button
             onClick={onLogout}
             title={user.email}
-            className="shrink-0 hover:opacity-70 transition-opacity"
+            className="shrink-0 hover:opacity-70 transition-opacity self-center"
           >
             {user.picture
-              ? <img src={user.picture} alt={user.name} className="w-7 h-7 rounded-full" />
+              ? <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full" />
               : <span style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}>Sign out</span>
             }
           </button>
@@ -144,22 +116,54 @@ function AppShell({ user, onLogout }) {
                 trip={selectedTrip}
                 onTripRenamed={name => setSelectedTrip(t => ({ ...t, name }))}
               />
-            : <TripTimeline tripId={selectedTrip.id} />
+            : <TripTimeline tripId={selectedTrip.id} onStats={setStats} />
           : <TripList onOpen={openTrip} skipAutoOpen={userChoseList} />
         }
       </main>
 
-      <footer
-        className="max-w-2xl mx-auto px-4 pb-8 flex gap-4 justify-center"
-        style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
-      >
-        <a href="/privacy.html" style={{ color: 'var(--text-faint)' }} className="hover:underline">
-          Privacy Policy
-        </a>
-        <a href="/tos.html" style={{ color: 'var(--text-faint)' }} className="hover:underline">
-          Terms of Service
-        </a>
-        <span title="Loaded client build">build {typeof __BUILD_SHA__ !== 'undefined' ? __BUILD_SHA__ : 'dev'}</span>
+      <footer className="max-w-2xl mx-auto px-4 pb-8 pt-4 flex flex-col items-center gap-4">
+        <div className="flex items-center gap-3 flex-wrap justify-center">
+          {selectedTrip && online && canEdit(selectedTrip.role) && (
+            <button
+              onClick={() => setEditing(e => !e)}
+              style={{
+                background: editing ? 'var(--accent)' : 'transparent',
+                color: editing ? 'var(--accent-fg)' : 'var(--text-muted)',
+                border: '1px solid',
+                borderColor: editing ? 'var(--accent)' : 'var(--border)',
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              {editing ? 'View' : 'Edit'}
+            </button>
+          )}
+          {selectedTrip && online && canManage(selectedTrip.role) && (
+            <button
+              onClick={() => setShowShare(true)}
+              style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              Share
+            </button>
+          )}
+          <button
+            onClick={() => setShowSettings(true)}
+            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+          >
+            ⚙ Settings
+          </button>
+          <ThemePicker current={theme} onChange={setTheme} />
+        </div>
+        <div className="flex gap-4 justify-center" style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}>
+          <a href="/privacy.html" style={{ color: 'var(--text-faint)' }} className="hover:underline">
+            Privacy Policy
+          </a>
+          <a href="/tos.html" style={{ color: 'var(--text-faint)' }} className="hover:underline">
+            Terms of Service
+          </a>
+          <span title="Loaded client build">build {typeof __BUILD_SHA__ !== 'undefined' ? __BUILD_SHA__ : 'dev'}</span>
+        </div>
       </footer>
     </div>
   )
