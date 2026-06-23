@@ -18,7 +18,7 @@ const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 
 const fmtDate = fmtDay
 const fmtDateTime = fmtDayTime
 
-export default function StopCard({ stop, index, onUpdate, inbound, hiddenItemIds }) {
+export default function StopCard({ stop, index, onUpdate, inbound }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
@@ -35,7 +35,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hiddenItemIds
   const hideCompleted = useHideCompleted()
   const visibleItems = items
     .filter(i => i.status !== 'done' || !hideCompleted)
-    .filter(i => !hiddenItemIds?.has(i.id))  // shown as an inbound banner elsewhere
 
   const sortKey = item => {
     let dt

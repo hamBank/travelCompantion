@@ -57,15 +57,13 @@ export default function TripTimeline({ tripId }) {
     return matches[0].item
   }
 
-  // Resolve each stop's inbound banner up front, and collect the item ids used so a
-  // flight/rail shown as a banner is NOT also rendered as a normal card elsewhere.
-  // Only when the feature is enabled — otherwise items must keep their normal cards.
+  // Resolve each stop's inbound banner. The transport item also keeps its normal
+  // card on its own (departure) stop — banner is an additional arrival marker.
   const inboundByStop = {}
-  const bannerItemIds = new Set()
   if (showInbound) {
     for (const stop of timeline.stops) {
       const inb = inboundFor(stop)
-      if (inb) { inboundByStop[stop.id] = inb; bannerItemIds.add(inb.id) }
+      if (inb) inboundByStop[stop.id] = inb
     }
   }
 
@@ -89,7 +87,7 @@ export default function TripTimeline({ tripId }) {
         <div className="space-y-1.5">
           {timeline.stops.map((stop, i) => (
             <StopCard key={stop.id} stop={stop} index={i} onUpdate={load}
-              inbound={inboundByStop[stop.id]} hiddenItemIds={bannerItemIds} />
+              inbound={inboundByStop[stop.id]} />
           ))}
         </div>
       </div>
