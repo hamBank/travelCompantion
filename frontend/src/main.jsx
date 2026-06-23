@@ -23,6 +23,17 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', reload)
 
   navigator.serviceWorker.register('/sw.js').then(reg => {
+    // Tell a waiting worker to activate. The SW's own skipWaiting() isn't reliably
+    // honored on Firefox while a client is controlled, so we prod it via message.
+    const promote = () => { if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' }) }
+    if (reg.waiting) promote()  // an update may already be stuck waiting on load
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing
+      nw && nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed') promote()
+      })
+    })
+
     // Poll for a new deploy so an already-open app updates itself without a re-open.
     const check = () => reg.update().catch(() => {})
     setInterval(check, 60 * 1000)

@@ -26,6 +26,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Adds a message handler so the page can promote a waiting worker (Firefox
+        // doesn't reliably auto-activate on the SW's own skipWaiting()).
+        importScripts: ['sw-update.js'],
         // Cache all built assets forever (they're content-hashed)
         globPatterns: ['**/*.{js,css,html,woff2}'],
         runtimeCaching: [
