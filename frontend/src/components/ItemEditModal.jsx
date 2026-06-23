@@ -289,6 +289,16 @@ function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
 function FlightForm({ core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  // Changing a time or TZ recomputes duration live — but only when both timezones
+  // are known, since a naive cross-zone diff would be wrong.
+  const setTimed = (key, val) => setDetails(prev => {
+    const next = { ...prev, [key]: val }
+    if (parseTzOffsetMin(next.depart_tz) != null && parseTzOffsetMin(next.arrive_tz) != null) {
+      const dur = fmtDurationMin(durationBetween(next.depart_time, next.arrive_time, next.depart_tz, next.arrive_tz))
+      if (dur) next.duration = dur
+    }
+    return next
+  })
   const [lookupBusy, setLookupBusy] = useState(false)
   const [lookupMsg, setLookupMsg]   = useState(null)
 
@@ -345,8 +355,8 @@ function FlightForm({ core, details, setCore, setDetails }) {
       </SectionBox>
       <SectionBox label="Schedule">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setD('depart_time', v)} />
-          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setD('arrive_time', v)} />
+          <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setTimed('depart_time', v)} />
+          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setTimed('arrive_time', v)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Dep terminal" value={d('origin_terminal')} onChange={v => setD('origin_terminal', v)} placeholder="T1" />
@@ -358,8 +368,8 @@ function FlightForm({ core, details, setCore, setDetails }) {
         </div>
         <Field label="Check-in desk" value={d('checkin_desk')} onChange={v => setD('checkin_desk', v)} placeholder="D5–D20" />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Depart TZ" value={d('depart_tz')} onChange={v => setD('depart_tz', v)} placeholder="GMT+8" />
-          <Field label="Arrive TZ" value={d('arrive_tz')} onChange={v => setD('arrive_tz', v)} placeholder="GMT+3" />
+          <Field label="Depart TZ" value={d('depart_tz')} onChange={v => setTimed('depart_tz', v)} placeholder="GMT+8" />
+          <Field label="Arrive TZ" value={d('arrive_tz')} onChange={v => setTimed('arrive_tz', v)} placeholder="GMT+3" />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="13h 25m" />
@@ -823,6 +833,13 @@ function TransferForm({ core, details, setCore, setDetails }) {
 function RailForm({ core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  // Changing a time recomputes duration live (naive wall-clock — same-region rail).
+  const setTimed = (key, val) => setDetails(prev => {
+    const next = { ...prev, [key]: val }
+    const dur = fmtDurationMin(durationBetween(next.depart_time, next.arrive_time))
+    if (dur) next.duration = dur
+    return next
+  })
   const [showLookup, setShowLookup] = useState(false)
   return (
     <div className="space-y-4">
@@ -860,8 +877,8 @@ function RailForm({ core, details, setCore, setDetails }) {
       </SectionBox>
       <SectionBox label="Schedule">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setD('depart_time', v)} />
-          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setD('arrive_time', v)} />
+          <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setTimed('depart_time', v)} />
+          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setTimed('arrive_time', v)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Dep platform" value={d('depart_platform')} onChange={v => setD('depart_platform', v)} placeholder="Platform 2" />
