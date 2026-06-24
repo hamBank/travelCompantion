@@ -98,7 +98,7 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         SimpleDocTemplate, Paragraph, Spacer, PageBreak,
         Table, TableStyle, HRFlowable, KeepTogether,
     )
-    from reportlab.graphics.shapes import Drawing, Line, Polygon, Circle
+    from reportlab.graphics.shapes import Drawing, Line, Polygon, Circle, Rect, String
 
     trip = session.get(Trip, trip_id)
     stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
@@ -156,8 +156,18 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         return dt.strftime("%a, %b %d").replace(" 0", " ") if dt else ""
 
     def _icon():
+        """Airplane icon for flight cards."""
         d = Drawing(18, 18)
         d.add(Circle(9, 9, 8.5, fillColor=ACCENT, strokeColor=ACCENT))
+        w = colors.white
+        # Fuselage — tapered body pointing right
+        d.add(Polygon([2,8.3, 2,9.7, 13.5,9.7, 16,9, 13.5,8.3], fillColor=w, strokeColor=w, strokeWidth=0))
+        # Wings — swept-back triangle each side
+        d.add(Polygon([6.5,9, 10.5,9, 9,4.2, 7.5,4.8], fillColor=w, strokeColor=w, strokeWidth=0))
+        d.add(Polygon([6.5,9, 10.5,9, 9,13.8, 7.5,13.2], fillColor=w, strokeColor=w, strokeWidth=0))
+        # Tail fins — small triangles at rear
+        d.add(Polygon([3,9, 5,9, 4.5,6.8], fillColor=w, strokeColor=w, strokeWidth=0))
+        d.add(Polygon([3,9, 5,9, 4.5,11.2], fillColor=w, strokeColor=w, strokeWidth=0))
         return d
 
     def _arrow():
@@ -327,8 +337,16 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         return d
 
     def _hotel_icon():
+        """Bed icon for hotel cards."""
         d = Drawing(18, 18)
         d.add(Circle(9, 9, 8.5, fillColor=HOTEL_ACCENT, strokeColor=HOTEL_ACCENT))
+        w = colors.white
+        # Headboard — left rectangle
+        d.add(Rect(3, 6.5, 2, 5.5, fillColor=w, strokeColor=w, strokeWidth=0))
+        # Bed base — horizontal bar
+        d.add(Rect(3, 6.5, 12, 2, fillColor=w, strokeColor=w, strokeWidth=0))
+        # Pillow — right half of bed, raised above base
+        d.add(Rect(7.5, 8.5, 6.5, 3.5, fillColor=w, strokeColor=w, strokeWidth=0, rx=1, ry=1))
         return d
 
     def _hotel_card(it):
@@ -425,7 +443,10 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         if not items:
             flow.append(Paragraph("<i>No items.</i>", body))
 
-        for it in items:
+        for ii, it in enumerate(items):
+            if ii > 0:
+                flow.append(HRFlowable(width="100%", thickness=0.5,
+                    color=colors.HexColor("#e0e0e0"), spaceBefore=6, spaceAfter=6))
             if it.kind == "flight":
                 _flight_card(it)
                 continue
