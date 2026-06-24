@@ -35,6 +35,21 @@ export const updateTrip = (id, data) =>
 export const getTripTimeline = (id) => req(`/trips/${id}/timeline`)
 export const getDateWarnings = (id) => req(`/trips/${id}/date-warnings`)
 
+export async function exportTripPdf(id, name) {
+  const token = getToken()
+  const r = await fetch(`/trips/${id}/export.pdf`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!r.ok) throw new Error('PDF export failed')
+  const blob = await r.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${(name || 'trip').replace(/[^A-Za-z0-9 _-]/g, '').trim() || 'trip'}.pdf`
+  document.body.appendChild(a); a.click()
+  document.body.removeChild(a); URL.revokeObjectURL(url)
+}
+
 export const getTripMembers = (id) => req(`/trips/${id}/members`)
 export const addTripMember = (id, user_email, role) =>
   req(`/trips/${id}/members`, { method: 'POST', body: JSON.stringify({ user_email, role }) })
