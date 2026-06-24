@@ -279,9 +279,7 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
-  const codes = (d.origin && d.destination)
-    ? `${d.origin.toUpperCase()} → ${d.destination.toUpperCase()}`
-    : (item.name || 'Flight')
+  const route = [d.origin, d.destination].filter(Boolean).map(airportName).join(' → ') || item.name || 'Flight'
   const depTerm = [d.origin_terminal && `T${d.origin_terminal}`, d.origin_gate && `Gate ${d.origin_gate}`].filter(Boolean).join(' ')
   const meta = [d.fare_class, depTerm, d.seats && `Seat ${d.seats}`].filter(Boolean).join(' · ')
 
@@ -302,7 +300,7 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
             <CardIcon item={item} icon="✈" color="var(--kind-flight)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="font-semibold text-sm tracking-wide">{codes}</span>
+                <span className="font-medium text-sm">{route}</span>
                 <span style={{ color: 'var(--kind-flight)' }} className="text-xs shrink-0 opacity-80">
                   {[d.flight_number, d.airline].filter(Boolean).join(' · ')}
                 </span>

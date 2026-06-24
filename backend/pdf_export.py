@@ -3,12 +3,36 @@
 Pure-Python (reportlab/platypus) so it runs on any server with no system libraries.
 """
 import io
+import os
+import re
+import functools
 from datetime import datetime
 from xml.sax.saxutils import escape
 
 from sqlmodel import Session, select
 
 from .models import Trip, Stop, ItineraryItem
+
+
+@functools.lru_cache(maxsize=1)
+def _airport_map():
+    """IATA code → name, parsed from the frontend's airportNames.js (single source)."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "frontend", "src", "airportNames.js")
+    try:
+        txt = open(path, encoding="utf-8").read()
+    except OSError:
+        return {}
+    return {m.group(1): m.group(2) for m in re.finditer(r'\b([A-Z]{3})\s*:\s*"([^"]+)"', txt)}
+
+
+def _airport(code):
+    """"CDG Paris Charles de Gaulle" — code plus name when known, else just the code."""
+    if not code:
+        return ""
+    c = str(code).strip().upper()
+    name = _airport_map().get(c)
+    return f"{c} {name}" if name else c
 
 _KIND_LABEL = {
     "activity": "Activity", "walk": "Walk / Hike", "transfer": "Road Transfer",
@@ -106,7 +130,7 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         if stop.country:
             loc += f", {stop.country}"
         flow.append(Paragraph(escape(loc), h_stop))
-        dates = " → ".join(p for p in [_fmt_dt(stop.arrive), _fmt_dt(stop.depart)] if p)
+        dates = " – ".join(p for p in [_fmt_dt(stop.arrive), _fmt_dt(stop.depart)] if p)
         flow.append(Paragraph(escape(dates) if dates else "&nbsp;", sub))
 
         items = session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop.id)).all()
@@ -118,6 +142,45 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         for it in items:
             flow.append(Paragraph(escape(it.name or "(untitled)"), item_name))
             flow.append(Paragraph(_KIND_LABEL.get(it.kind, it.kind), kind_st))
+
+            # Flights get an itinerary-style block (From/To, times, cabin, seat…)
+            if it.kind == "flight":
+                fd = it.details or {}
+                subtitle = " · ".join(x for x in [fd.get("flight_number"), fd.get("airline"), fd.get("fare_class")] if x)
+                if subtitle:
+                    flow.append(Paragraph(escape(subtitle), body))
+
+                def _seg(code, t, tz, term, gate):
+                    bits = [_airport(code), _fmt_dt(t)]
+                    if tz: bits.append(str(tz))
+                    if term: bits.append(f"Terminal {term}")
+                    if gate: bits.append(f"Gate {gate}")
+                    return " · ".join(b for b in bits if b)
+
+                line("Depart", _seg(fd.get("origin"), fd.get("depart_time"), fd.get("depart_tz"), fd.get("origin_terminal"), fd.get("origin_gate")))
+                line("Arrive", _seg(fd.get("destination"), fd.get("arrive_time"), fd.get("arrive_tz"), fd.get("arrive_terminal"), fd.get("arrive_gate")))
+                summary = " · ".join(x for x in [
+                    fd.get("duration"), fd.get("aircraft"),
+                    fd.get("seats") and f"Seat {fd['seats']}",
+                    fd.get("baggage") and f"Baggage {fd['baggage']}",
+                    fd.get("stops"),
+                ] if x)
+                if summary:
+                    flow.append(Paragraph(escape(summary), body))
+                line("Check-in desk", fd.get("checkin_desk"))
+                line("Meal", fd.get("meal"))
+                if fd.get("layover") or fd.get("connects_to"):
+                    line("Layover", " ".join(x for x in [fd.get("layover"), fd.get("connects_to") and f"(connects to {fd['connects_to']})"] if x))
+                line("Passengers", fd.get("passengers"))
+                line("Frequent flyer", fd.get("loyalty_info"))
+                line("Booking ref", fd.get("booking_ref"))
+                line("Booked with", fd.get("booking_airline"))
+                line("Phone", fd.get("booking_phone"))
+                line("Cost", it.cost)
+                line("Link", it.link)
+                line("Notes", it.notes)
+                continue
+
             primary = _item_primary_dt(it)
             if primary:
                 line("When", _fmt_dt(primary))
