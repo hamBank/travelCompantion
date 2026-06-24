@@ -91,14 +91,18 @@ function toLocalInput(v) {
   return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4] ?? '00'}:${m[5] ?? '00'}` : ''
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text' }) {
+function Field({ label, value, onChange, placeholder, type = 'text', min }) {
   const displayValue = type === 'datetime-local' ? toLocalInput(value) : (value ?? '')
+  // Constrain (and open) date/datetime pickers at `min` — e.g. an arrival/check-in
+  // — so a departure can't be set earlier and the user doesn't scroll from today.
+  const minValue = min ? (type === 'datetime-local' ? toLocalInput(min) : min) : undefined
   return (
     <div className="flex flex-col gap-0.5">
       <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">{label}</label>
       <input
         type={type}
         value={displayValue}
+        min={minValue}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
@@ -191,7 +195,7 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
       <Field label="Location / Address" value={d('location')} onChange={v => setD('location', v)} placeholder="Via Nazionale 7, Rome" />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Check-in" type="datetime-local" value={d('checkin')} onChange={v => setD('checkin', v)} />
-        <Field label="Check-out" type="datetime-local" value={d('checkout')} onChange={v => setD('checkout', v)} />
+        <Field label="Check-out" type="datetime-local" value={d('checkout')} onChange={v => setD('checkout', v)} min={d('checkin')} />
       </div>
       <Field label="Bag drop" type="datetime-local" value={d('bag_drop')} onChange={v => setD('bag_drop', v)} />
       <Field label="Booking confirmation" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="ABC123XYZ" />
@@ -368,7 +372,7 @@ function FlightForm({ core, details, setCore, setDetails }) {
       <SectionBox label="Schedule">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setTimed('depart_time', v)} />
-          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setTimed('arrive_time', v)} />
+          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setTimed('arrive_time', v)} min={d('depart_time')} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Dep terminal" value={d('origin_terminal')} onChange={v => setD('origin_terminal', v)} placeholder="T1" />
@@ -956,7 +960,7 @@ function RailForm({ core, details, setCore, setDetails }) {
       <SectionBox label="Schedule">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setTimed('depart_time', v)} />
-          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setTimed('arrive_time', v)} />
+          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setTimed('arrive_time', v)} min={d('depart_time')} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Dep platform" value={d('depart_platform')} onChange={v => setD('depart_platform', v)} placeholder="Platform 2" />
@@ -1284,6 +1288,14 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
 
   async function save() {
     if (saving) return
+    // Block an end before its start (check-out < check-in, arrival < departure).
+    const pair =
+      core.kind === 'accommodation' ? [details.checkin, details.checkout, 'Check-out cannot be before check-in']
+      : (core.kind === 'flight' || core.kind === 'rail') ? [details.depart_time, details.arrive_time, 'Arrival cannot be before departure']
+      : null
+    if (pair && pair[0] && pair[1] && toLocalInput(pair[1]) < toLocalInput(pair[0])) {
+      setError(pair[2]); return
+    }
     setSaving(true); setSavingMsg(''); setError(null)
     try {
       let finalDetails = { ...details }
