@@ -279,7 +279,11 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
-  const route = [d.origin, d.destination].filter(Boolean).map(airportName).join(' → ')
+  const codes = (d.origin && d.destination)
+    ? `${d.origin.toUpperCase()} → ${d.destination.toUpperCase()}`
+    : (item.name || 'Flight')
+  const depTerm = [d.origin_terminal && `T${d.origin_terminal}`, d.origin_gate && `Gate ${d.origin_gate}`].filter(Boolean).join(' ')
+  const meta = [d.fare_class, depTerm, d.seats && `Seat ${d.seats}`].filter(Boolean).join(' · ')
 
   return (
     <>
@@ -296,39 +300,25 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
         >
           <div className="flex items-start gap-2.5">
             <CardIcon item={item} icon="✈" color="var(--kind-flight)" setItem={setItem} onItemSaved={onItemSaved} />
-            <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="font-medium text-sm">{route || item.name}</span>
+                <span className="font-semibold text-sm tracking-wide">{codes}</span>
                 <span style={{ color: 'var(--kind-flight)' }} className="text-xs shrink-0 opacity-80">
                   {[d.flight_number, d.airline].filter(Boolean).join(' · ')}
                 </span>
               </div>
+              {(d.depart_time || d.arrive_time) && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs">
+                  {[d.depart_time && fmtDateTime(d.depart_time), d.arrive_time && fmtDateTime(d.arrive_time)]
+                    .filter(Boolean).join(' → ')}
+                  {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
+                </div>
+              )}
+              {meta && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs">{meta}</div>
+              )}
               {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
-              )}
-              {(d.depart_time || d.arrive_time) && (() => {
-                const depTerm = [d.origin_terminal && `T${d.origin_terminal}`, d.origin_gate && `Gate ${d.origin_gate}`].filter(Boolean).join(' ')
-                const arrTerm = [d.arrive_terminal && `T${d.arrive_terminal}`, d.arrive_gate && `Gate ${d.arrive_gate}`].filter(Boolean).join(' ')
-                const dep = [
-                  d.depart_time && fmtDateTime(d.depart_time) + (d.depart_tz ? ` ${d.depart_tz}` : ''),
-                  depTerm && `(${depTerm})`,
-                ].filter(Boolean).join(' ')
-                const arr = [
-                  d.arrive_time && fmtDateTime(d.arrive_time) + (d.arrive_tz ? ` ${d.arrive_tz}` : ''),
-                  arrTerm && `(${arrTerm})`,
-                ].filter(Boolean).join(' ')
-                return (
-                  <div style={{ color: 'var(--text-muted)' }} className="text-xs">
-                    {[dep, arr].filter(Boolean).join(' → ')}
-                    {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
-                  </div>
-                )
-              })()}
-              {(d.checkin_desk || d.seats) && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                  {d.checkin_desk && <span>Check-in {d.checkin_desk}</span>}
-                  {d.seats && <span>Seats: {d.seats}</span>}
-                </div>
               )}
             </div>
           </div>
