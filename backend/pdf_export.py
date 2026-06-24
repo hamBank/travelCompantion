@@ -547,6 +547,16 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
             d.add(Line(6.8, 13, 6.8, 16, strokeColor=col, strokeWidth=0.7))  # tine 2
             d.add(Line(12, 10.5, 12, 16, strokeColor=col, strokeWidth=sw))  # knife
 
+        elif kind == "note":
+            # Notepad — page with folded corner + ruled lines + spiral binding
+            d.add(Polygon(points=[3,3, 3,16, 15,16, 15,6, 12,3],
+                          fillColor=None, strokeColor=w, strokeWidth=sw))   # page body
+            d.add(Polygon(points=[12,3, 12,6, 15,6],
+                          fillColor=None, strokeColor=w, strokeWidth=sw))   # folded corner
+            d.add(Line(5.5, 13, 13, 13, strokeColor=w, strokeWidth=sw))    # line 1
+            d.add(Line(5.5, 10.5, 13, 10.5, strokeColor=w, strokeWidth=sw)) # line 2
+            d.add(Line(5.5, 8, 11, 8, strokeColor=w, strokeWidth=sw))      # line 3 (shorter — under fold)
+
         else:
             letter = _KIND_SYMBOL.get(kind, "?")
             d.add(String(9, 5.5, letter, fontName="Helvetica-Bold", fontSize=9,
