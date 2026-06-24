@@ -441,7 +441,7 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
             <Row label="Meal"       value={d.meal} />
             <Row label="Passengers" value={d.passengers} />
             <Row label="Loyalty"    value={d.loyalty_info} />
-            <Row label="Notes"      value={d.notes} />
+            <Row label="Notes"      value={item.notes} />
           </div>
 
           {(d.booking_ref || item.link || item.cost || d.booking_phone) && (
