@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { checkFlight, updateItem } from '../api.js'
 import { airportName, airportLabel } from '../airportNames.js'
 import DetailActions from './DetailActions.jsx'
+import RichText from './RichText.jsx'
 import { getPowerbankPolicy } from '../powerbank.js'
 import { fmtDayTime } from '../dates.js'
 
@@ -14,7 +15,9 @@ function Row({ label, value }) {
       <span style={{ color: 'var(--text-faint)', minWidth: '8rem' }} className="text-xs uppercase tracking-wide shrink-0 pt-0.5">
         {label}
       </span>
-      <span style={{ color: 'var(--text)' }} className="text-sm break-all">{value}</span>
+      <span style={{ color: 'var(--text)' }} className="text-sm break-words min-w-0 flex-1">
+        {typeof value === 'string' ? <RichText>{value}</RichText> : value}
+      </span>
     </div>
   )
 }
