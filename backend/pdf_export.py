@@ -233,7 +233,7 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
 
         # Passengers / frequent flyer
         if fd.get("passengers") or fd.get("loyalty_info"):
-            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=6, spaceAfter=6))
+            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
             pax = []
             if fd.get("passengers"):
                 pax.append(Paragraph(f"<b>Passengers:</b> {escape(str(fd['passengers']))}", fc_detail))
@@ -244,10 +244,41 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
                 ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ])))
 
+        # Remaining details — compact two-column grid, kept inside the box
+        pairs = []
+        for lbl, val in [
+            ("Check-in desk", fd.get("checkin_desk")), ("Meal", fd.get("meal")),
+            ("Entertainment", fd.get("entertainment")), ("Lounge", fd.get("lounge")),
+            ("Booked with", fd.get("booking_airline")), ("Booking phone", fd.get("booking_phone")),
+            ("Distance", fd.get("distance")), ("Cost", it.cost),
+        ]:
+            if val not in (None, "", []):
+                pairs.append(Paragraph(f"<b>{lbl}:</b> {escape(str(val))}", fc_detail))
+        full = []
+        if it.notes:
+            full.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
+        if it.link:
+            full.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
+        if pairs or full:
+            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
+            if pairs:
+                rows = [pairs[i:i + 2] for i in range(0, len(pairs), 2)]
+                if len(rows[-1]) == 1:
+                    rows[-1].append(Paragraph("", fc_detail))
+                grid = Table(rows, colWidths=[(USABLE - 16) / 2] * 2)
+                grid.setStyle(TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 1),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ]))
+                inner.append(grid)
+            for p in full:
+                inner.append(p)
+
         # Layover footer
         lay = " ".join(x for x in [fd.get("layover"), fd.get("connects_to") and f"– {fd['connects_to']}"] if x)
         if lay:
-            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=6, spaceAfter=6))
+            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
             inner.append(Paragraph(f"Layover {escape(lay)}", fc_sm))
 
         box = Table([[inner]], colWidths=[USABLE])
@@ -259,15 +290,6 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
 
         title = [Paragraph(escape(it.name), card_title)] if it.name else []
         flow.append(KeepTogether(title + [box]))
-
-        # Anything not on the card, kept so nothing is lost
-        line("Check-in desk", fd.get("checkin_desk"))
-        line("Meal", fd.get("meal"))
-        line("Booked with", fd.get("booking_airline"))
-        line("Booking phone", fd.get("booking_phone"))
-        line("Cost", it.cost)
-        line("Link", it.link)
-        line("Notes", it.notes)
 
     for si, stop in enumerate(stops):
         if si == 0:
