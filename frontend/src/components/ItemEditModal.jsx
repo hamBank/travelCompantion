@@ -1366,15 +1366,20 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
   // departure → arrival (an overnight train arriving in the morning left the previous
   // city the evening before). A span that overlaps the window at all isn't flagged.
   // An accommodation with no check-out is open-ended (a lone check-in is an ongoing
-  // stay, not zero nights), so it is never flagged as ending before arrival.
+  // stay, not zero nights), so it is never flagged as ending before arrival. A
+  // check-out earlier than the check-in is contradictory data and is treated the
+  // same way, so it never makes a stay look like it ended before the stop began.
   const stopForCheck = stops.find(s => s.id === targetStop)
   const isTransit = core.kind === 'flight' || core.kind === 'rail' || core.kind === 'transfer'
   const spanStart =
     (core.kind === 'flight' || core.kind === 'rail') ? details.depart_time
     : core.kind === 'accommodation' ? (details.checkin || core.scheduled_at)
     : core.scheduled_at
+  const accomCheckout =
+    details.checkout && (!spanStart || String(details.checkout) >= String(spanStart))
+      ? details.checkout : null
   const spanEnd =
-    core.kind === 'accommodation' ? (details.checkout || null)
+    core.kind === 'accommodation' ? accomCheckout
     : isTransit ? (details.arrive_time || spanStart)
     : spanStart
   // Final stop is exempt from "after departure" (the journey home departs after it).
