@@ -128,6 +128,13 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
 
     # ── Flight card (TripIt-style) ──────────────────────────────────────────
     USABLE = 493  # A4 width minus 18mm margins each side, in points
+
+    def _linked(text, url, bold=True):
+        """Wrap text in a PDF hyperlink when url is present; bold by default."""
+        inner_text = f"<b>{text}</b>" if bold else text
+        if url:
+            return f'<a href="{escape(str(url))}" color="#1e66f5">{inner_text}</a>'
+        return inner_text
     ACCENT = colors.HexColor("#6c4fd8")
     RULE = colors.HexColor("#dddddd")
     GREY = colors.HexColor("#777777")
@@ -280,8 +287,6 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         notes_link = []
         if it.notes:
             notes_link.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
-        if it.link:
-            notes_link.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
 
         if checkin or grid_rows or notes_link:
             inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
@@ -311,7 +316,7 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
             ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
         ]))
 
-        title = [Paragraph(escape(it.name), card_title)] if it.name else []
+        title = [Paragraph(_linked(escape(it.name), it.link), card_title)] if it.name else []
         flow.append(KeepTogether(title + [box]))
 
     # ── Hotel card ─────────────────────────────────────────────────────────────
@@ -354,7 +359,7 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         inner = []
 
         # Header: icon + hotel name (left) | phone (right)
-        left = [Paragraph(f"<b>{escape(it.name or 'Accommodation')}</b>", fc_hotel_name)]
+        left = [Paragraph(_linked(escape(it.name or 'Accommodation'), it.link), fc_hotel_name)]
         right = []
         if fd.get("contact_phone"):
             right.append(Paragraph(f"<b>Phone:</b> {escape(str(fd['contact_phone']))}", fc_smr))
@@ -492,7 +497,7 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
                                    textColor=col)
         hdr = Table([[
             _item_icon(it.kind),
-            Paragraph(f"<b>{escape(it.name or kind_label)}</b>", fc_item_name),
+            Paragraph(_linked(escape(it.name or kind_label), it.link), fc_item_name),
             Paragraph(f"<b>{escape(kind_label)}</b>", fc_kind_r),
         ]], colWidths=[20, 340, 117])
         hdr.setStyle(TableStyle([
@@ -561,8 +566,6 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         footer = []
         if it.cost:
             footer.append(Paragraph(f"<b>Cost:</b> {escape(str(it.cost))}", fc_detail))
-        if it.link:
-            footer.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
         if it.notes:
             footer.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
 
