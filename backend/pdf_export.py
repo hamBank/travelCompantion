@@ -502,22 +502,22 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
             ("TOPPADDING", (0, 0), (0, 0), 1),
         ]))
         inner.append(hdr)
-        inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
+
+        # Build body and footer separately so rules only appear between non-empty sections
+        body = []
 
         # Primary time — shown prominently when present
         primary = _item_primary_dt(it)
         if primary and it.kind != "note":
-            inner.append(Paragraph(escape(_fmt_short(primary)), fc_hotel_dates))
+            body.append(Paragraph(escape(_fmt_short(primary)), fc_hotel_dates))
 
         # Kind-specific fields
-        shown = set()
         field_order = _KIND_FIELDS.get(it.kind, [])
         pairs = []
         for k in field_order:
             v = fd.get(k)
             if v in (None, "", []):
                 continue
-            shown.add(k)
             label = {"depart_time": "Departs", "arrive_time": "Arrives",
                      "start_time": "Starts", "scheduled_at": "When",
                      "class_": "Class", "start_location": "From",
@@ -528,12 +528,8 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
                      "description": None,  # full-width
                     }.get(k, _labelize(k))
             fmt_v = _fmt_short(v) if k in _DATETIME_KEYS else str(v)
-            if label is None:  # description — full width
-                pairs.append(("_full", escape(fmt_v)))
-            else:
-                pairs.append((escape(label), escape(fmt_v)))
+            pairs.append(("_full" if label is None else escape(label), escape(fmt_v)))
 
-        # Render pairs as two-column grid; descriptions full-width
         row_buf = []
         def _flush_rows():
             if not row_buf:
@@ -550,29 +546,35 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
                 ("TOPPADDING", (0, 0), (-1, -1), 1),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
             ]))
-            inner.append(grid)
+            body.append(grid)
             row_buf.clear()
 
         for label, val in pairs:
             if label == "_full":
                 _flush_rows()
-                inner.append(Paragraph(val, fc_detail))
+                body.append(Paragraph(val, fc_detail))
             else:
                 row_buf.append(Paragraph(f"<b>{label}:</b> {val}", fc_detail))
         _flush_rows()
 
-        # Cost / link / notes
-        extras = []
+        # Footer: cost / link / notes
+        footer = []
         if it.cost:
-            extras.append(Paragraph(f"<b>Cost:</b> {escape(str(it.cost))}", fc_detail))
+            footer.append(Paragraph(f"<b>Cost:</b> {escape(str(it.cost))}", fc_detail))
         if it.link:
-            extras.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
+            footer.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
         if it.notes:
-            extras.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
-        if extras:
-            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
-            for p in extras:
-                inner.append(p)
+            footer.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
+
+        # Rules only between non-empty sections
+        _hr = lambda: HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5)
+        if body:
+            inner.append(_hr())
+            inner.extend(body)
+        if footer:
+            if body:
+                inner.append(_hr())
+            inner.extend(footer)
 
         box = Table([[inner]], colWidths=[USABLE])
         box.setStyle(TableStyle([
