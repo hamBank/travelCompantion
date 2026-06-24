@@ -474,13 +474,84 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
     def _item_icon(kind):
         hex_col = _KIND_COLOR.get(kind, "#aaaaaa")
         col = colors.HexColor(hex_col)
-        # Darken the fill so white text is legible.
-        dark = colors.HexColor(hex_col).clone() if hasattr(colors.HexColor(hex_col), 'clone') else col
         d = Drawing(18, 18)
         d.add(Circle(9, 9, 8.5, fillColor=col, strokeColor=col))
-        letter = _KIND_SYMBOL.get(kind, "?")
-        d.add(String(9, 5.5, letter, fontName="Helvetica-Bold", fontSize=9,
-                     fillColor=colors.white, textAnchor="middle"))
+        w = colors.white
+        sw = 1.3  # base stroke width
+
+        if kind == "walk":
+            # Walking legs in stride — hip line + two bent legs + feet
+            d.add(Line(6, 15, 12, 15, strokeColor=w, strokeWidth=sw))   # hip
+            d.add(Line(6, 15, 4, 10, strokeColor=w, strokeWidth=sw))    # L thigh
+            d.add(Line(4, 10, 7, 5, strokeColor=w, strokeWidth=sw))     # L lower
+            d.add(Line(7, 5, 3.5, 5, strokeColor=w, strokeWidth=sw))    # L foot
+            d.add(Line(12, 15, 14, 10, strokeColor=w, strokeWidth=sw))  # R thigh
+            d.add(Line(14, 10, 11, 5, strokeColor=w, strokeWidth=sw))   # R lower
+            d.add(Line(11, 5, 14.5, 5, strokeColor=w, strokeWidth=sw))  # R foot
+
+        elif kind == "transfer":
+            # Delivery van — cargo box + cab + door line + two wheels
+            d.add(Polygon(points=[2,8, 2,14, 13,14, 13,8],
+                          fillColor=None, strokeColor=w, strokeWidth=sw))
+            d.add(Polygon(points=[13,8, 13,14, 16.5,14, 16.5,11, 15,8],
+                          fillColor=None, strokeColor=w, strokeWidth=sw))
+            d.add(Line(8.5, 8, 8.5, 14, strokeColor=w, strokeWidth=sw))  # door line
+            d.add(Rect(3, 10, 3.5, 3, fillColor=None, strokeColor=w, strokeWidth=0.9))  # window
+            d.add(Circle(5.5, 7.5, 2, fillColor=w, strokeColor=w))
+            d.add(Circle(5.5, 7.5, 0.7, fillColor=col, strokeColor=col))
+            d.add(Circle(14, 7.5, 2, fillColor=w, strokeColor=w))
+            d.add(Circle(14, 7.5, 0.7, fillColor=col, strokeColor=col))
+
+        elif kind == "food":
+            # Covered cloche — dome polygon + plate base + handle
+            d.add(Line(3, 7, 15, 7, strokeColor=w, strokeWidth=sw * 1.3))     # plate
+            d.add(Line(4.5, 6.5, 13.5, 6.5, strokeColor=w, strokeWidth=sw))  # rim
+            d.add(Polygon(points=[3,7, 3.5,9.5, 5,11.5, 7.5,13, 9,13.5,
+                                  10.5,13, 13,11.5, 14.5,9.5, 15,7],
+                          fillColor=None, strokeColor=w, strokeWidth=sw))
+            d.add(Circle(9, 14.5, 1.2, fillColor=w, strokeColor=w))  # handle
+
+        elif kind == "cycling":
+            # Bicycle — two wheels + diamond frame + seat + handlebars
+            d.add(Circle(4.5, 7, 3.5, fillColor=None, strokeColor=w, strokeWidth=sw))   # rear
+            d.add(Circle(13.5, 7, 3.5, fillColor=None, strokeColor=w, strokeWidth=sw))  # front
+            d.add(Line(4.5, 7, 9, 7, strokeColor=w, strokeWidth=sw))    # chain stay
+            d.add(Line(9, 7, 9, 12, strokeColor=w, strokeWidth=sw))     # seat tube
+            d.add(Line(9, 12, 4.5, 7, strokeColor=w, strokeWidth=sw))   # seat stay
+            d.add(Line(9, 7, 13.5, 7, strokeColor=w, strokeWidth=sw))   # down tube base
+            d.add(Line(9, 12, 13.5, 7, strokeColor=w, strokeWidth=sw))  # top tube
+            d.add(Line(7.5, 12.5, 10.5, 12.5, strokeColor=w, strokeWidth=sw * 1.2))  # seat
+            d.add(Line(13.5, 10, 13.5, 12, strokeColor=w, strokeWidth=sw))  # fork
+            d.add(Line(12, 12, 15, 12, strokeColor=w, strokeWidth=sw))      # handlebars
+
+        elif kind == "rail":
+            # Train side view — body + three windows + two wheels + rail
+            d.add(Rect(2, 8, 14, 6, fillColor=None, strokeColor=w, strokeWidth=sw))
+            d.add(Rect(3, 10.5, 2.5, 2.5, fillColor=None, strokeColor=w, strokeWidth=0.9))
+            d.add(Rect(7, 10.5, 2.5, 2.5, fillColor=None, strokeColor=w, strokeWidth=0.9))
+            d.add(Rect(11, 10.5, 2.5, 2.5, fillColor=None, strokeColor=w, strokeWidth=0.9))
+            d.add(Circle(5.5, 7.5, 1.5, fillColor=w, strokeColor=w))
+            d.add(Circle(12.5, 7.5, 1.5, fillColor=w, strokeColor=w))
+            d.add(Line(1.5, 6.5, 16.5, 6.5, strokeColor=w, strokeWidth=0.8))  # rail
+
+        elif kind == "restaurant":
+            # Table + chairs + fork, plate, knife
+            d.add(Rect(2, 9, 14, 1.5, fillColor=w, strokeColor=w))       # table top
+            d.add(Line(4.5, 9, 4.5, 6, strokeColor=w, strokeWidth=sw))   # left leg
+            d.add(Line(13.5, 9, 13.5, 6, strokeColor=w, strokeWidth=sw)) # right leg
+            d.add(Rect(0, 9, 1.5, 6, fillColor=None, strokeColor=w, strokeWidth=sw))   # left chair
+            d.add(Rect(16.5, 9, 1.5, 6, fillColor=None, strokeColor=w, strokeWidth=sw)) # right chair
+            d.add(Circle(9, 12.5, 2, fillColor=None, strokeColor=col, strokeWidth=0.9))  # plate
+            d.add(Line(6, 10.5, 6, 16, strokeColor=col, strokeWidth=sw))   # fork handle
+            d.add(Line(5.2, 13, 5.2, 16, strokeColor=col, strokeWidth=0.7))  # tine 1
+            d.add(Line(6.8, 13, 6.8, 16, strokeColor=col, strokeWidth=0.7))  # tine 2
+            d.add(Line(12, 10.5, 12, 16, strokeColor=col, strokeWidth=sw))  # knife
+
+        else:
+            letter = _KIND_SYMBOL.get(kind, "?")
+            d.add(String(9, 5.5, letter, fontName="Helvetica-Bold", fontSize=9,
+                         fillColor=colors.white, textAnchor="middle"))
+
         return d
 
     fc_item_name = ParagraphStyle("fcItemName", parent=styles["Normal"], fontSize=11, leading=13, textColor=DARK)
