@@ -390,20 +390,14 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         if fd.get("description"):
             inner.append(Paragraph(escape(str(fd["description"])), fc_detail))
 
-        # Extras: bag drop, cost, link, notes
-        extras = []
+        # Bag drop (no rule needed, sits below the location/description block)
         if fd.get("bag_drop"):
-            extras.append(Paragraph(f"<b>Bag drop:</b> {escape(_fmt_short(fd['bag_drop']))}", fc_detail))
-        if it.cost:
-            extras.append(Paragraph(f"<b>Cost:</b> {escape(str(it.cost))}", fc_detail))
-        if it.link:
-            extras.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
+            inner.append(Paragraph(f"<b>Bag drop:</b> {escape(_fmt_short(fd['bag_drop']))}", fc_detail))
+
+        # Notes only — rule + block suppressed when empty
         if it.notes:
-            extras.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
-        if extras:
             inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
-            for p in extras:
-                inner.append(p)
+            inner.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
 
         box = Table([[inner]], colWidths=[USABLE])
         box.setStyle(TableStyle([
