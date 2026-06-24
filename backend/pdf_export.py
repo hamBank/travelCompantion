@@ -142,6 +142,7 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
     fc_smr      = ParagraphStyle("fcSmR", parent=fc_sm, alignment=TA_RIGHT)
     fc_status   = ParagraphStyle("fcStatus", parent=styles["Normal"], fontSize=9.5, leading=12, textColor=ACCENT, alignment=TA_RIGHT)
     fc_detail   = ParagraphStyle("fcDetail", parent=styles["Normal"], fontSize=8.5, leading=12, textColor=DARK)
+    fc_detail_r = ParagraphStyle("fcDetailR", parent=fc_detail, alignment=TA_RIGHT)
 
     def _name_only(code):
         return _airport_map().get(str(code).strip().upper(), "") if code else ""
@@ -206,10 +207,19 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         inner.append(header)
         inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=6, spaceAfter=6))
 
-        # Airline / flight number
+        # Airline / flight number, with distance on the right
         airline = ", ".join(x for x in [fd.get("airline"), fd.get("flight_number")] if x)
-        if airline:
-            inner.append(Paragraph(f"<b>{escape(airline)}</b>", fc_air))
+        if airline or fd.get("distance"):
+            arow = Table([[
+                Paragraph(f"<b>{escape(airline)}</b>", fc_air) if airline else Paragraph("&nbsp;", fc_air),
+                Paragraph(f"<b>Distance:</b> {escape(str(fd['distance']))}", fc_detail_r) if fd.get("distance") else Paragraph("&nbsp;", fc_sm),
+            ]], colWidths=[(USABLE - 16) * 0.62, (USABLE - 16) * 0.38])
+            arow.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            inner.append(arow)
             inner.append(Spacer(1, 4))
 
         # Segments: depart  →  arrive  |  cabin / class / aircraft
@@ -244,35 +254,38 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
                 ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ])))
 
-        # Remaining details — compact two-column grid, kept inside the box
-        pairs = []
-        for lbl, val in [
-            ("Check-in desk", fd.get("checkin_desk")), ("Meal", fd.get("meal")),
-            ("Entertainment", fd.get("entertainment")), ("Lounge", fd.get("lounge")),
-            ("Booked with", fd.get("booking_airline")), ("Booking phone", fd.get("booking_phone")),
-            ("Distance", fd.get("distance")), ("Cost", it.cost),
+        # Remaining details — compact three-column rows, kept inside the box
+        def _cell(lbl, val):
+            return Paragraph(f"<b>{lbl}:</b> {escape(str(val))}", fc_detail) if val not in (None, "", []) else Paragraph("", fc_detail)
+
+        grid_rows = []
+        for trio in [
+            [("Meal", fd.get("meal")), ("Lounge", fd.get("lounge")), ("Entertainment", fd.get("entertainment"))],
+            [("Booked with", fd.get("booking_airline")), ("Booking phone", fd.get("booking_phone")), ("Cost", it.cost)],
         ]:
-            if val not in (None, "", []):
-                pairs.append(Paragraph(f"<b>{lbl}:</b> {escape(str(val))}", fc_detail))
-        full = []
+            if any(v not in (None, "", []) for _, v in trio):
+                grid_rows.append([_cell(l, v) for l, v in trio])
+
+        checkin = Paragraph(f"<b>Check-in desk:</b> {escape(str(fd['checkin_desk']))}", fc_detail) if fd.get("checkin_desk") else None
+        notes_link = []
         if it.notes:
-            full.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
+            notes_link.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
         if it.link:
-            full.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
-        if pairs or full:
+            notes_link.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
+
+        if checkin or grid_rows or notes_link:
             inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
-            if pairs:
-                rows = [pairs[i:i + 2] for i in range(0, len(pairs), 2)]
-                if len(rows[-1]) == 1:
-                    rows[-1].append(Paragraph("", fc_detail))
-                grid = Table(rows, colWidths=[(USABLE - 16) / 2] * 2)
+            if checkin:
+                inner.append(checkin)
+            if grid_rows:
+                grid = Table(grid_rows, colWidths=[(USABLE - 16) / 3] * 3)
                 grid.setStyle(TableStyle([
                     ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 1),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
                 ]))
                 inner.append(grid)
-            for p in full:
+            for p in notes_link:
                 inner.append(p)
 
         # Layover footer
