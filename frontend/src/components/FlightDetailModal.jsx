@@ -4,9 +4,10 @@ import { airportName, airportLabel } from '../airportNames.js'
 import DetailActions from './DetailActions.jsx'
 import RichText from './RichText.jsx'
 import { getPowerbankPolicy } from '../powerbank.js'
-import { fmtDayTime } from '../dates.js'
+import { fmtDayTime, fmtDay } from '../dates.js'
 
 const fmtDateTime = fmtDayTime
+const hhmm = v => { const m = String(v ?? '').match(/T(\d{2}:\d{2})/); return m ? m[1] : '' }
 
 function Row({ label, value }) {
   if (!value) return null
@@ -267,61 +268,47 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
 
         {/* Body */}
         <div className="px-5 py-4">
-          {(d.depart_time || d.arrive_time) && (
-            <div
-              style={{
-                background: 'var(--surface)',
-                border: '1px solid color-mix(in srgb, var(--accent-alt) 30%, transparent)',
-                borderRadius: '0.5rem',
-              }}
-              className="p-3 mb-4 space-y-1"
-            >
-              {d.depart_time && (
-                <div className="flex justify-between gap-4 text-sm">
-                  <span style={{ color: 'var(--text-faint)' }}>
-                    Departs{d.origin && <span className="ml-1 normal-case font-normal" style={{ color: 'var(--text-faint)' }}>· {airportLabel(d.origin)}</span>}
-                  </span>
-                  <span className="text-right">
-                    {fmtDateTime(d.depart_time)}
-                    {d.depart_tz && <span style={{ color: 'var(--text-faint)' }} className="ml-1 text-xs">{d.depart_tz}</span>}
-                    {d.origin_terminal && <span style={{ color: 'var(--kind-flight)' }} className="ml-2 text-xs">T{d.origin_terminal}</span>}
-                    {d.origin_gate    && <span style={{ color: 'var(--kind-flight)' }} className="ml-1 text-xs">Gate {d.origin_gate}</span>}
-                  </span>
+          {(d.origin || d.destination || d.depart_time || d.arrive_time) && (() => {
+            const depTerm = [d.origin_terminal && `T${d.origin_terminal}`, d.origin_gate && `Gate ${d.origin_gate}`].filter(Boolean).join(' ')
+            const arrTerm = [d.arrive_terminal && `T${d.arrive_terminal}`, d.arrive_gate && `Gate ${d.arrive_gate}`].filter(Boolean).join(' ')
+            const metaBits = [d.duration, d.fare_class, d.aircraft, d.stops].filter(Boolean).join('  ·  ')
+            const Endpoint = ({ code, time, tz, name, term, align }) => (
+              <div className={`min-w-0 ${align === 'right' ? 'text-right' : ''}`}>
+                {code && <div className="text-lg font-semibold tracking-wide">{code.toUpperCase()}</div>}
+                {time && (
+                  <div className="text-sm">
+                    <span className="font-medium">{hhmm(time)}</span>
+                    <span style={{ color: 'var(--text-faint)' }} className="text-xs ml-1">{fmtDay(time)}{tz ? ` ${tz}` : ''}</span>
+                  </div>
+                )}
+                {name && <div style={{ color: 'var(--text-faint)' }} className="text-xs truncate">{name}</div>}
+                {term && <div style={{ color: 'var(--kind-flight)' }} className="text-xs">{term}</div>}
+              </div>
+            )
+            return (
+              <div
+                style={{ background: 'var(--surface)', border: '1px solid color-mix(in srgb, var(--accent-alt) 30%, transparent)', borderRadius: '0.5rem' }}
+                className="p-3 mb-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <Endpoint code={d.origin} time={d.depart_time} tz={d.depart_tz} name={d.origin && airportName(d.origin)} term={depTerm} />
+                  <div style={{ color: 'var(--text-faint)' }} className="text-lg shrink-0 leading-none pt-1">→</div>
+                  <Endpoint code={d.destination} time={d.arrive_time} tz={d.arrive_tz} name={d.destination && airportName(d.destination)} term={arrTerm} align="right" />
                 </div>
-              )}
-              {d.checkin_desk && (
-                <div className="flex justify-between gap-4 text-sm">
-                  <span style={{ color: 'var(--text-faint)' }}>Check-in</span>
-                  <span style={{ color: 'var(--kind-flight)' }} className="text-xs">{d.checkin_desk}</span>
-                </div>
-              )}
-              {d.arrive_time && (
-                <div className="flex justify-between gap-4 text-sm">
-                  <span style={{ color: 'var(--text-faint)' }}>
-                    Arrives{d.destination && <span className="ml-1 normal-case font-normal" style={{ color: 'var(--text-faint)' }}>· {airportLabel(d.destination)}</span>}
-                  </span>
-                  <span className="text-right">
-                    {fmtDateTime(d.arrive_time)}
-                    {d.arrive_tz && <span style={{ color: 'var(--text-faint)' }} className="ml-1 text-xs">{d.arrive_tz}</span>}
-                    {d.arrive_terminal && <span style={{ color: 'var(--kind-flight)' }} className="ml-2 text-xs">T{d.arrive_terminal}</span>}
-                    {d.arrive_gate    && <span style={{ color: 'var(--kind-flight)' }} className="ml-1 text-xs">Gate {d.arrive_gate}</span>}
-                  </span>
-                </div>
-              )}
-              {d.duration && (
-                <div className="flex justify-between gap-4 text-sm">
-                  <span style={{ color: 'var(--text-faint)' }}>Duration</span>
-                  <span>{d.duration}</span>
-                </div>
-              )}
-            </div>
-          )}
+                {metaBits && (
+                  <div style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }} className="text-xs mt-3 pt-2 text-center">
+                    {metaBits}
+                  </div>
+                )}
+                {d.checkin_desk && (
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs mt-1 text-center">Check-in desk: {d.checkin_desk}</div>
+                )}
+              </div>
+            )
+          })()}
 
           <div className="space-y-0">
-            <Row label="Airline"       value={d.airline} />
             <Row label="Status"        value={d.flight_status} />
-            <Row label="Aircraft"      value={d.aircraft} />
-            <Row label="Fare class"    value={d.fare_class} />
             <Row label="Seats"         value={d.seats} />
             <Row label="Baggage"       value={d.baggage} />
             <Row label="Meal"          value={d.meal} />
