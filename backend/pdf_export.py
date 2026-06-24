@@ -161,9 +161,9 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         return d
 
     def _arrow():
-        d = Drawing(28, 12)
-        d.add(Line(1, 6, 20, 6, strokeColor=ACCENT, strokeWidth=1.3))
-        d.add(Polygon(points=[20, 1.5, 27, 6, 20, 10.5], fillColor=ACCENT, strokeColor=ACCENT))
+        d = Drawing(18, 8)
+        d.add(Line(1, 4, 12, 4, strokeColor=ACCENT, strokeWidth=1))
+        d.add(Polygon(points=[12, 1, 17, 4, 12, 7], fillColor=ACCENT, strokeColor=ACCENT))
         return d
 
     def _endpoint_cell(code, t, tz, term, gate):
@@ -304,6 +304,115 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         title = [Paragraph(escape(it.name), card_title)] if it.name else []
         flow.append(KeepTogether(title + [box]))
 
+    # ── Hotel card ─────────────────────────────────────────────────────────────
+    HOTEL_ACCENT = colors.HexColor("#1e66f5")
+
+    fc_hotel_name = ParagraphStyle("fcHotelName", parent=styles["Normal"], fontSize=11, leading=13, textColor=DARK)
+    fc_hotel_dates = ParagraphStyle("fcHotelDates", parent=styles["Normal"], fontSize=9.5, leading=12, textColor=DARK)
+    fc_hotel_r = ParagraphStyle("fcHotelR", parent=fc_hotel_dates, alignment=TA_RIGHT, textColor=GREY)
+
+    def _fmt_short(v):
+        """Wed 22 Jul 16:00 — no year, 24h."""
+        dt = _to_dt(v)
+        if not dt:
+            return str(v) if v else ""
+        if dt.hour or dt.minute:
+            return dt.strftime("%a %d %b %H:%M").replace(" 0", " ")
+        return dt.strftime("%a %d %b").replace(" 0", " ")
+
+    def _hotel_arrow():
+        d = Drawing(14, 8)
+        d.add(Line(1, 4, 9, 4, strokeColor=HOTEL_ACCENT, strokeWidth=0.9))
+        d.add(Polygon(points=[9, 1.5, 13, 4, 9, 6.5], fillColor=HOTEL_ACCENT, strokeColor=HOTEL_ACCENT))
+        return d
+
+    def _hotel_icon():
+        d = Drawing(18, 18)
+        d.add(Circle(9, 9, 8.5, fillColor=HOTEL_ACCENT, strokeColor=HOTEL_ACCENT))
+        return d
+
+    def _hotel_card(it):
+        fd = it.details or {}
+        inner = []
+
+        # Header: icon + hotel name (left) | phone (right)
+        left = [Paragraph(f"<b>{escape(it.name or 'Accommodation')}</b>", fc_hotel_name)]
+        right = []
+        if fd.get("contact_phone"):
+            right.append(Paragraph(f"<b>Phone:</b> {escape(str(fd['contact_phone']))}", fc_smr))
+        if fd.get("contact_email"):
+            right.append(Paragraph(f"<b>Email:</b> {escape(str(fd['contact_email']))}", fc_smr))
+        hdr = Table([[_hotel_icon(), left, right or Paragraph("&nbsp;", fc_sm)]], colWidths=[20, 280, 177])
+        hdr.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (0, 0), 1),
+        ]))
+        inner.append(hdr)
+
+        # Date row: check-in → check-out (left) | booking ref (right)
+        has_dates = fd.get("checkin") or fd.get("checkout")
+        has_ref = fd.get("booking_ref")
+        if has_dates or has_ref:
+            dep = _fmt_short(fd.get("checkin"))
+            arr = _fmt_short(fd.get("checkout"))
+            date_parts = []
+            if dep:
+                date_parts.append((Paragraph(dep, fc_hotel_dates), 90))
+            if dep and arr:
+                date_parts.append((_hotel_arrow(), 16))
+            if arr:
+                date_parts.append((Paragraph(arr, fc_hotel_dates), 90))
+            if date_parts:
+                cells, widths = zip(*date_parts)
+                date_inner = Table([list(cells)], colWidths=list(widths))
+                date_inner.setStyle(TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]))
+                date_col = date_inner
+            else:
+                date_col = Paragraph("&nbsp;", fc_sm)
+            drow = Table([[date_col, Paragraph(f"<b>Booking ref:</b> {escape(str(has_ref))}", fc_hotel_r) if has_ref else Paragraph("&nbsp;", fc_sm)]], colWidths=[320, 157])
+            drow.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            inner.append(drow)
+
+        inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
+
+        # Location and description
+        if fd.get("location"):
+            inner.append(Paragraph(f"<b>Location:</b> {escape(str(fd['location']))}", fc_detail))
+        if fd.get("description"):
+            inner.append(Paragraph(escape(str(fd["description"])), fc_detail))
+
+        # Extras: bag drop, cost, link, notes
+        extras = []
+        if fd.get("bag_drop"):
+            extras.append(Paragraph(f"<b>Bag drop:</b> {escape(_fmt_short(fd['bag_drop']))}", fc_detail))
+        if it.cost:
+            extras.append(Paragraph(f"<b>Cost:</b> {escape(str(it.cost))}", fc_detail))
+        if it.link:
+            extras.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
+        if it.notes:
+            extras.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
+        if extras:
+            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
+            for p in extras:
+                inner.append(p)
+
+        box = Table([[inner]], colWidths=[USABLE])
+        box.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.75, RULE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ]))
+        flow.append(KeepTogether([box]))
+
     for si, stop in enumerate(stops):
         if si == 0:
             flow.append(Paragraph(escape(trip.name or "Trip"), h_trip))
@@ -325,6 +434,9 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         for it in items:
             if it.kind == "flight":
                 _flight_card(it)
+                continue
+            if it.kind == "accommodation":
+                _hotel_card(it)
                 continue
 
             flow.append(Paragraph(escape(it.name or "(untitled)"), item_name))
