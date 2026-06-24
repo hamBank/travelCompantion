@@ -8,6 +8,7 @@ const TRIP = { id: 1, name: 'Euro Trip', start_date: null, end_date: null }
 const TIMELINE = { id: 1, name: 'Euro Trip', start_date: null, end_date: null, stops: [] }
 
 beforeEach(() => {
+  vi.clearAllMocks()  // reset call history between tests so isolation holds
   vi.spyOn(api, 'getTripTimeline').mockResolvedValue(TIMELINE)
   vi.spyOn(api, 'updateTrip').mockResolvedValue({ ...TRIP })
 })
@@ -82,6 +83,26 @@ describe('EditTrip', () => {
         expect.objectContaining({ start_date: '2026-08-01T00:00:00' })
       )
     })
+  })
+
+  it('constrains the end date to not precede the chosen start date', async () => {
+    const user = userEvent.setup()
+    render(<EditTrip trip={TRIP} />)
+    await waitFor(() => screen.getByLabelText(/start date/i))
+    await user.type(screen.getByLabelText(/start date/i), '2026-08-10')
+    expect(screen.getByLabelText(/end date/i)).toHaveAttribute('min', '2026-08-10')
+  })
+
+  it('blocks save when the end date is before the start date', async () => {
+    const user = userEvent.setup()
+    render(<EditTrip trip={TRIP} />)
+    await waitFor(() => screen.getByLabelText(/start date/i))
+    await user.type(screen.getByLabelText(/start date/i), '2026-08-10')
+    await user.type(screen.getByLabelText(/end date/i), '2026-08-01')
+    await user.click(screen.getByRole('button', { name: /save trip/i }))
+
+    expect(await screen.findByText(/end date cannot be before start date/i)).toBeInTheDocument()
+    expect(api.updateTrip).not.toHaveBeenCalled()
   })
 
   it('renders Add stop button', async () => {

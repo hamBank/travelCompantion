@@ -4,13 +4,14 @@ import EditItemsSection from './EditItemsSection.jsx'
 
 const STATUS_OPTIONS = ['planned', 'confirmed', 'completed', 'cancelled']
 
-function Field({ label, value, onChange, placeholder, type = 'text', span = 1 }) {
+function Field({ label, value, onChange, placeholder, type = 'text', span = 1, min }) {
   return (
     <div className={span === 2 ? 'col-span-2' : ''}>
       <label style={{ color: 'var(--text-faint)' }} className="block text-xs mb-0.5">{label}</label>
       <input
         type={type}
         value={value ?? ''}
+        min={min || undefined}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
@@ -42,6 +43,9 @@ export default function EditStopCard({ stop, index, onRefresh }) {
   function set(key, val) { setFields(f => ({ ...f, [key]: val })); setSaved(false) }
 
   async function save() {
+    if (fields.arrive && fields.depart && fields.depart < fields.arrive) {
+      setError('Departure date cannot be before arrival date'); return
+    }
     setSaving(true); setError(null)
     try {
       await updateStop(stop.id, {
@@ -101,7 +105,7 @@ export default function EditStopCard({ stop, index, onRefresh }) {
             <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Dates</p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Arrive" value={fields.arrive} onChange={v => set('arrive', v)} type="date" />
-              <Field label="Depart" value={fields.depart} onChange={v => set('depart', v)} type="date" />
+              <Field label="Depart" value={fields.depart} onChange={v => set('depart', v)} type="date" min={fields.arrive} />
             </div>
           </div>
 

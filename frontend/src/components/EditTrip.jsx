@@ -30,6 +30,10 @@ export default function EditTrip({ trip, onTripRenamed }) {
 
   async function save() {
     if (saved) return
+    setError(null)
+    if (fields.start_date && fields.end_date && fields.end_date < fields.start_date) {
+      setError('End date cannot be before start date'); return
+    }
     setSaving(true)
     try {
       await updateTrip(trip.id, {
@@ -87,6 +91,7 @@ export default function EditTrip({ trip, onTripRenamed }) {
                 id={key}
                 type="date"
                 value={fields[key]}
+                min={key === 'end_date' ? (fields.start_date || undefined) : undefined}
                 onChange={e => set(key, e.target.value)}
                 style={inputStyle}
                 className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
