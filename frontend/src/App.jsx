@@ -162,6 +162,7 @@ function AppShell({ user, onLogout }) {
           <a href="/tos.html" style={{ color: 'var(--text-faint)' }} className="hover:underline">
             Terms of Service
           </a>
+          <a href="/coverage/" style={{ color: 'var(--text-faint)' }} className="hover:underline">Coverage</a>
           <span title="Loaded client build">build {typeof __BUILD_SHA__ !== 'undefined' ? __BUILD_SHA__ : 'dev'}</span>
         </div>
       </footer>

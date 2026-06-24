@@ -125,6 +125,27 @@ info "Building frontend"
 sudo -u "$APP_USER" npm --prefix "$APP_DIR/frontend" run build
 ok "Frontend built → backend/static"
 
+# ── 5b. Coverage reports → /coverage (best-effort; never abort the deploy) ──────
+# Generated AFTER the build, since the build empties backend/static.
+info "Generating coverage reports"
+COV_DIR="$APP_DIR/backend/static/coverage"
+sudo -u "$APP_USER" mkdir -p "$COV_DIR"
+sudo -u "$APP_USER" sh -c "cd '$APP_DIR' && '$VENV/bin/python' -m pytest --cov=backend --cov-report=html:backend/static/coverage/backend -q" \
+  || warn "backend coverage generation failed (continuing)"
+sudo -u "$APP_USER" npm --prefix "$APP_DIR/frontend" run coverage \
+  || warn "frontend coverage generation failed (continuing)"
+sudo -u "$APP_USER" tee "$COV_DIR/index.html" >/dev/null <<HTML
+<!doctype html><meta charset="utf-8"><title>Coverage</title>
+<style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.6}a{color:#1e66f5}</style>
+<h1>Test coverage</h1>
+<p>Generated $(date '+%Y-%m-%d %H:%M %Z') · build $(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)</p>
+<ul>
+  <li><a href="./backend/index.html">Backend (pytest)</a></li>
+  <li><a href="./frontend/index.html">Frontend (vitest)</a></li>
+</ul>
+HTML
+ok "Coverage reports → /coverage"
+
 # ── 6. Environment file ────────────────────────────────────────────────────────
 ENV_FILE="$APP_DIR/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
