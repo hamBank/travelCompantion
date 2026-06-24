@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+import re
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import Session, select
 from sqlalchemy import nullslast, func
 from typing import List
@@ -127,6 +128,21 @@ def remove_member(trip_id: int, email: str, session: Session = Depends(get_sessi
         raise HTTPException(status_code=400, detail="Cannot remove the owner")
     session.delete(m)
     session.commit()
+
+
+@router.get("/{trip_id}/export.pdf")
+def export_trip_pdf(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Full trip as a PDF, one page per stop."""
+    require_trip_role(session, user, trip_id, TripRole.viewer)
+    from ..pdf_export import build_trip_pdf
+    pdf = build_trip_pdf(session, trip_id)
+    trip = session.get(Trip, trip_id)
+    safe = re.sub(r'[^A-Za-z0-9 _-]', '', (trip.name or 'trip')).strip() or 'trip'
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe}.pdf"'},
+    )
 
 
 @router.get("/{trip_id}/date-warnings")

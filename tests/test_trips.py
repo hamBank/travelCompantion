@@ -128,3 +128,26 @@ def test_timeline_stops_ordered_by_sort_order(client: TestClient):
 
     stops = client.get(f"/trips/{trip['id']}/timeline").json()["stops"]
     assert [s["location"] for s in stops] == ["A", "B", "C"]
+
+
+def test_export_pdf(client: TestClient):
+    trip = client.post("/trips/", json={"name": "PDF Trip"}).json()
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Lyon", "country": "France",
+        "arrive": "2026-08-04T00:00:00", "depart": "2026-08-06T00:00:00", "status": "planned",
+    }).json()
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "rail", "name": "Lyon → Dijon", "status": "pending",
+        "details": {"depart_time": "2026-08-04T13:16", "origin": "Lyon", "destination": "Dijon"},
+    })
+
+    r = client.get(f"/trips/{trip['id']}/export.pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert "attachment" in r.headers.get("content-disposition", "")
+    assert r.content[:5] == b"%PDF-"
+    assert len(r.content) > 800
+
+
+def test_export_pdf_trip_not_found(client: TestClient):
+    assert client.get("/trips/99999/export.pdf").status_code == 404

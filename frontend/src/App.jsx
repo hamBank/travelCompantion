@@ -8,7 +8,7 @@ import LoginPage from './components/LoginPage.jsx'
 import UserSettings from './components/UserSettings.jsx'
 import ShareModal from './components/ShareModal.jsx'
 import { DEFAULT_THEME } from './themes.js'
-import { getAuthConfig } from './api.js'
+import { getAuthConfig, exportTripPdf } from './api.js'
 import { canEdit, canManage } from './roles.js'
 
 function useOnline() {
@@ -44,7 +44,16 @@ function AppShell({ user, onLogout }) {
   const [showSettings, setShowSettings] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [stats, setStats] = useState(null)
+  const [exporting, setExporting] = useState(false)
   const online = useOnline()
+
+  async function handleExportPdf() {
+    if (!selectedTrip || exporting) return
+    setExporting(true)
+    try { await exportTripPdf(selectedTrip.id, selectedTrip.name) }
+    catch (e) { alert(e.message) }
+    finally { setExporting(false) }
+  }
 
   const [userChoseList, setUserChoseList] = useState(false)
 
@@ -144,6 +153,16 @@ function AppShell({ user, onLogout }) {
               className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
             >
               Share
+            </button>
+          )}
+          {selectedTrip && online && (
+            <button
+              onClick={handleExportPdf}
+              disabled={exporting}
+              style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
+            >
+              {exporting ? 'Exporting…' : 'Export PDF'}
             </button>
           )}
           <button
