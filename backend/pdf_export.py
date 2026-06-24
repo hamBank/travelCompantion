@@ -588,9 +588,6 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         flow.append(KeepTogether([box]))
 
     for si, stop in enumerate(stops):
-        if si == 0:
-            flow.append(Paragraph(escape(trip.name or "Trip"), h_trip))
-            flow.append(Spacer(1, 6))
 
         loc = stop.location or "Stop"
         if stop.country:
