@@ -425,6 +425,163 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         ]))
         flow.append(KeepTogether([box]))
 
+    # ── Generic item card (activity, walk, rail, restaurant, tour, transfer,
+    #    cycling, food, purchase, note, show) ────────────────────────────────
+    _KIND_COLOR = {
+        "activity":  "#89b4fa", "walk":     "#94e2d5", "transfer":  "#e8a87c",
+        "cycling":   "#fab387", "tour":     "#f5c2e7", "rail":      "#b4befe",
+        "restaurant":"#a6e3a1", "food":     "#f2cdcd", "purchase":  "#eba0ac",
+        "note":      "#f9e2af", "show":     "#d8a0f0",
+    }
+    # Small unicode-safe text symbol that lives inside the icon circle.
+    # All of these are in the WinAnsi / Latin-1 range that Helvetica handles.
+    _KIND_SYMBOL = {
+        "activity": "A", "walk": "W", "transfer": "T", "cycling": "C",
+        "tour": "G", "rail": "R", "restaurant": "D", "food": "F",
+        "purchase": "P", "note": "N", "show": "S",
+    }
+    # Per-kind: which detail keys to show, in order (rest are suppressed).
+    _KIND_FIELDS = {
+        "rail":       ["depart_time", "arrive_time", "origin", "destination",
+                       "train_number", "operator", "coach", "seats", "class_",
+                       "platform", "booking_ref", "duration", "stops", "description"],
+        "restaurant": ["scheduled_at", "location", "booking_ref", "contact_phone",
+                       "cuisine", "reservation_name", "description"],
+        "show":       ["start_time", "location", "ticket_number", "seats",
+                       "booking_ref", "contact_phone", "description"],
+        "transfer":   ["scheduled_at", "start_location", "end_location",
+                       "operator", "vehicle", "booking_ref", "contact_phone", "description"],
+        "tour":       ["scheduled_at", "meeting_point", "duration", "operator",
+                       "booking_ref", "contact_phone", "description"],
+        "activity":   ["scheduled_at", "location", "duration", "operator",
+                       "booking_ref", "contact_phone", "description"],
+        "walk":       ["scheduled_at", "start_location", "end_location",
+                       "distance", "duration", "description"],
+        "cycling":    ["scheduled_at", "start_location", "end_location",
+                       "distance", "duration", "description"],
+        "food":       ["scheduled_at", "location", "description"],
+        "purchase":   ["scheduled_at", "location", "description"],
+        "note":       ["description"],
+    }
+    _DATETIME_KEYS = {"depart_time", "arrive_time", "start_time", "scheduled_at",
+                      "checkin", "checkout", "bag_drop"}
+
+    def _item_icon(kind):
+        hex_col = _KIND_COLOR.get(kind, "#aaaaaa")
+        col = colors.HexColor(hex_col)
+        # Darken the fill so white text is legible.
+        dark = colors.HexColor(hex_col).clone() if hasattr(colors.HexColor(hex_col), 'clone') else col
+        d = Drawing(18, 18)
+        d.add(Circle(9, 9, 8.5, fillColor=col, strokeColor=col))
+        letter = _KIND_SYMBOL.get(kind, "?")
+        d.add(String(9, 5.5, letter, fontName="Helvetica-Bold", fontSize=9,
+                     fillColor=colors.white, textAnchor="middle"))
+        return d
+
+    fc_item_name = ParagraphStyle("fcItemName", parent=styles["Normal"], fontSize=11, leading=13, textColor=DARK)
+    fc_item_kind = ParagraphStyle("fcItemKind", parent=styles["Normal"], fontSize=8, leading=10, textColor=GREY)
+
+    def _item_card(it):
+        fd = it.details or {}
+        col = colors.HexColor(_KIND_COLOR.get(it.kind, "#aaaaaa"))
+        inner = []
+
+        # Header: icon + name (left) | kind label (right)
+        kind_label = _KIND_LABEL.get(it.kind, it.kind)
+        fc_kind_r = ParagraphStyle("_kr", parent=fc_sm, alignment=TA_RIGHT,
+                                   textColor=col)
+        hdr = Table([[
+            _item_icon(it.kind),
+            Paragraph(f"<b>{escape(it.name or kind_label)}</b>", fc_item_name),
+            Paragraph(f"<b>{escape(kind_label)}</b>", fc_kind_r),
+        ]], colWidths=[20, 340, 117])
+        hdr.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (0, 0), 1),
+        ]))
+        inner.append(hdr)
+        inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
+
+        # Primary time — shown prominently when present
+        primary = _item_primary_dt(it)
+        if primary and it.kind != "note":
+            inner.append(Paragraph(escape(_fmt_short(primary)), fc_hotel_dates))
+
+        # Kind-specific fields
+        shown = set()
+        field_order = _KIND_FIELDS.get(it.kind, [])
+        pairs = []
+        for k in field_order:
+            v = fd.get(k)
+            if v in (None, "", []):
+                continue
+            shown.add(k)
+            label = {"depart_time": "Departs", "arrive_time": "Arrives",
+                     "start_time": "Starts", "scheduled_at": "When",
+                     "class_": "Class", "start_location": "From",
+                     "end_location": "To", "meeting_point": "Meeting point",
+                     "reservation_name": "Reservation", "contact_phone": "Phone",
+                     "ticket_number": "Ticket", "train_number": "Train",
+                     "operator": "Operator", "booking_ref": "Booking ref",
+                     "description": None,  # full-width
+                    }.get(k, _labelize(k))
+            fmt_v = _fmt_short(v) if k in _DATETIME_KEYS else str(v)
+            if label is None:  # description — full width
+                pairs.append(("_full", escape(fmt_v)))
+            else:
+                pairs.append((escape(label), escape(fmt_v)))
+
+        # Render pairs as two-column grid; descriptions full-width
+        row_buf = []
+        def _flush_rows():
+            if not row_buf:
+                return
+            rows = [row_buf[i:i+2] for i in range(0, len(row_buf), 2)]
+            if len(rows[-1]) == 1:
+                rows[-1].append(Paragraph("", fc_detail))
+            grid = Table([[c for c in r] for r in rows],
+                         colWidths=[(USABLE - 16) / 2] * 2)
+            grid.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ]))
+            inner.append(grid)
+            row_buf.clear()
+
+        for label, val in pairs:
+            if label == "_full":
+                _flush_rows()
+                inner.append(Paragraph(val, fc_detail))
+            else:
+                row_buf.append(Paragraph(f"<b>{label}:</b> {val}", fc_detail))
+        _flush_rows()
+
+        # Cost / link / notes
+        extras = []
+        if it.cost:
+            extras.append(Paragraph(f"<b>Cost:</b> {escape(str(it.cost))}", fc_detail))
+        if it.link:
+            extras.append(Paragraph(f"<b>Link:</b> {escape(str(it.link))}", fc_detail))
+        if it.notes:
+            extras.append(Paragraph(f"<b>Notes:</b> {escape(str(it.notes))}", fc_detail))
+        if extras:
+            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
+            for p in extras:
+                inner.append(p)
+
+        box = Table([[inner]], colWidths=[USABLE])
+        box.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.75, col),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ]))
+        flow.append(KeepTogether([box]))
+
     for si, stop in enumerate(stops):
         if si == 0:
             flow.append(Paragraph(escape(trip.name or "Trip"), h_trip))
@@ -454,20 +611,7 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
                 _hotel_card(it)
                 continue
 
-            flow.append(Paragraph(escape(it.name or "(untitled)"), item_name))
-            flow.append(Paragraph(_KIND_LABEL.get(it.kind, it.kind), kind_st))
-
-            primary = _item_primary_dt(it)
-            if primary:
-                line("When", _fmt_dt(primary))
-            for k, v in (it.details or {}).items():
-                if k in _SKIP_DETAILS or v in (None, "", []):
-                    continue
-                # Format obvious datetime fields nicely.
-                line(_labelize(k), _fmt_dt(v) if k.endswith(("_time", "checkin", "checkout", "bag_drop")) else v)
-            line("Cost", it.cost)
-            line("Link", it.link)
-            line("Notes", it.notes)
+            _item_card(it)
 
         if si < len(stops) - 1:
             flow.append(PageBreak())
