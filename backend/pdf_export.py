@@ -93,7 +93,12 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
     from reportlab.lib.units import mm
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.lib.enums import TA_RIGHT
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, PageBreak,
+        Table, TableStyle, HRFlowable, KeepTogether,
+    )
+    from reportlab.graphics.shapes import Drawing, Line, Polygon, Circle
 
     trip = session.get(Trip, trip_id)
     stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
@@ -121,6 +126,149 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
             return
         flow.append(Paragraph(f"<b>{escape(str(label))}:</b> {escape(str(value))}", body))
 
+    # ── Flight card (TripIt-style) ──────────────────────────────────────────
+    USABLE = 493  # A4 width minus 18mm margins each side, in points
+    ACCENT = colors.HexColor("#6c4fd8")
+    RULE = colors.HexColor("#dddddd")
+    GREY = colors.HexColor("#777777")
+    DARK = colors.HexColor("#222222")
+
+    card_title  = ParagraphStyle("fcTitle", parent=styles["Normal"], fontSize=11, leading=13, spaceBefore=8, spaceAfter=3, textColor=DARK)
+    fc_route    = ParagraphStyle("fcRoute", parent=styles["Normal"], fontSize=10.5, leading=13, textColor=DARK)
+    fc_air      = ParagraphStyle("fcAir", parent=styles["Normal"], fontSize=9.5, leading=12, textColor=DARK)
+    fc_code     = ParagraphStyle("fcCode", parent=styles["Normal"], fontSize=8.5, leading=11, textColor=GREY)
+    fc_time     = ParagraphStyle("fcTime", parent=styles["Normal"], fontSize=13, leading=15, textColor=DARK)
+    fc_sm       = ParagraphStyle("fcSm", parent=styles["Normal"], fontSize=8, leading=11, textColor=GREY)
+    fc_smr      = ParagraphStyle("fcSmR", parent=fc_sm, alignment=TA_RIGHT)
+    fc_status   = ParagraphStyle("fcStatus", parent=styles["Normal"], fontSize=9.5, leading=12, textColor=ACCENT, alignment=TA_RIGHT)
+    fc_detail   = ParagraphStyle("fcDetail", parent=styles["Normal"], fontSize=8.5, leading=12, textColor=DARK)
+
+    def _name_only(code):
+        return _airport_map().get(str(code).strip().upper(), "") if code else ""
+
+    def _t12(v):
+        dt = _to_dt(v)
+        return dt.strftime("%I:%M %p").lstrip("0") if dt and (dt.hour or dt.minute) else ""
+
+    def _daymon(v):
+        dt = _to_dt(v)
+        return dt.strftime("%a, %b %d").replace(" 0", " ") if dt else ""
+
+    def _icon():
+        d = Drawing(18, 18)
+        d.add(Circle(9, 9, 8.5, fillColor=ACCENT, strokeColor=ACCENT))
+        return d
+
+    def _arrow():
+        d = Drawing(28, 12)
+        d.add(Line(1, 6, 20, 6, strokeColor=ACCENT, strokeWidth=1.3))
+        d.add(Polygon(points=[20, 1.5, 27, 6, 20, 10.5], fillColor=ACCENT, strokeColor=ACCENT))
+        return d
+
+    def _endpoint_cell(code, t, tz, term, gate):
+        cells = []
+        head = " ".join(x for x in [f"<b>{escape((code or '').upper())}</b>", escape(_name_only(code))] if x.strip())
+        if head.strip():
+            cells.append(Paragraph(head, fc_code))
+        tline = _t12(t)
+        if tline:
+            cells.append(Paragraph(f"<b>{escape(tline)}</b><font size=8 color='#777777'>{escape((', ' + _daymon(t)) if _daymon(t) else '')}{escape((' ' + tz) if tz else '')}</font>", fc_time))
+        extra = " · ".join(x for x in [term and f"Terminal {term}", gate and f"Gate {gate}"] if x)
+        if extra:
+            cells.append(Paragraph(escape(extra), fc_sm))
+        return cells or [Paragraph("&nbsp;", fc_sm)]
+
+    def _flight_card(it):
+        fd = it.details or {}
+        o, dst = fd.get("origin"), fd.get("destination")
+        inner = []
+
+        # Header: icon + route/sub-line, status + confirmation on the right
+        route = " - ".join(p for p in [
+            (" ".join(x for x in [f"<b>{escape((o or '').upper())}</b>", escape(_name_only(o))] if x.strip())) if o else "",
+            (" ".join(x for x in [f"<b>{escape((dst or '').upper())}</b>", escape(_name_only(dst))] if x.strip())) if dst else "",
+        ] if p) or escape(it.name or "Flight")
+        left = [Paragraph(route, fc_route)]
+        subline = " · ".join(x for x in [_daymon(fd.get("depart_time")), fd.get("duration"), fd.get("stops")] if x)
+        if subline:
+            left.append(Paragraph(escape(subline), fc_sm))
+        right = []
+        if fd.get("flight_status"):
+            right.append(Paragraph(f"<b>{escape(str(fd['flight_status']).upper())}</b>", fc_status))
+        if fd.get("booking_ref"):
+            right.append(Paragraph(f"Confirmation: {escape(str(fd['booking_ref']))}", fc_smr))
+        header = Table([[_icon(), left, right or Paragraph("&nbsp;", fc_sm)]], colWidths=[20, 330, 127])
+        header.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (0, 0), 1),
+        ]))
+        inner.append(header)
+        inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=6, spaceAfter=6))
+
+        # Airline / flight number
+        airline = ", ".join(x for x in [fd.get("airline"), fd.get("flight_number")] if x)
+        if airline:
+            inner.append(Paragraph(f"<b>{escape(airline)}</b>", fc_air))
+            inner.append(Spacer(1, 4))
+
+        # Segments: depart  →  arrive  |  cabin / class / aircraft
+        detail = []
+        for lbl, val in [("Cabin", fd.get("fare_class")), ("Aircraft", fd.get("aircraft")),
+                         ("Seat", fd.get("seats")), ("Baggage", fd.get("baggage"))]:
+            if val:
+                detail.append(Paragraph(f"<b>{lbl}:</b> {escape(str(val))}", fc_detail))
+        seg = Table([[
+            _endpoint_cell(o, fd.get("depart_time"), fd.get("depart_tz"), fd.get("origin_terminal"), fd.get("origin_gate")),
+            _arrow(),
+            _endpoint_cell(dst, fd.get("arrive_time"), fd.get("arrive_tz"), fd.get("arrive_terminal"), fd.get("arrive_gate")),
+            detail or Paragraph("&nbsp;", fc_sm),
+        ]], colWidths=[152, 28, 152, 145])
+        seg.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"), ("VALIGN", (1, 0), (1, 0), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        inner.append(seg)
+
+        # Passengers / frequent flyer
+        if fd.get("passengers") or fd.get("loyalty_info"):
+            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=6, spaceAfter=6))
+            pax = []
+            if fd.get("passengers"):
+                pax.append(Paragraph(f"<b>Passengers:</b> {escape(str(fd['passengers']))}", fc_detail))
+            if fd.get("loyalty_info"):
+                pax.append(Paragraph(f"<b>Frequent flyer:</b> {escape(str(fd['loyalty_info']))}", fc_detail))
+            inner.append(Table([[pax]], colWidths=[USABLE - 16], style=TableStyle([
+                ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ])))
+
+        # Layover footer
+        lay = " ".join(x for x in [fd.get("layover"), fd.get("connects_to") and f"– {fd['connects_to']}"] if x)
+        if lay:
+            inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=6, spaceAfter=6))
+            inner.append(Paragraph(f"Layover {escape(lay)}", fc_sm))
+
+        box = Table([[inner]], colWidths=[USABLE])
+        box.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.75, RULE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ]))
+
+        title = [Paragraph(escape(it.name), card_title)] if it.name else []
+        flow.append(KeepTogether(title + [box]))
+
+        # Anything not on the card, kept so nothing is lost
+        line("Check-in desk", fd.get("checkin_desk"))
+        line("Meal", fd.get("meal"))
+        line("Booked with", fd.get("booking_airline"))
+        line("Booking phone", fd.get("booking_phone"))
+        line("Cost", it.cost)
+        line("Link", it.link)
+        line("Notes", it.notes)
+
     for si, stop in enumerate(stops):
         if si == 0:
             flow.append(Paragraph(escape(trip.name or "Trip"), h_trip))
@@ -140,46 +288,12 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
             flow.append(Paragraph("<i>No items.</i>", body))
 
         for it in items:
+            if it.kind == "flight":
+                _flight_card(it)
+                continue
+
             flow.append(Paragraph(escape(it.name or "(untitled)"), item_name))
             flow.append(Paragraph(_KIND_LABEL.get(it.kind, it.kind), kind_st))
-
-            # Flights get an itinerary-style block (From/To, times, cabin, seat…)
-            if it.kind == "flight":
-                fd = it.details or {}
-                subtitle = " · ".join(x for x in [fd.get("flight_number"), fd.get("airline"), fd.get("fare_class")] if x)
-                if subtitle:
-                    flow.append(Paragraph(escape(subtitle), body))
-
-                def _seg(code, t, tz, term, gate):
-                    bits = [_airport(code), _fmt_dt(t)]
-                    if tz: bits.append(str(tz))
-                    if term: bits.append(f"Terminal {term}")
-                    if gate: bits.append(f"Gate {gate}")
-                    return " · ".join(b for b in bits if b)
-
-                line("Depart", _seg(fd.get("origin"), fd.get("depart_time"), fd.get("depart_tz"), fd.get("origin_terminal"), fd.get("origin_gate")))
-                line("Arrive", _seg(fd.get("destination"), fd.get("arrive_time"), fd.get("arrive_tz"), fd.get("arrive_terminal"), fd.get("arrive_gate")))
-                summary = " · ".join(x for x in [
-                    fd.get("duration"), fd.get("aircraft"),
-                    fd.get("seats") and f"Seat {fd['seats']}",
-                    fd.get("baggage") and f"Baggage {fd['baggage']}",
-                    fd.get("stops"),
-                ] if x)
-                if summary:
-                    flow.append(Paragraph(escape(summary), body))
-                line("Check-in desk", fd.get("checkin_desk"))
-                line("Meal", fd.get("meal"))
-                if fd.get("layover") or fd.get("connects_to"):
-                    line("Layover", " ".join(x for x in [fd.get("layover"), fd.get("connects_to") and f"(connects to {fd['connects_to']})"] if x))
-                line("Passengers", fd.get("passengers"))
-                line("Frequent flyer", fd.get("loyalty_info"))
-                line("Booking ref", fd.get("booking_ref"))
-                line("Booked with", fd.get("booking_airline"))
-                line("Phone", fd.get("booking_phone"))
-                line("Cost", it.cost)
-                line("Link", it.link)
-                line("Notes", it.notes)
-                continue
 
             primary = _item_primary_dt(it)
             if primary:
