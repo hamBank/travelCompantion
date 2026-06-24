@@ -213,6 +213,27 @@ def test_date_warnings_accommodation_without_checkout_not_flagged(client: TestCl
     assert names == {"Way Late Hotel": "after stop departure"}
 
 
+def test_date_warnings_accommodation_checkout_before_checkin_not_flagged(client: TestClient, trip):
+    # Lyon arrives 4 Aug, departs 6 Aug. The check-in is fine (4 Aug), but the
+    # check-out is stored *before* the check-in (bad data — e.g. a stale/wrong
+    # check-out date). A check-out before check-in is impossible, so it must not be
+    # read as the stay ending before arrival.
+    lyon = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Lyon", "arrive": "2026-08-04T00:00:00", "depart": "2026-08-06T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Home", "arrive": "2026-08-20T00:00:00", "depart": "2026-08-22T00:00:00", "status": "planned"
+    })
+    client.post(f"/stops/{lyon['id']}/items", json={
+        "kind": "accommodation", "name": "Pullman Lyon", "status": "pending",
+        "details": {"checkin": "2026-08-04T15:00", "checkout": "2026-08-02T11:00"},
+    })
+    # Sanity: this exact data was flagged "before stop arrival" before the fix.
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    names = [w["name"] for w in warnings]
+    assert "Pullman Lyon" not in names
+
+
 def test_date_warnings_transit_span_overlaps_window(client: TestClient, trip):
     # Lyon: arrive early 4 Aug, depart 6 Aug. A later stop keeps Lyon off the
     # "final stop" exemption.
