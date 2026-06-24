@@ -26,6 +26,8 @@ token.json
 .pytest_cache/
 .coverage
 htmlcov/
+# coverage reports are generated on deploy, not committed
+backend/static/coverage/
 
 # OS
 .DS_Store
