@@ -332,7 +332,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             <Row label="Passengers"    value={d.passengers} />
             <Row label="Loyalty"       value={d.loyalty_info} />
             <Row label="Distance"      value={d.distance} />
-            <Row label="Notes"         value={d.notes} />
+            <Row label="Notes"         value={item.notes} />
           </div>
 
           {(d.booking_ref || item.link || item.cost || d.booking_airline || d.booking_phone) && (

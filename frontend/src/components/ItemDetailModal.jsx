@@ -89,7 +89,7 @@ function AccommodationBody({ item }) {
             </a>
           </Row>
         )}
-        {d.description && <Row label="Notes">{d.description}</Row>}
+        {d.description && <Row label="Description">{d.description}</Row>}
       </div>
 
       {(d.booking_ref || item.link || item.cost) && (
@@ -134,7 +134,6 @@ function ActivityBody({ item }) {
       {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
       {d.duration && <Row label="Duration">{d.duration}</Row>}
       {d.description && <Row label="Description">{d.description}</Row>}
-      {item.notes && <Row label="Notes">{item.notes}</Row>}
       {d.location && (
         <Row label="Address">
           <a href={mapsUrl(d.location)} target="_blank" rel="noreferrer"
@@ -175,7 +174,6 @@ function ShowBody({ item }) {
       {d.seats && <Row label="Seats">{d.seats}</Row>}
       {d.booking_ref && <Row label="Booking ref">{d.booking_ref}</Row>}
       {d.description && <Row label="Description">{d.description}</Row>}
-      {item.notes && <Row label="Notes">{item.notes}</Row>}
       {d.contact_phone && (
         <Row label="Phone">
           <a href={`tel:${d.contact_phone}`} style={{ color: 'var(--accent)' }} className="hover:underline">
@@ -202,8 +200,7 @@ function RestaurantBody({ item }) {
         {(item.scheduled_at || d.reservation_time) && (
           <Row label="When">{item.scheduled_at ? fmtDayTime(item.scheduled_at) : d.reservation_time}</Row>
         )}
-        {item.notes && <Row label="Notes">{item.notes}</Row>}
-        {d.location && (
+          {d.location && (
           <Row label="Address">
             <a href={mapsUrl(d.location)} target="_blank" rel="noreferrer"
                style={{ color: 'var(--accent)' }} className="hover:underline">
@@ -503,8 +500,7 @@ function CyclingBody({ item }) {
           </Row>
         )}
         {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
-        {item.notes && <Row label="Notes">{item.notes}</Row>}
-        {item.cost  && <Row label="Cost"><CostDisplay item={item} showIcon={false} /></Row>}
+          {item.cost  && <Row label="Cost"><CostDisplay item={item} showIcon={false} /></Row>}
         {d.gpx_filename && (
           <Row label="GPX">
             <button onClick={() => downloadGpx(item.id, d.original_gpx_name)}
@@ -576,6 +572,8 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
           {item.kind === 'restaurant'    && <RestaurantBody item={item} />}
           {item.kind === 'note'          && <NoteBody item={item} />}
           {item.kind === 'cycling'       && <CyclingBody item={item} />}
+          {/* Notes apply to every kind — shown only when filled (note items show it as their body). */}
+          {item.kind !== 'note' && item.notes && <Row label="Notes">{item.notes}</Row>}
         </div>
 
         <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose} />

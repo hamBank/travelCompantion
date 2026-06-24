@@ -201,6 +201,7 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Email" value={d('contact_email')} onChange={v => setD('contact_email', v)} placeholder="info@hotel.com" />
       </SectionBox>
       <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="Breakfast included, rooftop terrace…" />
+      <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
     </div>
   )
 }
@@ -422,6 +423,7 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Phone" value={d('booking_phone')} onChange={v => setD('booking_phone', v)} placeholder="+61 2 9691 3636" />
         </div>
       </SectionBox>
+      <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
     </div>
   )
 }
@@ -1228,6 +1230,7 @@ function PurchaseForm({ core, details, setCore, setDetails }) {
       <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="What it is, why you want it…" rows={3} />
       <Field label="Shop / Location" value={d('location')} onChange={v => setD('location', v)} placeholder="Night market, Chatuchak…" />
       <Field label="Link / URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+      <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
     </div>
   )
 }
@@ -1240,6 +1243,7 @@ function FoodForm({ core, details, setCore, setDetails }) {
       <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Pasta alla Norma" />
       <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="Notes, what to order, what to avoid…" rows={3} />
       <Field label="Link (optional)" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+      <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
     </div>
   )
 }
