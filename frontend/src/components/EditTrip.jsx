@@ -80,10 +80,11 @@ export default function EditTrip({ trip, onTripRenamed }) {
         <div className="grid grid-cols-2 gap-4">
           {['start_date', 'end_date'].map(key => (
             <div key={key}>
-              <label style={{ color: 'var(--text-faint)' }} className="block text-xs uppercase tracking-wide mb-1.5">
+              <label htmlFor={key} style={{ color: 'var(--text-faint)' }} className="block text-xs uppercase tracking-wide mb-1.5">
                 {key === 'start_date' ? 'Start date' : 'End date'}
               </label>
               <input
+                id={key}
                 type="date"
                 value={fields[key]}
                 onChange={e => set(key, e.target.value)}
