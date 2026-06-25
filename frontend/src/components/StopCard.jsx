@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, createContext, useContext } from 'react'
 import { updateStopStatus, updateItemStatus } from '../api.js'
 import { useHideCompleted, useShowInbound } from '../settings.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
@@ -63,6 +63,10 @@ function DayBanner({ dateKey }) {
   )
 }
 
+// Cards inside a TimeRow consume this to suppress their internal time display.
+const HideTimeCtx = createContext(false)
+const useHideTime = () => useContext(HideTimeCtx)
+
 const TIME_COL_W = '4rem'
 const TIME_COL_GAP = '0.5rem' // gap-2
 
@@ -75,7 +79,9 @@ function TimeRow({ item, children }) {
         {time && <div className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{time}</div>}
         {tz   && <div className="text-xs" style={{ color: 'var(--text-faint)' }}>{tz}</div>}
       </div>
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="flex-1 min-w-0">
+        <HideTimeCtx.Provider value={true}>{children}</HideTimeCtx.Provider>
+      </div>
     </div>
   )
 }
@@ -549,6 +555,7 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const hideTime = useHideTime()
   const d = item.details ?? {}
 
   return (
@@ -574,7 +581,7 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
               {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
-              {(d.bag_drop || d.checkin || d.checkout) && (
+              {!hideTime && (d.bag_drop || d.checkin || d.checkout) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs">
                   {[d.bag_drop && `Bag drop: ${fmtDateTime(d.bag_drop)}`,
                     d.checkin && `In: ${fmtDateTime(d.checkin)}`,
@@ -608,6 +615,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
   const d = item.details ?? {}
   const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
   const timeStr = fmtDayTime(item.scheduled_at)
+  const hideTime = useHideTime()
 
   // Full ordered route (incl. intermediate waypoints) when available, else start/end.
   const routePts = d.route_points?.length >= 2 ? d.route_points : [d.start_location, d.end_location].filter(Boolean)
@@ -649,7 +657,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
                 )}
                 {(timeStr || d.distance || d.elevation_gain || d.elevation_loss || d.duration) && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                    {timeStr          && <span style={{ color: 'var(--text-muted)' }}>{timeStr}</span>}
+                    {!hideTime && timeStr && <span style={{ color: 'var(--text-muted)' }}>{timeStr}</span>}
                     {d.distance       && <span>↔ {d.distance}</span>}
                     {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
                     {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
@@ -723,6 +731,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
   const d = item.details ?? {}
 
   const timeStr = fmtDayTime(item.scheduled_at)
+  const hideTime = useHideTime()
 
   return (
     <>
@@ -750,9 +759,9 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
               {d.meeting_point && (
                 <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">📍 {d.meeting_point}</div>
               )}
-              {(timeStr || d.duration || (item.cost && !isFullyPaid(item)) || d.booking_ref) && (
+              {(!hideTime && timeStr || d.duration || (item.cost && !isFullyPaid(item)) || d.booking_ref) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
-                  {timeStr       && <span>{timeStr}</span>}
+                  {!hideTime && timeStr && <span>{timeStr}</span>}
                   {d.duration    && <span>⏱ {d.duration}</span>}
                   {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
@@ -827,7 +836,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
                     {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                   </div>
                 )}
-                {item.scheduled_at && (
+                {!hideTime && item.scheduled_at && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs">
                     {fmtDayTime(item.scheduled_at)}
                   </div>
@@ -896,6 +905,7 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
   const timeStr = fmtDayTime(item.scheduled_at)
+  const hideTime = useHideTime()
 
   return (
     <>
@@ -922,9 +932,9 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
               {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
-              {(timeStr || d.distance || d.elevation_gain || d.elevation_loss || d.surface_type) && (
+              {(!hideTime && timeStr || d.distance || d.elevation_gain || d.elevation_loss || d.surface_type) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                  {timeStr          && <span style={{ color: 'var(--text-muted)' }}>{timeStr}</span>}
+                  {!hideTime && timeStr && <span style={{ color: 'var(--text-muted)' }}>{timeStr}</span>}
                   {d.distance       && <span>{d.distance}</span>}
                   {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
                   {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
@@ -1067,6 +1077,7 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
   const timeStr = fmtDayTime(item.scheduled_at)
+  const hideTime = useHideTime()
 
   return (
     <>
@@ -1094,9 +1105,9 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
               {item.notes && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs"><RichText>{item.notes}</RichText></div>
               )}
-              {(timeStr || d.duration || (item.cost && !isFullyPaid(item))) && (
+              {(!hideTime && timeStr || d.duration || (item.cost && !isFullyPaid(item))) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
-                  {timeStr && <span>{timeStr}</span>}
+                  {!hideTime && timeStr && <span>{timeStr}</span>}
                   {d.duration && <span>⏱ {d.duration}</span>}
                   {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
                 </div>
@@ -1132,6 +1143,7 @@ function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
   const timeStr = fmtDayTime(item.scheduled_at)
+  const hideTime = useHideTime()
 
   return (
     <>
@@ -1165,9 +1177,9 @@ function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
               {item.notes && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs"><RichText>{item.notes}</RichText></div>
               )}
-              {(timeStr || d.duration || (item.cost && !isFullyPaid(item))) && (
+              {(!hideTime && timeStr || d.duration || (item.cost && !isFullyPaid(item))) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
-                  {timeStr && <span>{timeStr}</span>}
+                  {!hideTime && timeStr && <span>{timeStr}</span>}
                   {d.duration && <span>⏱ {d.duration}</span>}
                   {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
                 </div>
@@ -1203,6 +1215,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showEdit, setShowEdit] = useState(false)
 
   const timeStr = fmtDayTime(item.scheduled_at)
+  const hideTime = useHideTime()
   const important = !!item.details?.important
   const extraNote = item.notes && item.notes.trim() !== item.name?.trim() ? item.notes.trim() : ''
 
@@ -1246,9 +1259,9 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
                 {extraNote && (
                   <div style={{ color: 'var(--text-muted)' }} className="text-xs"><RichText>{extraNote}</RichText></div>
                 )}
-                {(timeStr || (item.cost && !isFullyPaid(item))) && (
+                {(!hideTime && timeStr || (item.cost && !isFullyPaid(item))) && (
                   <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
-                    {timeStr && <span>{timeStr}</span>}
+                    {!hideTime && timeStr && <span>{timeStr}</span>}
                     {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
                   </div>
                 )}
@@ -1284,6 +1297,7 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const hideTime = useHideTime()
   const d = item.details ?? {}
 
   return (
@@ -1316,11 +1330,11 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
               {item.cost && !isFullyPaid(item) && (
                 <div className="text-xs"><CostDisplay item={item} compact /></div>
               )}
-              {(item.scheduled_at || d.reservation_time || item.notes || d.booking_ref) && (
+              {(!hideTime && (item.scheduled_at || d.reservation_time) || item.notes || d.booking_ref) && (
                 <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                  {item.scheduled_at
+                  {!hideTime && (item.scheduled_at
                     ? <span key="when">{fmtDayTime(item.scheduled_at)}</span>
-                    : d.reservation_time ? <span key="when">{d.reservation_time}</span> : null}
+                    : d.reservation_time ? <span key="when">{d.reservation_time}</span> : null)}
                   {item.notes && <span>{item.notes}</span>}
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                 </div>
