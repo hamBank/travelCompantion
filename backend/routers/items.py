@@ -172,6 +172,15 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
         try: return local_str[:16].replace(" ", "T") if local_str else None
         except: return None
 
+    def tz_from_local(local_str):
+        # "2025-07-15 11:45+08:00" → "GMT+8"  /  "... -05:00" → "GMT-5"
+        import re
+        if not local_str: return None
+        m = re.search(r'([+-])(\d{2}):(\d{2})$', local_str)
+        if not m: return None
+        sign, h, mins = m.group(1), int(m.group(2)), int(m.group(3))
+        return f"GMT{sign}{h}" if mins == 0 else f"GMT{sign}{h}:{m.group(3)}"
+
     def chk(label, key, stored, live_val, update_val=None):
         if live_val is None:
             return None
@@ -197,8 +206,10 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
         chk("Dep terminal", "origin_terminal", d.get("origin_terminal"), dep.get("terminal")),
         chk("Dep gate",     "origin_gate",     d.get("origin_gate"),     dep.get("gate")),
         chk("Check-in",     "checkin_desk",    d.get("checkin_desk"),    dep.get("checkInDesk")),
+        chk("Dep timezone", "depart_tz",       d.get("depart_tz"),       tz_from_local(dep_local)),
         chk("Arr terminal", "arrive_terminal", d.get("arrive_terminal"), arr.get("terminal")),
         chk("Arr gate",     "arrive_gate",     d.get("arrive_gate"),     arr.get("gate")),
+        chk("Arr timezone", "arrive_tz",       d.get("arrive_tz"),       tz_from_local(arr_local)),
     ] if c]
 
     return {

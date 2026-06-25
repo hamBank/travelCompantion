@@ -19,6 +19,20 @@ const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 
 const fmtDate = fmtDay
 const fmtDateTime = fmtDayTime
 
+// Convert a stored local datetime + "GMT+X" offset string to UTC milliseconds.
+// Falls back to treating the datetime as UTC when no offset is available.
+export function toUtcMs(dt, tz) {
+  if (!dt) return null
+  const base = String(dt).includes('T') ? dt : dt + 'T00:00'
+  if (!tz) return new Date(base + 'Z').getTime()
+  const m = String(tz).replace(/^(GMT|UTC)/, '').match(/^([+-]?)(\d{1,2})(?::(\d{2}))?$/)
+  if (!m) return new Date(base + 'Z').getTime()
+  const sign = m[1] === '-' ? -1 : 1
+  const offsetMs = sign * (parseInt(m[2], 10) * 60 + parseInt(m[3] || '0', 10)) * 60000
+  // Treat stored datetime as local: UTC = local - offset
+  return new Date(base + 'Z').getTime() - offsetMs
+}
+
 export function itemDateKey(item) {
   let dt
   if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
@@ -123,36 +137,63 @@ export function fmtConnectionDur(ms) {
 }
 
 export function computeCrossStopLayover(fromStop, toStop) {
-  let latestArr = null, latestArrTime = null
+  // Last transport arrival in fromStop (UTC-aware)
+  let latestArr = null, latestArrMs = null
   for (const it of (fromStop.items || [])) {
     if (!TRANSPORT_KINDS.has(it.kind)) continue
     const t = _arriveStr(it)
     if (!t) continue
-    if (!latestArrTime || new Date(t) > new Date(latestArrTime)) { latestArr = it; latestArrTime = t }
+    const ms = toUtcMs(t, (it.details || {}).arrive_tz)
+    if (!ms) continue
+    if (!latestArrMs || ms > latestArrMs) { latestArr = it; latestArrMs = ms }
   }
-  let earliestDep = null, earliestDepTime = null
+  if (!latestArr) return null
+
+  // First item of ANY kind in toStop (UTC-aware)
+  let earliestMs = null
   for (const it of (toStop.items || [])) {
-    if (!TRANSPORT_KINDS.has(it.kind)) continue
-    const t = _departStr(it)
-    if (!t) continue
-    if (!earliestDepTime || new Date(t) < new Date(earliestDepTime)) { earliestDep = it; earliestDepTime = t }
+    const ms = _itemStartMs(it)
+    if (!ms) continue
+    if (!earliestMs || ms < earliestMs) earliestMs = ms
   }
-  if (!latestArr || !earliestDep) return null
-  const ms = new Date(earliestDepTime) - new Date(latestArrTime)
+  if (!earliestMs) return null
+
+  const ms = earliestMs - latestArrMs
   if (ms <= 0 || ms > 86400000) return null
   return { duration: fmtConnectionDur(ms), location: _connectionLocation(latestArr) }
 }
 
+// UTC start-time for any item (for layover calculations)
+function _itemStartMs(item) {
+  const d = item.details || {}
+  if (item.kind === 'flight' || item.kind === 'rail')
+    return toUtcMs(d.depart_time, d.depart_tz)
+  if (item.kind === 'accommodation')
+    return toUtcMs(d.bag_drop || d.checkin || item.scheduled_at, null)
+  return toUtcMs(item.scheduled_at, null)
+}
+
 export function computeLayovers(sortedItems) {
-  const ts = sortedItems.filter(i => TRANSPORT_KINDS.has(i.kind))
+  // Sort ALL items by UTC start time — connection ends at next item of any kind
+  const all = sortedItems
+    .map(it => ({ it, ms: _itemStartMs(it) }))
+    .filter(x => x.ms !== null)
+    .sort((a, b) => a.ms - b.ms)
+
   const out = {}
-  for (let i = 0; i < ts.length - 1; i++) {
-    const [a, b] = [ts[i], ts[i + 1]]
-    const arr = _arriveStr(a), dep = _departStr(b)
-    if (!arr || !dep) continue
-    const ms = new Date(dep) - new Date(arr)
+  for (let i = 0; i < all.length; i++) {
+    const cur = all[i].it
+    if (!TRANSPORT_KINDS.has(cur.kind)) continue
+    const arrStr = _arriveStr(cur)
+    if (!arrStr) continue
+    const arrMs = toUtcMs(arrStr, (cur.details || {}).arrive_tz)
+    if (!arrMs) continue
+    // Next item of any kind that starts after this arrival
+    const next = all.slice(i + 1).find(x => x.ms > arrMs)
+    if (!next) continue
+    const ms = next.ms - arrMs
     if (ms <= 0 || ms > 86400000) continue
-    out[a.id] = { duration: fmtConnectionDur(ms), location: _connectionLocation(a) }
+    out[cur.id] = { duration: fmtConnectionDur(ms), location: _connectionLocation(cur) }
   }
   return out
 }
@@ -189,11 +230,12 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     .filter(i => i.status !== 'done' || !hideCompleted)
 
   const sortKey = item => {
-    let dt
-    if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
-    else if (item.kind === 'accommodation')             dt = item.details?.bag_drop || item.details?.checkin || item.scheduled_at
-    else                                                dt = item.scheduled_at
-    return dt ? new Date(dt).getTime() : Infinity
+    const d = item.details || {}
+    if (item.kind === 'flight' || item.kind === 'rail')
+      return toUtcMs(d.depart_time, d.depart_tz) ?? Infinity
+    if (item.kind === 'accommodation')
+      return toUtcMs(d.bag_drop || d.checkin || item.scheduled_at, null) ?? Infinity
+    return toUtcMs(item.scheduled_at, null) ?? Infinity
   }
   // Important notes are pinned to the very top of the stop; everything else flows
   // chronologically (by check-in / arrival). Food & purchases stay grouped.

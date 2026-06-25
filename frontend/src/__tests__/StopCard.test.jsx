@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -89,13 +89,26 @@ describe('computeLayovers', () => {
     expect(result[1]).toBeUndefined()
   })
 
-  it('ignores negative gaps (items out of order)', () => {
+  it('sorts items by UTC before computing (out-of-order input is handled)', () => {
+    // Pass items in wrong order — algorithm should re-sort and find the 3h 30m connection
     const items = [
       flight(1, '2026-08-19T14:00', '2026-08-19T22:00', 'MEL', 'DOH'),
       flight(2, '2026-08-19T08:00', '2026-08-19T10:30', 'SYD', 'MEL'),
     ]
     const result = computeLayovers(items)
-    expect(Object.keys(result)).toHaveLength(0)
+    // After sorting, flight 2 (08:00) precedes flight 1 (14:00) — 3h 30m connection
+    expect(result[2]).toBeDefined()
+    expect(result[2].duration).toBe('3h 30m')
+  })
+
+  it('ignores a flight whose arrival is after the next item starts', () => {
+    // Flight arrives at 22:00, next item starts at 20:00 — negative gap, ignore
+    const items = [
+      flight(1, '2026-08-19T08:00', '2026-08-19T22:00', 'SYD', 'MEL'),
+      { id: 2, kind: 'activity', details: {}, scheduled_at: '2026-08-19T20:00' },
+    ]
+    const result = computeLayovers(items)
+    expect(result[1]).toBeUndefined()
   })
 
   it('works across flight + transfer pairs', () => {
@@ -108,17 +121,45 @@ describe('computeLayovers', () => {
     expect(result[1].duration).toBe('2h')
   })
 
-  it('ignores non-transport items between transport items', () => {
+  it('caps connection at next non-transport activity, not the subsequent flight', () => {
+    // Flight arrives 10:00; restaurant at 11:00; next flight at 13:00
+    // Connection should be 1h (to restaurant), not 3h (to next flight)
     const items = [
       flight(1, '2026-08-19T08:00', '2026-08-19T10:00', 'SYD', 'MEL'),
       { id: 99, kind: 'restaurant', details: {}, scheduled_at: '2026-08-19T11:00' },
       flight(2, '2026-08-19T13:00', '2026-08-19T22:00', 'MEL', 'DOH'),
     ]
     const result = computeLayovers(items)
-    // Connection should still be between flight 1 and flight 2 (3h)
     expect(result[1]).toBeDefined()
-    expect(result[1].duration).toBe('3h')
+    expect(result[1].duration).toBe('1h')  // to restaurant, not to flight 2
     expect(result[99]).toBeUndefined()
+  })
+})
+
+// ── toUtcMs ──────────────────────────────────────────────────────────────────
+
+describe('toUtcMs', () => {
+  it('treats no-tz datetime as UTC', () => {
+    expect(toUtcMs('2026-07-25T07:35', null)).toBe(new Date('2026-07-25T07:35Z').getTime())
+  })
+
+  it('subtracts positive offset to get UTC (GMT+3 → local - 3h = UTC)', () => {
+    const local = new Date('2026-07-25T07:35Z').getTime()
+    const expected = local - 3 * 3600000
+    expect(toUtcMs('2026-07-25T07:35', 'GMT+3')).toBe(expected)
+  })
+
+  it('adds negative offset to get UTC (GMT-5 → local + 5h = UTC)', () => {
+    const local = new Date('2026-07-25T07:35Z').getTime()
+    const expected = local + 5 * 3600000
+    expect(toUtcMs('2026-07-25T07:35', 'GMT-5')).toBe(expected)
+  })
+
+  it('orders a GMT+10 flight before GMT+2 flight that has a later local time', () => {
+    // SGT 21:35 (GMT+8) = 13:35 UTC; HEL 07:35 (GMT+3) next day = 04:35 UTC
+    const sgtDep = toUtcMs('2026-07-24T21:35', 'GMT+8')   // 13:35 UTC Jul 24
+    const helDep = toUtcMs('2026-07-25T07:35', 'GMT+3')   // 04:35 UTC Jul 25
+    expect(sgtDep).toBeLessThan(helDep)
   })
 })
 
