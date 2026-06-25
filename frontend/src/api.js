@@ -35,6 +35,12 @@ export const updateTrip = (id, data) =>
 export const getTripTimeline = (id) => req(`/trips/${id}/timeline`)
 export const getDateWarnings = (id) => req(`/trips/${id}/date-warnings`)
 
+// ── Pending changes (review-before-apply imports) ────────────────────────────
+export const getPending     = (tripId) => req(`/pending${tripId != null ? `?trip_id=${tripId}` : ''}`)
+export const updatePending  = (id, data) => req(`/pending/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const applyPending   = (id) => req(`/pending/${id}/apply`, { method: 'POST' })
+export const discardPending = (id) => req(`/pending/${id}/discard`, { method: 'POST' })
+
 export async function exportTripPdf(id, name) {
   const token = getToken()
   const r = await fetch(`/trips/${id}/export.pdf`, {

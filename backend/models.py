@@ -183,3 +183,62 @@ class ItemRead(ItemBase):
     id: int
     stop_id: int
     details: Optional[dict] = None
+
+
+# ── PendingChange (review-before-apply staging for imports) ────────────────────
+
+class PendingStatus(str, Enum):
+    pending = "pending"
+    applied = "applied"
+    discarded = "discarded"
+
+
+class PendingChange(SQLModel, table=True):
+    """A proposed itinerary change awaiting human review.
+
+    Fed initially by in-app document upload; later by inbound email. Applying a
+    pending change routes through the same item create/update path (permission
+    checked) — the mail/import side never writes items directly.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_by: str = Field(index=True)              # owning user's email (lowercased)
+    source: str = "upload"                            # upload | email
+    source_email_id: Optional[int] = None             # set in the email phase
+    trip_id: Optional[int] = Field(default=None, index=True)
+    op: str = "create"                                # create | update
+    target_item_id: Optional[int] = None              # set when op == update
+    suggested_stop_id: Optional[int] = None
+    kind: ItemKind = ItemKind.activity
+    # payload mirrors the item edit shape: {name, scheduled_at, cost, link, notes, details}
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    diff: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    confidence: str = "low"
+    match_reason: str = ""
+    status: PendingStatus = PendingStatus.pending
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    decided_at: Optional[datetime] = None
+    decided_by: str = ""
+
+
+class PendingChangeRead(SQLModel):
+    id: int
+    created_by: str
+    source: str
+    trip_id: Optional[int] = None
+    op: str
+    target_item_id: Optional[int] = None
+    suggested_stop_id: Optional[int] = None
+    kind: ItemKind
+    payload: dict = {}
+    diff: Optional[dict] = None
+    confidence: str
+    match_reason: str
+    status: PendingStatus
+    created_at: datetime
+
+
+class PendingChangeUpdate(SQLModel):
+    trip_id: Optional[int] = None
+    suggested_stop_id: Optional[int] = None
+    kind: Optional[ItemKind] = None
+    payload: Optional[dict] = None

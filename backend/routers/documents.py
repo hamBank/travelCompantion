@@ -253,7 +253,16 @@ async def parse_document(
         "details": details,
     }
 
+    # Persist as a pending change for review rather than creating the item now.
+    from .pending import create_pending_from_parse
+    pc = create_pending_from_parse(
+        session, user["email"], trip_id,
+        {"item": item, "confidence": parsed.get("confidence"), "match_reason": parsed.get("match_reason")},
+        matched,
+    )
+
     return {
+        "pending_id": pc.id,
         "item": item,
         "matched_stop_id": matched,
         "confidence": parsed.get("confidence") or "low",

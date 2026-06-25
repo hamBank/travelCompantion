@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { getTripTimeline, backfillAccommodations, getDateWarnings } from '../api.js'
+import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending } from '../api.js'
 import StopCard, { computeCrossStopLayover, itemDateKey } from './StopCard.jsx'
 import DocumentImportModal from './DocumentImportModal.jsx'
+import PendingReview from './PendingReview.jsx'
 import { RoleContext, canEdit } from '../roles.js'
 import { useShowInbound, useHideStopFrames } from '../settings.js'
 import { fmtDay } from '../dates.js'
@@ -11,6 +12,8 @@ export default function TripTimeline({ tripId, onStats }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
   const [warnings, setWarnings] = useState([])
   const [dismissed, setDismissed] = useState(false)
   const showInbound = useShowInbound()
@@ -36,6 +39,7 @@ export default function TripTimeline({ tripId, onStats }) {
       // Legacy accommodation backfill — editors only (timeline also lazy-migrates).
       if (canEdit(tl.role)) { try { await backfillAccommodations(tripId) } catch (_) {} }
       try { const w = await getDateWarnings(tripId); setWarnings(w.warnings ?? []) } catch (_) {}
+      try { const p = await getPending(tripId); setPendingCount(p.length) } catch (_) {}
     }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
@@ -140,7 +144,16 @@ export default function TripTimeline({ tripId, onStats }) {
           <DocumentImportModal
             tripId={tripId}
             onClose={() => setImporting(false)}
-            onCreated={() => { setImporting(false); load() }}
+            onParsed={() => { setImporting(false); setReviewing(true); load() }}
+          />
+        )}
+
+        {reviewing && (
+          <PendingReview
+            tripId={tripId}
+            stops={timeline.stops}
+            onClose={() => { setReviewing(false); load() }}
+            onChanged={load}
           />
         )}
 
@@ -154,7 +167,7 @@ export default function TripTimeline({ tripId, onStats }) {
         </div>
 
         {editable && (
-          <div className="mt-4">
+          <div className="mt-4 flex gap-2 flex-wrap">
             <button
               onClick={() => setImporting(true)}
               style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
@@ -162,6 +175,15 @@ export default function TripTimeline({ tripId, onStats }) {
             >
               ⇪ Import from document
             </button>
+            {pendingCount > 0 && (
+              <button
+                onClick={() => setReviewing(true)}
+                style={{ color: 'var(--warning)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)', background: 'color-mix(in srgb, var(--warning) 8%, transparent)' }}
+                className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80 transition-opacity"
+              >
+                Review pending ({pendingCount})
+              </button>
+            )}
           </div>
         )}
       </div>
