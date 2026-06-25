@@ -657,6 +657,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
 function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
   const d = item.details ?? {}
 
   const timeStr = fmtDayTime(item.scheduled_at)
@@ -665,7 +666,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowEdit(true)}
+          onClick={() => setShowDetail(true)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-tour) 6%, var(--surface-2))',
@@ -700,6 +701,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -715,6 +717,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
 function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
   const [showMap, setShowMap] = useState(false)
   const d = item.details ?? {}
   const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
@@ -737,7 +740,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
       >
         <div className="relative group">
           <button
-            onClick={() => setShowEdit(true)}
+            onClick={() => setShowDetail(true)}
             className="w-full text-left hover:opacity-80 transition-opacity"
             style={{ padding: '0.75rem' }}
           >
@@ -812,6 +815,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
         )}
       </div>
 
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
