@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings } from '../api.js'
-import StopCard, { computeCrossStopLayover } from './StopCard.jsx'
+import StopCard, { computeCrossStopLayover, itemDateKey } from './StopCard.jsx'
 import DocumentImportModal from './DocumentImportModal.jsx'
 import { RoleContext, canEdit } from '../roles.js'
 import { useShowInbound, useHideStopFrames } from '../settings.js'
@@ -81,11 +81,25 @@ export default function TripTimeline({ tripId, onStats }) {
     }
   }
 
-  // Cross-stop connections: last arrival in stop[i] → first departure in stop[i+1]
-  const crossStopConnections = {}
+  // Cross-stop connections shown on the DESTINATION stop (after InboundBanner)
+  const inboundConnections = {}
   for (let i = 0; i < timeline.stops.length - 1; i++) {
     const conn = computeCrossStopLayover(timeline.stops[i], timeline.stops[i + 1])
-    if (conn) crossStopConnections[timeline.stops[i].id] = conn
+    if (conn) inboundConnections[timeline.stops[i + 1].id] = conn
+  }
+
+  // In frameless mode, track which day-banner dates have already been rendered
+  // by a previous stop so we don't repeat them.
+  const skipDaysByStop = {}
+  if (hideStopFrames) {
+    const seen = new Set()
+    for (const stop of timeline.stops) {
+      skipDaysByStop[stop.id] = new Set(seen)
+      for (const it of stop.items) {
+        const dk = itemDateKey(it)
+        if (dk) seen.add(dk)
+      }
+    }
   }
 
   const editable = canEdit(timeline.role)
@@ -130,7 +144,8 @@ export default function TripTimeline({ tripId, onStats }) {
           {timeline.stops.map((stop, i) => (
             <StopCard key={stop.id} stop={stop} index={i} onUpdate={load}
               inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames}
-              outboundConnection={crossStopConnections[stop.id] ?? null} />
+              inboundConnection={inboundConnections[stop.id] ?? null}
+              skipDays={skipDaysByStop[stop.id] ?? null} />
           ))}
         </div>
 

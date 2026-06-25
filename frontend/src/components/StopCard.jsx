@@ -170,7 +170,7 @@ function LayoverBadge({ duration, location }) {
   )
 }
 
-export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false, outboundConnection = null }) {
+export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false, inboundConnection = null, skipDays = null }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
@@ -225,6 +225,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     return (
       <div className="space-y-2">
         {inbound && <OffsetRow><InboundBanner inbound={inbound} onUpdate={onUpdate} /></OffsetRow>}
+        {inboundConnection && <OffsetRow><LayoverBadge {...inboundConnection} /></OffsetRow>}
         {timeline.length > 0 && (() => {
           const byDate = {}
           const undated = []
@@ -252,15 +253,18 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
           }
           return (
             <>
-              {sortedDates.map(dk => (
-                <div key={dk} className="space-y-1">
-                  <DayBanner dateKey={dk} />
-                  {byDate[dk].flatMap(item => [
-                    <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>,
-                    layovers[item.id] && <OffsetRow key={`lay-${item.id}`}><LayoverBadge {...layovers[item.id]} /></OffsetRow>,
-                  ].filter(Boolean))}
-                </div>
-              ))}
+              {sortedDates.map(dk => {
+                const showBanner = !skipDays?.has(dk)
+                return (
+                  <div key={dk} className="space-y-1">
+                    {showBanner && <DayBanner dateKey={dk} />}
+                    {byDate[dk].flatMap(item => [
+                      <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>,
+                      layovers[item.id] && <OffsetRow key={`lay-${item.id}`}><LayoverBadge {...layovers[item.id]} /></OffsetRow>,
+                    ].filter(Boolean))}
+                  </div>
+                )
+              })}
               {undated.map(item => (
                 <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>
               ))}
@@ -269,7 +273,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
         })()}
         {foodItems.map(item => <OffsetRow key={item.id}><FoodCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
         {purchaseItems.map(item => <OffsetRow key={item.id}><PurchaseCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
-        {outboundConnection && <OffsetRow><LayoverBadge {...outboundConnection} /></OffsetRow>}
       </div>
     )
   }
@@ -309,6 +312,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
       {open && (
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
           <InboundBanner inbound={inbound} onUpdate={onUpdate} />
+          {inboundConnection && <LayoverBadge {...inboundConnection} />}
 
           {timeline.length > 0 && (() => {
             const byDate = {}
@@ -382,7 +386,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               <span style={{ color: 'var(--text-faint)' }} className="ml-auto shrink-0">{fmtDayTime(checkoutAccom.details.checkout)}</span>
             </div>
           )}
-          {outboundConnection && <LayoverBadge {...outboundConnection} />}
         </div>
       )}
     </div>
