@@ -36,7 +36,7 @@ export function toUtcMs(dt, tz) {
 export function itemDateKey(item) {
   let dt
   if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
-  else if (item.kind === 'accommodation') dt = item.details?.bag_drop || item.details?.checkin || item.scheduled_at
+  else if (item.kind === 'accommodation') dt = item.details?.checkin || item.scheduled_at
   else dt = item.scheduled_at
   if (!dt) return null
   return String(dt).split('T')[0]
@@ -45,7 +45,7 @@ export function itemDateKey(item) {
 export function itemTimeStr(item) {
   let dt
   if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
-  else if (item.kind === 'accommodation') dt = item.details?.bag_drop || item.details?.checkin || item.scheduled_at
+  else if (item.kind === 'accommodation') dt = item.details?.checkin || item.scheduled_at
   else dt = item.scheduled_at
   if (!dt || !String(dt).includes('T')) return ''
   const d = new Date(dt)
@@ -169,7 +169,7 @@ function _itemStartMs(item) {
   if (item.kind === 'flight' || item.kind === 'rail')
     return toUtcMs(d.depart_time, d.depart_tz)
   if (item.kind === 'accommodation')
-    return toUtcMs(d.bag_drop || d.checkin || item.scheduled_at, null)
+    return toUtcMs(d.checkin || item.scheduled_at, null)
   return toUtcMs(item.scheduled_at, null)
 }
 
@@ -235,7 +235,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     if (item.kind === 'flight' || item.kind === 'rail')
       return toUtcMs(d.depart_time, d.depart_tz) ?? Infinity
     if (item.kind === 'accommodation')
-      return toUtcMs(d.bag_drop || d.checkin || item.scheduled_at, null) ?? Infinity
+      return toUtcMs(d.checkin || item.scheduled_at, null) ?? Infinity
     return toUtcMs(item.scheduled_at, null) ?? Infinity
   }
   // Important notes are pinned to the very top of the stop; everything else flows
