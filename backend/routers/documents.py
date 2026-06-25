@@ -114,40 +114,52 @@ def _build_prompt(stops, kinds) -> str:
         for s in stops
     ]
     hints = "\n".join(f"  - {k}: {_DETAIL_HINTS.get(k, 'description')}" for k in kinds)
-    return f"""You are parsing a single travel document (a booking confirmation, ticket, \
-reservation, or itinerary email) for a trip-planning app. Extract exactly ONE itinerary item from it.
+    return f"""You are parsing a travel document (a booking confirmation, ticket, \
+reservation, or itinerary email) for a trip-planning app. Extract EVERY distinct itinerary \
+item it describes.
 
-The trip has these stops (match the document to the most likely one by location AND date):
+IMPORTANT: a single document often contains several items. Output ONE item per real-world \
+segment or booking:
+- A multi-leg journey → one item per leg (each individual flight or train segment is its own item, with its own flight/train number, times, and origin/destination).
+- A confirmation covering a flight AND a hotel → one item each.
+- If the document truly describes only one thing, return a single-element list.
+Do NOT merge two flights into one item, and do NOT invent items that aren't in the document.
+
+The trip has these stops (match each item to the most likely one by location AND date):
 {json.dumps(stop_lines, indent=2)}
 
-Choose `kind` from this exact list: {", ".join(kinds)}
+Choose each `kind` from this exact list: {", ".join(kinds)}
 
-For `details`, use these snake_case keys per kind (include only those you can fill from the document):
+For `details`, use these snake_case keys per kind (include only those you can fill):
 {hints}
 
-Rules:
-- Times are LOCAL wall-clock, formatted "YYYY-MM-DDTHH:MM" (no timezone suffix).
-- `scheduled_at` is the item's primary time: departure for transport, check-in for accommodation, start time otherwise. Same "YYYY-MM-DDTHH:MM" format, or null if unknown.
-- `name` is a short human label, e.g. "Lyon → Dijon" for transport or the hotel/venue name.
-- `cost` is the total price as a plain string with currency symbol if present, e.g. "€48.00"; "" if unknown.
+Rules (apply per item):
+- Times are LOCAL wall-clock, formatted "YYYY-MM-DDTHH:MM" (no timezone suffix). For flights/rail, depart_time uses the origin's local time and arrive_time the destination's local time.
+- `scheduled_at` is the item's primary time: departure for transport, check-in for accommodation, start time otherwise. Same format, or null if unknown.
+- `name` is a short human label, e.g. "Singapore → Helsinki" for transport or the hotel/venue name.
+- `cost` is the total price as a plain string with currency symbol if present, e.g. "€48.00"; "" if unknown. If one price covers the whole booking, put it on the first item only and leave the others "".
 - `link` is a booking/management URL if present, else "".
-- `notes` is free text for anything important that has no dedicated field, else "".
+- `notes` is free text for anything important with no dedicated field, else "".
 - `matched_stop_id` is the integer id of the best-matching stop above, or null if none clearly fits.
-- `confidence` is "high", "medium", or "low" for the overall extraction.
+- `confidence` is "high", "medium", or "low" for that item.
 - `match_reason` is one short sentence explaining the stop choice (or why none matched).
 
 Respond with ONLY a JSON object, no markdown fences, no commentary:
 {{
-  "kind": "...",
-  "name": "...",
-  "scheduled_at": "YYYY-MM-DDTHH:MM" or null,
-  "cost": "...",
-  "link": "...",
-  "notes": "...",
-  "details": {{ ...snake_case keys... }},
-  "matched_stop_id": <int> or null,
-  "confidence": "high|medium|low",
-  "match_reason": "..."
+  "items": [
+    {{
+      "kind": "...",
+      "name": "...",
+      "scheduled_at": "YYYY-MM-DDTHH:MM" or null,
+      "cost": "...",
+      "link": "...",
+      "notes": "...",
+      "details": {{ ...snake_case keys... }},
+      "matched_stop_id": <int> or null,
+      "confidence": "high|medium|low",
+      "match_reason": "..."
+    }}
+  ]
 }}"""
 
 
@@ -168,7 +180,7 @@ def _call_claude(prompt: str, pdf_b64: str | None, doc_text: str | None) -> dict
     try:
         resp = client.messages.create(
             model=_MODEL,
-            max_tokens=6000,
+            max_tokens=8000,
             thinking={"type": "adaptive"},
             output_config={"effort": "medium"},
             messages=[{"role": "user", "content": content}],
@@ -188,6 +200,127 @@ def _call_claude(prompt: str, pdf_b64: str | None, doc_text: str | None) -> dict
         return json.loads(text)
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="Could not parse the extraction result.")
+
+
+def _datepart(s) -> str:
+    return (str(s) or "")[:10] if s else ""
+
+
+def _match_existing(session, trip_id, kind, details):
+    """Find an existing item this extraction most likely updates, or None.
+
+    Flights match on flight_number + departure date, rail on train_number + date,
+    accommodation on check-in date. Conservative on purpose — a wrong match would
+    silently overwrite a good record, so we only match on strong identifiers.
+    """
+    from ..models import ItineraryItem, Stop
+    if not trip_id:
+        return None
+    stop_ids = [s.id for s in session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()]
+    if not stop_ids:
+        return None
+    items = session.exec(select(ItineraryItem).where(ItineraryItem.stop_id.in_(stop_ids))).all()
+
+    def norm(v):
+        return (str(v or "")).replace(" ", "").upper()
+
+    if kind in ("flight", "rail"):
+        key = "flight_number" if kind == "flight" else "train_number"
+        num = norm(details.get(key))
+        if not num:
+            return None
+        dd = _datepart(details.get("depart_time"))
+        for it in items:
+            if it.kind != kind:
+                continue
+            d = it.details or {}
+            if norm(d.get(key)) == num and (not dd or _datepart(d.get("depart_time")) == dd):
+                return it
+    elif kind == "accommodation":
+        ci = _datepart(details.get("checkin"))
+        if not ci:
+            return None
+        for it in items:
+            if it.kind != "accommodation":
+                continue
+            if _datepart((it.details or {}).get("checkin")) == ci:
+                return it
+    return None
+
+
+def _compute_diff(existing, item: dict) -> dict:
+    """before/after of the fields this extraction would change on an existing item."""
+    before, after = {}, {}
+    old_d = existing.details or {}
+    new_d = item.get("details") or {}
+    for k, nv in new_d.items():
+        if nv in (None, "", []):
+            continue
+        ov = old_d.get(k)
+        if str(ov or "") != str(nv):
+            before[k] = ov
+            after[k] = nv
+    for f in ("name", "cost", "link", "notes"):
+        nv = item.get(f)
+        if not nv:
+            continue
+        ov = getattr(existing, f, "")
+        if str(ov or "") != str(nv):
+            before[f] = ov
+            after[f] = nv
+    return {"before": before, "after": after}
+
+
+def build_pending_changes(session, user_email, trip_id, stops, parsed):
+    """Turn a parsed multi-item result into PendingChange rows (with update-matching)."""
+    from .pending import create_pending_from_parse
+    kinds = [k.value for k in ItemKind]
+    stop_ids = {s.id for s in stops}
+
+    raw_items = parsed.get("items")
+    if not isinstance(raw_items, list):
+        # Tolerate the legacy single-object shape.
+        raw_items = [parsed] if parsed.get("kind") else []
+
+    created = []
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            continue
+        kind = raw.get("kind")
+        if kind not in kinds:
+            kind = "note"
+        details = raw.get("details")
+        if not isinstance(details, dict):
+            details = {}
+        matched = raw.get("matched_stop_id")
+        if not isinstance(matched, int) or matched not in stop_ids:
+            matched = None
+
+        item = {
+            "kind": kind,
+            "name": (raw.get("name") or "Imported item").strip(),
+            "scheduled_at": raw.get("scheduled_at") or None,
+            "cost": raw.get("cost") or "",
+            "link": raw.get("link") or "",
+            "notes": raw.get("notes") or "",
+            "details": details,
+        }
+
+        existing = _match_existing(session, trip_id, kind, details)
+        op = "update" if existing else "create"
+        target_id = existing.id if existing else None
+        diff = _compute_diff(existing, item) if existing else None
+        # If matched but the item lands on a different stop, keep the existing stop.
+        suggested_stop = (existing.stop_id if existing else None) or matched
+
+        pc = create_pending_from_parse(
+            session, user_email, trip_id, item, suggested_stop,
+            confidence=raw.get("confidence") or "low",
+            match_reason=raw.get("match_reason") or "",
+            op=op, target_item_id=target_id, diff=diff,
+        )
+        created.append(pc)
+    return created
 
 
 @router.post("/trips/{trip_id}/parse-document")
@@ -230,51 +363,15 @@ async def parse_document(
 
     parsed = _call_claude(_build_prompt(stops, kinds), pdf_b64, doc_text)
 
-    # Validate / sanitise the model output.
-    kind = parsed.get("kind")
-    if kind not in kinds:
-        kind = "note"
-    details = parsed.get("details")
-    if not isinstance(details, dict):
-        details = {}
-
-    stop_ids = {s.id for s in stops}
-    matched = parsed.get("matched_stop_id")
-    if not isinstance(matched, int) or matched not in stop_ids:
-        matched = None
-
-    item = {
-        "kind": kind,
-        "name": (parsed.get("name") or "Imported item").strip(),
-        "scheduled_at": parsed.get("scheduled_at") or None,
-        "cost": parsed.get("cost") or "",
-        "link": parsed.get("link") or "",
-        "notes": parsed.get("notes") or "",
-        "details": details,
-    }
-
-    # Persist as a pending change for review rather than creating the item now.
-    from .pending import create_pending_from_parse
-    pc = create_pending_from_parse(
-        session, user["email"], trip_id,
-        {"item": item, "confidence": parsed.get("confidence"), "match_reason": parsed.get("match_reason")},
-        matched,
-    )
+    # Persist each extracted item as a pending change (with update-matching).
+    pcs = build_pending_changes(session, user["email"], trip_id, stops, parsed)
+    if not pcs:
+        raise HTTPException(status_code=422, detail="No itinerary items found in that document")
 
     return {
-        "pending_id": pc.id,
-        "item": item,
-        "matched_stop_id": matched,
-        "confidence": parsed.get("confidence") or "low",
-        "match_reason": parsed.get("match_reason") or "",
-        "stops": [
-            {
-                "id": s.id,
-                "location": s.location,
-                "country": s.country,
-                "arrive": s.arrive.isoformat() if s.arrive else None,
-                "depart": s.depart.isoformat() if s.depart else None,
-            }
-            for s in stops
+        "count": len(pcs),
+        "pending": [
+            {"id": pc.id, "kind": pc.kind, "name": (pc.payload or {}).get("name"), "op": pc.op}
+            for pc in pcs
         ],
     }

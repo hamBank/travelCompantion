@@ -159,10 +159,12 @@ def discard_pending(
 
 def create_pending_from_parse(
     session: Session, user_email: str, trip_id: Optional[int],
-    parsed: dict, suggested_stop_id: Optional[int],
+    item: dict, suggested_stop_id: Optional[int],
+    confidence: str = "low", match_reason: str = "",
+    op: str = "create", target_item_id: Optional[int] = None,
+    diff: Optional[dict] = None, source: str = "upload",
 ) -> PendingChange:
-    """Persist a parsed document result as a PendingChange (shared by upload/email)."""
-    item = parsed.get("item", parsed)
+    """Persist one parsed item as a PendingChange (shared by upload/email)."""
     kind = item.get("kind")
     try:
         kind_enum = ItemKind(kind)
@@ -170,9 +172,10 @@ def create_pending_from_parse(
         kind_enum = ItemKind.note
     pc = PendingChange(
         created_by=user_email.lower(),
-        source="upload",
+        source=source,
         trip_id=trip_id,
-        op="create",
+        op=op,
+        target_item_id=target_item_id,
         suggested_stop_id=suggested_stop_id,
         kind=kind_enum,
         payload={
@@ -183,8 +186,9 @@ def create_pending_from_parse(
             "notes": item.get("notes") or "",
             "details": item.get("details") or {},
         },
-        confidence=parsed.get("confidence") or "low",
-        match_reason=parsed.get("match_reason") or "",
+        diff=diff,
+        confidence=confidence or "low",
+        match_reason=match_reason or "",
     )
     session.add(pc)
     session.commit()

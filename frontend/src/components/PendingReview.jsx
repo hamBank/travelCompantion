@@ -163,6 +163,20 @@ export default function PendingReview({ tripId, stops = [], onClose, onChanged }
                   </div>
                 )}
 
+                {row.op === 'update' && row.diff && Object.keys(row.diff.after || {}).length > 0 && (
+                  <div style={{ background: 'color-mix(in srgb, var(--warning) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)' }} className="rounded-lg p-2.5 space-y-1">
+                    <p style={{ color: 'var(--warning)' }} className="text-xs font-medium">Changes to the existing record</p>
+                    {Object.keys(row.diff.after).map(k => (
+                      <div key={k} className="flex gap-2 text-xs items-baseline">
+                        <span style={{ color: 'var(--text-faint)' }} className="w-24 shrink-0">{labelize(k)}</span>
+                        <span style={{ color: 'var(--text-faint)' }} className="line-through truncate" >{String(row.diff.before?.[k] ?? '—')}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>→</span>
+                        <span style={{ color: 'var(--text)' }} className="flex-1 break-words">{String(row.diff.after[k])}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {p.notes && <p style={{ color: 'var(--text-muted)' }} className="text-xs italic">{p.notes}</p>}
 
                 <div className="flex gap-2 pt-0.5">
