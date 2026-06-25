@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { HOME_CURRENCY_KEY } from '../currency.js'
-import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound } from '../settings.js'
+import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound, getHideStopFrames, setHideStopFrames } from '../settings.js'
 
 const COMMON_CURRENCIES = [
   'AED', 'ARS', 'AUD', 'BDT', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY',
@@ -42,12 +42,14 @@ export default function UserSettings({ onClose }) {
   const [filter, setFilter] = useState('')
   const [hideCompleted, setHideCompletedState] = useState(getHideCompleted)
   const [showInbound, setShowInboundState] = useState(getShowInbound)
+  const [hideStopFrames, setHideStopFramesState] = useState(getHideStopFrames)
 
   function save() {
     if (currency) localStorage.setItem(HOME_CURRENCY_KEY, currency)
     else localStorage.removeItem(HOME_CURRENCY_KEY)
     setHideCompleted(hideCompleted)
     setShowInbound(showInbound)
+    setHideStopFrames(hideStopFrames)
     onClose()
   }
 
@@ -75,6 +77,7 @@ export default function UserSettings({ onClose }) {
             <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Display</p>
             <Toggle label="Hide completed items" on={hideCompleted} onToggle={() => setHideCompletedState(v => !v)} />
             <Toggle label="Show inbound flight/train on destination stop" on={showInbound} onToggle={() => setShowInboundState(v => !v)} />
+            <Toggle label="Hide stop headers and frames" on={hideStopFrames} onToggle={() => setHideStopFramesState(v => !v)} />
           </div>
 
           <div>

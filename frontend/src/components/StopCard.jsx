@@ -77,7 +77,7 @@ function TimeRow({ item, children }) {
   )
 }
 
-export default function StopCard({ stop, index, onUpdate, inbound }) {
+export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
@@ -126,6 +126,56 @@ export default function StopCard({ stop, index, onUpdate, inbound }) {
     try { await updateStopStatus(stop.id, next); onUpdate() }
     catch { setStatus(status) }
     finally { setBusy(false) }
+  }
+
+  if (hideFrame) {
+    return (
+      <div className="space-y-2">
+        <InboundBanner inbound={inbound} onUpdate={onUpdate} />
+        {timeline.length > 0 && (() => {
+          const byDate = {}
+          const undated = []
+          for (const item of timeline) {
+            const dk = itemDateKey(item)
+            if (dk) { if (!byDate[dk]) byDate[dk] = []; byDate[dk].push(item) }
+            else undated.push(item)
+          }
+          const sortedDates = Object.keys(byDate).sort()
+          function renderCard(item) {
+            const props = { key: item.id, item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
+            if (item.kind === 'accommodation') return <AccomCard {...props} />
+            if (item.kind === 'flight')        return <FlightCard {...props} />
+            if (item.kind === 'rail')          return <RailCard {...props} />
+            if (item.kind === 'restaurant')    return <RestaurantCard {...props} />
+            if (item.kind === 'cycling')       return <CyclingCard {...props} />
+            if (item.kind === 'walk')          return <WalkCard {...props} />
+            if (item.kind === 'transfer')      return <TransferCard {...props} />
+            if (item.kind === 'tour')          return <TourCard {...props} />
+            if (item.kind === 'note')          return <NoteCard {...props} />
+            if (item.kind === 'activity')      return <ActivityCard {...props} />
+            if (item.kind === 'show')          return <ShowCard {...props} />
+            return <ItemRow {...props} />
+          }
+          return (
+            <>
+              {sortedDates.map(dk => (
+                <div key={dk} className="space-y-1">
+                  <DayBanner dateKey={dk} />
+                  {byDate[dk].map(item => (
+                    <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>
+                  ))}
+                </div>
+              ))}
+              {undated.map(item => (
+                <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>
+              ))}
+            </>
+          )
+        })()}
+        {foodItems.length > 0 && foodItems.map(item => <FoodCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />)}
+        {purchaseItems.length > 0 && purchaseItems.map(item => <PurchaseCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />)}
+      </div>
+    )
   }
 
   return (

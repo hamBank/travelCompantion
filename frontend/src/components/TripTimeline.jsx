@@ -3,7 +3,7 @@ import { getTripTimeline, backfillAccommodations, getDateWarnings } from '../api
 import StopCard from './StopCard.jsx'
 import DocumentImportModal from './DocumentImportModal.jsx'
 import { RoleContext, canEdit } from '../roles.js'
-import { useShowInbound } from '../settings.js'
+import { useShowInbound, useHideStopFrames } from '../settings.js'
 import { fmtDay } from '../dates.js'
 
 export default function TripTimeline({ tripId, onStats }) {
@@ -14,6 +14,7 @@ export default function TripTimeline({ tripId, onStats }) {
   const [warnings, setWarnings] = useState([])
   const [dismissed, setDismissed] = useState(false)
   const showInbound = useShowInbound()
+  const hideStopFrames = useHideStopFrames()
 
   useEffect(() => { load() }, [tripId])
 
@@ -121,7 +122,7 @@ export default function TripTimeline({ tripId, onStats }) {
         <div className="space-y-1.5">
           {timeline.stops.map((stop, i) => (
             <StopCard key={stop.id} stop={stop} index={i} onUpdate={load}
-              inbound={inboundByStop[stop.id]} />
+              inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames} />
           ))}
         </div>
 

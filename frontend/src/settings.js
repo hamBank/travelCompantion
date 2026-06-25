@@ -39,3 +39,19 @@ export function setShowInbound(value) {
 export function useShowInbound() {
   return useSyncExternalStore(subscribe, getShowInbound)
 }
+
+// ── Hide stop frames (show items only, no location header or outer card) ──────
+const HIDE_STOP_FRAMES_KEY = 'tc-hide-stop-frames'
+
+export function getHideStopFrames() {
+  return localStorage.getItem(HIDE_STOP_FRAMES_KEY) === '1'
+}
+
+export function setHideStopFrames(value) {
+  localStorage.setItem(HIDE_STOP_FRAMES_KEY, value ? '1' : '0')
+  listeners.forEach(l => l())
+}
+
+export function useHideStopFrames() {
+  return useSyncExternalStore(subscribe, getHideStopFrames)
+}
