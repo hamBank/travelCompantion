@@ -95,6 +95,60 @@ function OffsetRow({ children }) {
   )
 }
 
+// ── Connection / layover calculation ────────────────────────────────────────
+const TRANSPORT_KINDS = new Set(['flight', 'rail', 'transfer'])
+
+function _arriveStr(item) {
+  const d = item.details || {}
+  return (item.kind === 'flight' || item.kind === 'rail') ? (d.arrive_time || null) : null
+}
+
+function _departStr(item) {
+  const d = item.details || {}
+  return (item.kind === 'flight' || item.kind === 'rail') ? (d.depart_time || null) : (item.scheduled_at || null)
+}
+
+function _connectionLocation(item) {
+  const d = item.details || {}
+  if (item.kind === 'flight') { const c = d.destination; return c ? (airportName(c) || c) : null }
+  if (item.kind === 'rail')     return d.destination || null
+  if (item.kind === 'transfer') return d.end_location || null
+  return null
+}
+
+function fmtConnectionDur(ms) {
+  const mins = Math.round(ms / 60000)
+  const h = Math.floor(mins / 60), m = mins % 60
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`
+}
+
+function computeLayovers(sortedItems) {
+  const ts = sortedItems.filter(i => TRANSPORT_KINDS.has(i.kind))
+  const out = {}
+  for (let i = 0; i < ts.length - 1; i++) {
+    const [a, b] = [ts[i], ts[i + 1]]
+    const arr = _arriveStr(a), dep = _departStr(b)
+    if (!arr || !dep) continue
+    const ms = new Date(dep) - new Date(arr)
+    if (ms <= 0 || ms > 86400000) continue
+    out[a.id] = { duration: fmtConnectionDur(ms), location: _connectionLocation(a) }
+  }
+  return out
+}
+
+function LayoverBadge({ duration, location }) {
+  return (
+    <div className="flex items-center gap-1.5 py-0.5"
+         style={{ color: 'var(--text-faint)', fontSize: '0.73rem' }}>
+      <span>⏱</span>
+      <span>
+        <span className="font-medium" style={{ color: 'var(--text-muted)' }}>{duration}</span>
+        {' '}connection{location && <span> in {location}</span>}
+      </span>
+    </div>
+  )
+}
+
 export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
@@ -159,6 +213,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             else undated.push(item)
           }
           const sortedDates = Object.keys(byDate).sort()
+          const layovers = computeLayovers(timeline)
           function renderCard(item) {
             const props = { key: item.id, item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
             if (item.kind === 'accommodation') return <AccomCard {...props} />
@@ -179,9 +234,10 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               {sortedDates.map(dk => (
                 <div key={dk} className="space-y-1">
                   <DayBanner dateKey={dk} />
-                  {byDate[dk].map(item => (
-                    <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>
-                  ))}
+                  {byDate[dk].flatMap(item => [
+                    <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>,
+                    layovers[item.id] && <OffsetRow key={`lay-${item.id}`}><LayoverBadge {...layovers[item.id]} /></OffsetRow>,
+                  ].filter(Boolean))}
                 </div>
               ))}
               {undated.map(item => (
@@ -241,6 +297,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               else undated.push(item)
             }
             const sortedDates = Object.keys(byDate).sort()
+            const layovers = computeLayovers(timeline)
             function renderCard(item) {
               const props = { key: item.id, item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
               if (item.kind === 'accommodation') return <AccomCard {...props} />
@@ -261,9 +318,10 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
                 {sortedDates.map(dk => (
                   <div key={dk} className="space-y-1">
                     <DayBanner dateKey={dk} />
-                    {byDate[dk].map(item => (
-                      <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>
-                    ))}
+                    {byDate[dk].flatMap(item => [
+                      <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>,
+                      layovers[item.id] && <OffsetRow key={`lay-${item.id}`}><LayoverBadge {...layovers[item.id]} /></OffsetRow>,
+                    ].filter(Boolean))}
                   </div>
                 ))}
                 {undated.map(item => (
