@@ -75,9 +75,13 @@ export default function TripTimeline({ tripId, onStats }) {
   // card on its own (departure) stop — banner is an additional arrival marker.
   const inboundByStop = {}
   if (showInbound) {
+    const usedInbounds = new Set()
     for (const stop of timeline.stops) {
       const inb = inboundFor(stop)
-      if (inb) inboundByStop[stop.id] = inb
+      if (inb && !usedInbounds.has(inb.id)) {
+        inboundByStop[stop.id] = inb
+        usedInbounds.add(inb.id)
+      }
     }
   }
 
