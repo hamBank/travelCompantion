@@ -19,6 +19,64 @@ const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 
 const fmtDate = fmtDay
 const fmtDateTime = fmtDayTime
 
+function itemDateKey(item) {
+  let dt
+  if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
+  else if (item.kind === 'accommodation') dt = item.details?.bag_drop || item.details?.checkin || item.scheduled_at
+  else dt = item.scheduled_at
+  if (!dt) return null
+  return String(dt).split('T')[0]
+}
+
+function itemTimeStr(item) {
+  let dt
+  if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
+  else if (item.kind === 'accommodation') dt = item.details?.bag_drop || item.details?.checkin || item.scheduled_at
+  else dt = item.scheduled_at
+  if (!dt || !String(dt).includes('T')) return ''
+  const d = new Date(dt)
+  if (isNaN(d)) return ''
+  const h = d.getHours(), m = d.getMinutes()
+  if (h === 0 && m === 0) return ''
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+function itemTz(item) {
+  if (item.kind === 'flight' || item.kind === 'rail') return item.details?.depart_tz || ''
+  return ''
+}
+
+function fmtDayHeader(dateKey) {
+  const d = new Date(dateKey + 'T12:00:00')
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function DayBanner({ dateKey }) {
+  return (
+    <div
+      style={{ background: 'var(--surface-2)', borderRadius: '0.375rem' }}
+      className="px-3 py-1.5 text-xs font-semibold"
+    >
+      {fmtDayHeader(dateKey)}
+    </div>
+  )
+}
+
+function TimeRow({ item, children }) {
+  const time = itemTimeStr(item)
+  const tz   = itemTz(item)
+  return (
+    <div className="flex items-start gap-2">
+      <div className="shrink-0 text-right" style={{ width: '4rem', paddingTop: '0.6rem' }}>
+        {time && <div className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{time}</div>}
+        {tz   && <div className="text-xs" style={{ color: 'var(--text-faint)' }}>{tz}</div>}
+      </div>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  )
+}
+
 export default function StopCard({ stop, index, onUpdate, inbound }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
@@ -106,24 +164,46 @@ export default function StopCard({ stop, index, onUpdate, inbound }) {
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
           <InboundBanner inbound={inbound} onUpdate={onUpdate} />
 
-          {timeline.length > 0 && (
-            <div className="space-y-1">
-              {timeline.map(item => {
-                if (item.kind === 'accommodation') return <AccomCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'flight')    return <FlightCard    key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'rail')      return <RailCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'restaurant') return <RestaurantCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'cycling')   return <CyclingCard   key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'walk')      return <WalkCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'transfer')  return <TransferCard  key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'tour')      return <TourCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'note')      return <NoteCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'activity')  return <ActivityCard  key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                if (item.kind === 'show')      return <ShowCard      key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-                return <ItemRow key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />
-              })}
-            </div>
-          )}
+          {timeline.length > 0 && (() => {
+            const byDate = {}
+            const undated = []
+            for (const item of timeline) {
+              const dk = itemDateKey(item)
+              if (dk) { if (!byDate[dk]) byDate[dk] = []; byDate[dk].push(item) }
+              else undated.push(item)
+            }
+            const sortedDates = Object.keys(byDate).sort()
+            function renderCard(item) {
+              const props = { key: item.id, item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
+              if (item.kind === 'accommodation') return <AccomCard {...props} />
+              if (item.kind === 'flight')        return <FlightCard {...props} />
+              if (item.kind === 'rail')          return <RailCard {...props} />
+              if (item.kind === 'restaurant')    return <RestaurantCard {...props} />
+              if (item.kind === 'cycling')       return <CyclingCard {...props} />
+              if (item.kind === 'walk')          return <WalkCard {...props} />
+              if (item.kind === 'transfer')      return <TransferCard {...props} />
+              if (item.kind === 'tour')          return <TourCard {...props} />
+              if (item.kind === 'note')          return <NoteCard {...props} />
+              if (item.kind === 'activity')      return <ActivityCard {...props} />
+              if (item.kind === 'show')          return <ShowCard {...props} />
+              return <ItemRow {...props} />
+            }
+            return (
+              <div className="space-y-2">
+                {sortedDates.map(dk => (
+                  <div key={dk} className="space-y-1">
+                    <DayBanner dateKey={dk} />
+                    {byDate[dk].map(item => (
+                      <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>
+                    ))}
+                  </div>
+                ))}
+                {undated.map(item => (
+                  <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>
+                ))}
+              </div>
+            )
+          })()}
 
           {foodItems.length > 0 && (
             <Section label="Food & Drink">
