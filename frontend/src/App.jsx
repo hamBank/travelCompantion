@@ -122,7 +122,7 @@ function AppShell({ user, onLogout }) {
       {showSettings && <UserSettings onClose={() => setShowSettings(false)} />}
       {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={() => setShowShare(false)} />}
 
-      <main className="w-full px-3 sm:px-6 py-6" style={{ maxWidth: '900px', margin: '0 auto' }}>
+      <main className="w-full px-4 sm:px-8 lg:px-16 py-6">
         {selectedTrip
           ? editing
             ? <EditTrip
@@ -134,7 +134,7 @@ function AppShell({ user, onLogout }) {
         }
       </main>
 
-      <footer className="w-full px-3 sm:px-6 pb-8 pt-4 flex flex-col items-center gap-4" style={{ maxWidth: '900px', margin: '0 auto' }}>
+      <footer className="w-full px-4 sm:px-8 lg:px-16 pb-8 pt-4 flex flex-col items-center gap-4">
         <div className="flex items-center gap-3 flex-wrap justify-center">
           {selectedTrip && online && canEdit(selectedTrip.role) && (
             <button
