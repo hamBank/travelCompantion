@@ -63,15 +63,27 @@ function DayBanner({ dateKey }) {
   )
 }
 
+const TIME_COL_W = '4rem'
+const TIME_COL_GAP = '0.5rem' // gap-2
+
 function TimeRow({ item, children }) {
   const time = itemTimeStr(item)
   const tz   = itemTz(item)
   return (
     <div className="flex items-start gap-2">
-      <div className="shrink-0 text-right" style={{ width: '4rem', paddingTop: '0.6rem' }}>
+      <div className="shrink-0 text-right" style={{ width: TIME_COL_W, paddingTop: '0.6rem' }}>
         {time && <div className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{time}</div>}
         {tz   && <div className="text-xs" style={{ color: 'var(--text-faint)' }}>{tz}</div>}
       </div>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  )
+}
+
+function OffsetRow({ children }) {
+  return (
+    <div className="flex items-start gap-2">
+      <div className="shrink-0" style={{ width: TIME_COL_W }} />
       <div className="flex-1 min-w-0">{children}</div>
     </div>
   )
@@ -131,7 +143,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   if (hideFrame) {
     return (
       <div className="space-y-2">
-        <InboundBanner inbound={inbound} onUpdate={onUpdate} />
+        {inbound && <OffsetRow><InboundBanner inbound={inbound} onUpdate={onUpdate} /></OffsetRow>}
         {timeline.length > 0 && (() => {
           const byDate = {}
           const undated = []
@@ -172,8 +184,8 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             </>
           )
         })()}
-        {foodItems.length > 0 && foodItems.map(item => <FoodCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />)}
-        {purchaseItems.length > 0 && purchaseItems.map(item => <PurchaseCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />)}
+        {foodItems.map(item => <OffsetRow key={item.id}><FoodCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
+        {purchaseItems.map(item => <OffsetRow key={item.id}><PurchaseCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
       </div>
     )
   }
