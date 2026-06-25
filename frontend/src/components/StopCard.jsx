@@ -790,6 +790,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [showEdit, setShowEdit] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
   const [showMap, setShowMap] = useState(false)
+  const hideTime = useHideTime()
   const d = item.details ?? {}
   const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
 
