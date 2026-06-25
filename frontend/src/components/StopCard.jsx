@@ -116,10 +116,31 @@ function _connectionLocation(item) {
   return null
 }
 
-function fmtConnectionDur(ms) {
+export function fmtConnectionDur(ms) {
   const mins = Math.round(ms / 60000)
   const h = Math.floor(mins / 60), m = mins % 60
   return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`
+}
+
+export function computeCrossStopLayover(fromStop, toStop) {
+  let latestArr = null, latestArrTime = null
+  for (const it of (fromStop.items || [])) {
+    if (!TRANSPORT_KINDS.has(it.kind)) continue
+    const t = _arriveStr(it)
+    if (!t) continue
+    if (!latestArrTime || new Date(t) > new Date(latestArrTime)) { latestArr = it; latestArrTime = t }
+  }
+  let earliestDep = null, earliestDepTime = null
+  for (const it of (toStop.items || [])) {
+    if (!TRANSPORT_KINDS.has(it.kind)) continue
+    const t = _departStr(it)
+    if (!t) continue
+    if (!earliestDepTime || new Date(t) < new Date(earliestDepTime)) { earliestDep = it; earliestDepTime = t }
+  }
+  if (!latestArr || !earliestDep) return null
+  const ms = new Date(earliestDepTime) - new Date(latestArrTime)
+  if (ms <= 0 || ms > 86400000) return null
+  return { duration: fmtConnectionDur(ms), location: _connectionLocation(latestArr) }
 }
 
 export function computeLayovers(sortedItems) {
@@ -149,7 +170,7 @@ function LayoverBadge({ duration, location }) {
   )
 }
 
-export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false }) {
+export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false, outboundConnection = null }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
@@ -248,6 +269,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
         })()}
         {foodItems.map(item => <OffsetRow key={item.id}><FoodCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
         {purchaseItems.map(item => <OffsetRow key={item.id}><PurchaseCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
+        {outboundConnection && <OffsetRow><LayoverBadge {...outboundConnection} /></OffsetRow>}
       </div>
     )
   }
@@ -360,6 +382,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               <span style={{ color: 'var(--text-faint)' }} className="ml-auto shrink-0">{fmtDayTime(checkoutAccom.details.checkout)}</span>
             </div>
           )}
+          {outboundConnection && <LayoverBadge {...outboundConnection} />}
         </div>
       )}
     </div>

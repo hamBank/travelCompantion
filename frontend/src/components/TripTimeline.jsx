@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings } from '../api.js'
-import StopCard from './StopCard.jsx'
+import StopCard, { computeCrossStopLayover } from './StopCard.jsx'
 import DocumentImportModal from './DocumentImportModal.jsx'
 import { RoleContext, canEdit } from '../roles.js'
 import { useShowInbound, useHideStopFrames } from '../settings.js'
@@ -81,6 +81,13 @@ export default function TripTimeline({ tripId, onStats }) {
     }
   }
 
+  // Cross-stop connections: last arrival in stop[i] → first departure in stop[i+1]
+  const crossStopConnections = {}
+  for (let i = 0; i < timeline.stops.length - 1; i++) {
+    const conn = computeCrossStopLayover(timeline.stops[i], timeline.stops[i + 1])
+    if (conn) crossStopConnections[timeline.stops[i].id] = conn
+  }
+
   const editable = canEdit(timeline.role)
 
   return (
@@ -122,7 +129,8 @@ export default function TripTimeline({ tripId, onStats }) {
         <div className="space-y-1.5">
           {timeline.stops.map((stop, i) => (
             <StopCard key={stop.id} stop={stop} index={i} onUpdate={load}
-              inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames} />
+              inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames}
+              outboundConnection={crossStopConnections[stop.id] ?? null} />
           ))}
         </div>
 

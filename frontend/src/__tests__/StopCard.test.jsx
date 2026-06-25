@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, computeLayovers } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -119,6 +119,62 @@ describe('computeLayovers', () => {
     expect(result[1]).toBeDefined()
     expect(result[1].duration).toBe('3h')
     expect(result[99]).toBeUndefined()
+  })
+})
+
+// ── fmtConnectionDur ─────────────────────────────────────────────────────────
+
+describe('fmtConnectionDur', () => {
+  it('formats hours and minutes', () => expect(fmtConnectionDur(5700000)).toBe('1h 35m'))
+  it('formats whole hours', ()        => expect(fmtConnectionDur(7200000)).toBe('2h'))
+  it('formats minutes only', ()       => expect(fmtConnectionDur(2700000)).toBe('45m'))
+})
+
+// ── computeCrossStopLayover ───────────────────────────────────────────────────
+
+describe('computeCrossStopLayover', () => {
+  const mkFlight = (id, depart, arrive, dest = 'HEL') => ({
+    id, kind: 'flight', scheduled_at: null,
+    details: { depart_time: depart, arrive_time: arrive, destination: dest },
+  })
+
+  it('detects a connection between the last arrival in stop A and first departure in stop B', () => {
+    const stopA = { items: [mkFlight(1, '2026-07-24T21:35', '2026-07-25T06:00', 'HEL')] }
+    const stopB = { items: [mkFlight(2, '2026-07-25T07:35', '2026-07-25T09:40', 'CDG')] }
+    const result = computeCrossStopLayover(stopA, stopB)
+    expect(result).not.toBeNull()
+    expect(result.duration).toBe('1h 35m')
+    expect(result.location).toMatch(/Helsinki/)
+  })
+
+  it('returns null when gap is more than 24h', () => {
+    const stopA = { items: [mkFlight(1, '2026-07-24T08:00', '2026-07-24T10:00', 'HEL')] }
+    const stopB = { items: [mkFlight(2, '2026-07-26T08:00', '2026-07-26T12:00', 'CDG')] }
+    expect(computeCrossStopLayover(stopA, stopB)).toBeNull()
+  })
+
+  it('returns null when stop A has no transport arrivals', () => {
+    const stopA = { items: [{ id: 1, kind: 'restaurant', details: {}, scheduled_at: '2026-07-24T19:00' }] }
+    const stopB = { items: [mkFlight(2, '2026-07-25T07:35', '2026-07-25T09:40', 'CDG')] }
+    expect(computeCrossStopLayover(stopA, stopB)).toBeNull()
+  })
+
+  it('returns null when stop B has no transport departures', () => {
+    const stopA = { items: [mkFlight(1, '2026-07-24T21:35', '2026-07-25T06:00', 'HEL')] }
+    const stopB = { items: [{ id: 2, kind: 'accommodation', details: {}, scheduled_at: null }] }
+    expect(computeCrossStopLayover(stopA, stopB)).toBeNull()
+  })
+
+  it('uses the latest arrival when stop A has multiple transport items', () => {
+    const stopA = {
+      items: [
+        mkFlight(1, '2026-07-24T10:00', '2026-07-24T12:00', 'SIN'),
+        mkFlight(2, '2026-07-24T21:35', '2026-07-25T06:00', 'HEL'),
+      ],
+    }
+    const stopB = { items: [mkFlight(3, '2026-07-25T07:35', '2026-07-25T09:40', 'CDG')] }
+    const result = computeCrossStopLayover(stopA, stopB)
+    expect(result.duration).toBe('1h 35m') // from 06:00 not 12:00
   })
 })
 
