@@ -101,8 +101,24 @@ describe('computeLayovers', () => {
     expect(result[2].duration).toBe('3h 30m')
   })
 
+  it('shows no connection when the next item starts before the transport arrives', () => {
+    // Train arrives 10:03; next items at 09:59 and 10:00 — all before arrival, skip
+    const rail = (id, depart, arrive) => ({
+      id, kind: 'rail', scheduled_at: null,
+      details: { depart_time: depart, arrive_time: arrive, origin: 'LYS', destination: 'MAK' },
+    })
+    const items = [
+      rail(1, '2026-08-05T09:16', '2026-08-05T10:03'),
+      { id: 2, kind: 'cycling', details: {}, scheduled_at: '2026-08-05T09:59' },
+      { id: 3, kind: 'note',    details: {}, scheduled_at: '2026-08-05T10:00' },
+      { id: 4, kind: 'cycling', details: {}, scheduled_at: '2026-08-05T12:15' },
+    ]
+    const result = computeLayovers(items)
+    // The immediately next item (09:59) starts before the 10:03 arrival → no connection
+    expect(result[1]).toBeUndefined()
+  })
+
   it('ignores a flight whose arrival is after the next item starts', () => {
-    // Flight arrives at 22:00, next item starts at 20:00 — negative gap, ignore
     const items = [
       flight(1, '2026-08-19T08:00', '2026-08-19T22:00', 'SYD', 'MEL'),
       { id: 2, kind: 'activity', details: {}, scheduled_at: '2026-08-19T20:00' },

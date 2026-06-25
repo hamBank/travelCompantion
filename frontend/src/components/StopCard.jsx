@@ -188,9 +188,10 @@ export function computeLayovers(sortedItems) {
     if (!arrStr) continue
     const arrMs = toUtcMs(arrStr, (cur.details || {}).arrive_tz)
     if (!arrMs) continue
-    // Next item of any kind that starts after this arrival
-    const next = all.slice(i + 1).find(x => x.ms > arrMs)
-    if (!next) continue
+    // Use the immediately next item in chronological order.
+    // If it starts before this transport arrives, we're already committed — no gap.
+    const next = all[i + 1]
+    if (!next || next.ms <= arrMs) continue
     const ms = next.ms - arrMs
     if (ms <= 0 || ms > 86400000) continue
     out[cur.id] = { duration: fmtConnectionDur(ms), location: _connectionLocation(cur) }
