@@ -19,7 +19,7 @@ const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 
 const fmtDate = fmtDay
 const fmtDateTime = fmtDayTime
 
-function itemDateKey(item) {
+export function itemDateKey(item) {
   let dt
   if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
   else if (item.kind === 'accommodation') dt = item.details?.bag_drop || item.details?.checkin || item.scheduled_at
@@ -28,7 +28,7 @@ function itemDateKey(item) {
   return String(dt).split('T')[0]
 }
 
-function itemTimeStr(item) {
+export function itemTimeStr(item) {
   let dt
   if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
   else if (item.kind === 'accommodation') dt = item.details?.bag_drop || item.details?.checkin || item.scheduled_at
@@ -64,7 +64,7 @@ function DayBanner({ dateKey }) {
 }
 
 // Cards inside a TimeRow consume this to suppress their internal time display.
-const HideTimeCtx = createContext(false)
+export const HideTimeCtx = createContext(false)
 const useHideTime = () => useContext(HideTimeCtx)
 
 const TIME_COL_W = '4rem'
@@ -122,7 +122,7 @@ function fmtConnectionDur(ms) {
   return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`
 }
 
-function computeLayovers(sortedItems) {
+export function computeLayovers(sortedItems) {
   const ts = sortedItems.filter(i => TRANSPORT_KINDS.has(i.kind))
   const out = {}
   for (let i = 0; i < ts.length - 1; i++) {
@@ -319,14 +319,12 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
                   <div key={dk} className="space-y-1">
                     <DayBanner dateKey={dk} />
                     {byDate[dk].flatMap(item => [
-                      <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>,
-                      layovers[item.id] && <OffsetRow key={`lay-${item.id}`}><LayoverBadge {...layovers[item.id]} /></OffsetRow>,
+                      renderCard(item),
+                      layovers[item.id] && <LayoverBadge key={`lay-${item.id}`} {...layovers[item.id]} />,
                     ].filter(Boolean))}
                   </div>
                 ))}
-                {undated.map(item => (
-                  <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>
-                ))}
+                {undated.map(item => renderCard(item))}
               </div>
             )
           })()}
