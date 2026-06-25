@@ -1,7 +1,7 @@
 """Tests for the document-parse → pending-change builder (no Claude calls)."""
 from sqlmodel import select
 
-from backend.routers.documents import build_pending_changes, _match_existing, _compute_diff
+from backend.routers.documents import build_pending_changes, _match_existing, _compute_diff, _normalize_tz
 from backend.models import Stop, ItineraryItem
 
 
@@ -78,6 +78,44 @@ def test_empty_result_creates_nothing(client, session):
     trip, stop = _trip_with_stop(client)
     stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
     assert build_pending_changes(session, "dev@local", trip["id"], stops, {"items": []}) == []
+
+
+def test_normalize_tz_offsets_passthrough():
+    assert _normalize_tz("GMT+8", "2026-07-24T21:35") == "GMT+8"
+    assert _normalize_tz("+08:00", None) == "GMT+8"
+    assert _normalize_tz("UTC-5", None) == "GMT-5"
+    assert _normalize_tz("GMT+5:30", None) == "GMT+5:30"
+
+
+def test_normalize_tz_iana_names_to_offset():
+    # Helsinki is UTC+3 in July (DST), Singapore UTC+8 year-round
+    assert _normalize_tz("Europe/Helsinki", "2026-07-25T07:35") == "GMT+3"
+    assert _normalize_tz("Asia/Singapore", "2026-07-24T21:35") == "GMT+8"
+
+
+def test_normalize_tz_bare_city_names():
+    assert _normalize_tz("Helsinki", "2026-07-25T07:35") == "GMT+3"
+    assert _normalize_tz("Singapore", "2026-07-24T21:35") == "GMT+8"
+
+
+def test_normalize_tz_unknown_passthrough():
+    assert _normalize_tz("Narnia", "2026-07-25T07:35") == "Narnia"
+    assert _normalize_tz("", None) == ""
+
+
+def test_build_pending_normalizes_flight_tz(client, session):
+    trip, stop = _trip_with_stop(client)
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
+    parsed = {"items": [
+        {"kind": "flight", "name": "SIN → HEL", "matched_stop_id": stop["id"],
+         "details": {"flight_number": "AY132", "depart_time": "2026-07-24T21:35",
+                     "arrive_time": "2026-07-25T06:00", "depart_tz": "Asia/Singapore",
+                     "arrive_tz": "Helsinki"}},
+    ]}
+    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    d = pcs[0].payload["details"]
+    assert d["depart_tz"] == "GMT+8"
+    assert d["arrive_tz"] == "GMT+3"
 
 
 def test_match_existing_requires_identifier(client, session):

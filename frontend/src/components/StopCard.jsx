@@ -19,18 +19,42 @@ const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 
 const fmtDate = fmtDay
 const fmtDateTime = fmtDayTime
 
-// Convert a stored local datetime + "GMT+X" offset string to UTC milliseconds.
-// Falls back to treating the datetime as UTC when no offset is available.
+// Offset (minutes) of an IANA zone at a given instant — DST-correct. null if the
+// zone name is unknown to the runtime.
+function ianaOffsetMin(localAsUtcMs, zone) {
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    })
+    const parts = {}
+    for (const p of dtf.formatToParts(new Date(localAsUtcMs))) parts[p.type] = p.value
+    const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second)
+    return Math.round((asUtc - localAsUtcMs) / 60000)
+  } catch {
+    return null
+  }
+}
+
+// Convert a stored local datetime + timezone to UTC milliseconds.
+// Accepts "GMT+8"/"UTC-5"/"+08:00" offsets AND IANA names ("Europe/Helsinki").
+// Falls back to treating the datetime as UTC when the zone can't be resolved.
 export function toUtcMs(dt, tz) {
   if (!dt) return null
   const base = String(dt).includes('T') ? dt : dt + 'T00:00'
-  if (!tz) return new Date(base + 'Z').getTime()
-  const m = String(tz).replace(/^(GMT|UTC)/, '').match(/^([+-]?)(\d{1,2})(?::(\d{2}))?$/)
-  if (!m) return new Date(base + 'Z').getTime()
-  const sign = m[1] === '-' ? -1 : 1
-  const offsetMs = sign * (parseInt(m[2], 10) * 60 + parseInt(m[3] || '0', 10)) * 60000
-  // Treat stored datetime as local: UTC = local - offset
-  return new Date(base + 'Z').getTime() - offsetMs
+  const localAsUtc = new Date(base + 'Z').getTime()
+  if (!tz) return localAsUtc
+  const m = String(tz).trim().replace(/^(GMT|UTC)/i, '').match(/^\s*([+-]?)(\d{1,2})(?::?(\d{2}))?\s*$/)
+  if (m && m[2] !== undefined && (m[1] || m[3] !== undefined || /\d/.test(m[2]))) {
+    const sign = m[1] === '-' ? -1 : 1
+    const offMin = sign * (parseInt(m[2], 10) * 60 + parseInt(m[3] || '0', 10))
+    return localAsUtc - offMin * 60000
+  }
+  // Not an offset — try an IANA zone name.
+  const offMin = ianaOffsetMin(localAsUtc, String(tz).trim())
+  if (offMin !== null) return localAsUtc - offMin * 60000
+  return localAsUtc
 }
 
 export function itemDateKey(item) {

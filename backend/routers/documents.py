@@ -14,8 +14,14 @@ it for review/edit and then creates the record through the normal item endpoint
 (which enforces editor permission on the chosen stop).
 """
 import os, json, base64, re, html
+from datetime import datetime
 from email import message_from_bytes
 from email.policy import default as email_default
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlmodel import Session, select
@@ -135,6 +141,7 @@ For `details`, use these snake_case keys per kind (include only those you can fi
 
 Rules (apply per item):
 - Times are LOCAL wall-clock, formatted "YYYY-MM-DDTHH:MM" (no timezone suffix). For flights/rail, depart_time uses the origin's local time and arrive_time the destination's local time.
+- depart_tz / arrive_tz must be fixed UTC-offset strings in the form "GMT+8", "GMT-5", or "GMT+5:30" — the offset actually in effect at that place on that date. Never use city names or IANA zone names (no "Asia/Singapore", no "Helsinki").
 - `scheduled_at` is the item's primary time: departure for transport, check-in for accommodation, start time otherwise. Same format, or null if unknown.
 - `name` is a short human label, e.g. "Singapore → Helsinki" for transport or the hotel/venue name.
 - `cost` is the total price as a plain string with currency symbol if present, e.g. "€48.00"; "" if unknown. If one price covers the whole booking, put it on the first item only and leave the others "".
@@ -200,6 +207,53 @@ def _call_claude(prompt: str, pdf_b64: str | None, doc_text: str | None) -> dict
         return json.loads(text)
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="Could not parse the extraction result.")
+
+
+_CITY_TZ = {
+    # Small alias map for the most common bare city names the model might emit,
+    # so they still normalise even though they aren't IANA identifiers.
+    "singapore": "Asia/Singapore", "helsinki": "Europe/Helsinki",
+    "paris": "Europe/Paris", "london": "Europe/London", "doha": "Asia/Qatar",
+    "dubai": "Asia/Dubai", "sydney": "Australia/Sydney", "melbourne": "Australia/Melbourne",
+    "tokyo": "Asia/Tokyo", "new york": "America/New_York", "los angeles": "America/Los_Angeles",
+}
+
+
+def _fmt_offset(total_min: int) -> str:
+    sign = "+" if total_min >= 0 else "-"
+    h, m = divmod(abs(total_min), 60)
+    return f"GMT{sign}{h}" if m == 0 else f"GMT{sign}{h}:{m:02d}"
+
+
+def _normalize_tz(tz, local_dt) -> str:
+    """Coerce a timezone value to the app's canonical 'GMT±X' offset string.
+
+    Accepts existing offsets (passed through, tidied), IANA names, and a few bare
+    city names — resolving names to the offset in effect on `local_dt` (DST-correct).
+    Unknown values are returned unchanged so nothing is lost.
+    """
+    if not tz:
+        return tz
+    s = str(tz).strip()
+    compact = s.replace(" ", "").upper()
+    m = re.match(r"^(?:GMT|UTC)?([+-])(\d{1,2})(?::?(\d{2}))?$", compact)
+    if m:
+        sign = -1 if m.group(1) == "-" else 1
+        return _fmt_offset(sign * (int(m.group(2)) * 60 + int(m.group(3) or 0)))
+    if ZoneInfo is None:
+        return s
+    name = s if "/" in s else _CITY_TZ.get(s.lower())
+    if not name:
+        return s
+    try:
+        ref = datetime.strptime((str(local_dt) or "")[:16], "%Y-%m-%dT%H:%M") if local_dt else datetime(2026, 1, 1)
+    except ValueError:
+        ref = datetime(2026, 1, 1)
+    try:
+        off = ZoneInfo(name).utcoffset(ref)
+        return _fmt_offset(int(off.total_seconds() // 60))
+    except Exception:
+        return s
 
 
 def _datepart(s) -> str:
@@ -292,6 +346,12 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed):
         details = raw.get("details")
         if not isinstance(details, dict):
             details = {}
+        # Canonicalise timezones to GMT±X (the format the rest of the app uses).
+        if kind in ("flight", "rail"):
+            if details.get("depart_tz"):
+                details["depart_tz"] = _normalize_tz(details["depart_tz"], details.get("depart_time"))
+            if details.get("arrive_tz"):
+                details["arrive_tz"] = _normalize_tz(details["arrive_tz"], details.get("arrive_time"))
         matched = raw.get("matched_stop_id")
         if not isinstance(matched, int) or matched not in stop_ids:
             matched = None

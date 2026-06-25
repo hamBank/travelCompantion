@@ -177,6 +177,25 @@ describe('toUtcMs', () => {
     const helDep = toUtcMs('2026-07-25T07:35', 'GMT+3')   // 04:35 UTC Jul 25
     expect(sgtDep).toBeLessThan(helDep)
   })
+
+  it('accepts IANA zone names (DST-correct via Intl)', () => {
+    // Europe/Helsinki in July = UTC+3
+    expect(toUtcMs('2026-07-25T07:35', 'Europe/Helsinki'))
+      .toBe(new Date('2026-07-25T07:35Z').getTime() - 3 * 3600000)
+    // Asia/Singapore = UTC+8
+    expect(toUtcMs('2026-07-24T21:35', 'Asia/Singapore'))
+      .toBe(new Date('2026-07-24T21:35Z').getTime() - 8 * 3600000)
+  })
+
+  it('matches offset and IANA forms of the same zone', () => {
+    expect(toUtcMs('2026-07-25T07:35', 'Europe/Helsinki'))
+      .toBe(toUtcMs('2026-07-25T07:35', 'GMT+3'))
+  })
+
+  it('falls back to UTC for an unresolvable zone', () => {
+    expect(toUtcMs('2026-07-25T07:35', 'Narnia'))
+      .toBe(new Date('2026-07-25T07:35Z').getTime())
+  })
 })
 
 // ── fmtConnectionDur ─────────────────────────────────────────────────────────
