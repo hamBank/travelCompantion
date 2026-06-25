@@ -55,3 +55,32 @@ export function setHideStopFrames(value) {
 export function useHideStopFrames() {
   return useSyncExternalStore(subscribe, getHideStopFrames)
 }
+
+// ── Font scale (applied as root font-size; all rem values scale with it) ─────
+const FONT_SCALE_KEY = 'tc-font-scale'
+export const FONT_SCALE_OPTIONS = [
+  { label: 'Small',   value: '14' },
+  { label: 'Default', value: '16' },
+  { label: 'Large',   value: '18' },
+  { label: 'XLarge',  value: '20' },
+]
+const DEFAULT_FONT_SCALE = '16'
+
+export function getFontScale() {
+  return localStorage.getItem(FONT_SCALE_KEY) || DEFAULT_FONT_SCALE
+}
+
+export function setFontScale(px) {
+  localStorage.setItem(FONT_SCALE_KEY, px)
+  document.documentElement.style.fontSize = `${px}px`
+  listeners.forEach(l => l())
+}
+
+export function applyFontScale() {
+  const px = getFontScale()
+  document.documentElement.style.fontSize = `${px}px`
+}
+
+export function useFontScale() {
+  return useSyncExternalStore(subscribe, getFontScale)
+}

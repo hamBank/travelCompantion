@@ -10,6 +10,10 @@ import ShareModal from './components/ShareModal.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf } from './api.js'
 import { canEdit, canManage } from './roles.js'
+import { applyFontScale } from './settings.js'
+
+// Apply saved font scale before first render
+applyFontScale()
 
 function useOnline() {
   const [online, setOnline] = useState(navigator.onLine)
@@ -72,7 +76,7 @@ function AppShell({ user, onLogout }) {
       )}
 
       <header
-        className="px-4 py-1.5 flex items-center gap-2 sticky top-0 z-20"
+        className="px-3 sm:px-6 py-1.5 flex items-center gap-2 sticky top-0 z-20"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         {selectedTrip ? (
@@ -118,7 +122,7 @@ function AppShell({ user, onLogout }) {
       {showSettings && <UserSettings onClose={() => setShowSettings(false)} />}
       {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={() => setShowShare(false)} />}
 
-      <main className="max-w-2xl mx-auto px-4 py-6">
+      <main className="w-full px-3 sm:px-6 py-6" style={{ maxWidth: '900px', margin: '0 auto' }}>
         {selectedTrip
           ? editing
             ? <EditTrip
@@ -130,7 +134,7 @@ function AppShell({ user, onLogout }) {
         }
       </main>
 
-      <footer className="max-w-2xl mx-auto px-4 pb-8 pt-4 flex flex-col items-center gap-4">
+      <footer className="w-full px-3 sm:px-6 pb-8 pt-4 flex flex-col items-center gap-4" style={{ maxWidth: '900px', margin: '0 auto' }}>
         <div className="flex items-center gap-3 flex-wrap justify-center">
           {selectedTrip && online && canEdit(selectedTrip.role) && (
             <button
