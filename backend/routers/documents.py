@@ -30,6 +30,7 @@ from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_trip_role
 from ..models import Trip, Stop, ItemKind, TripRole
+from ..pdf_export import _airport_map
 
 router = APIRouter()
 
@@ -150,7 +151,7 @@ Rules (apply per item):
 - Times are LOCAL wall-clock, formatted "YYYY-MM-DDTHH:MM" (no timezone suffix). For flights/rail, depart_time uses the origin's local time and arrive_time the destination's local time.
 - depart_tz / arrive_tz must be fixed UTC-offset strings in the form "GMT+8", "GMT-5", or "GMT+5:30" — the offset actually in effect at that place on that date. Never use city names or IANA zone names (no "Asia/Singapore", no "Helsinki").
 - `scheduled_at` is the item's primary time: departure for transport, check-in for accommodation, start time otherwise. Same format, or null if unknown.
-- `name` is a short human label, e.g. "Singapore → Helsinki" for transport or the hotel/venue name.
+- `name` is a short human label. For flights and rail: "Origin City → Destination City" using city names only — no airport or station codes, e.g. "Singapore → Helsinki" not "Singapore SIN → Helsinki HEL". For accommodation: the property name. For other items: a brief descriptive label.
 - `cost` is the total price as a plain string with currency symbol if present, e.g. "€48.00"; "" if unknown. If one price covers the whole booking, put it on the first item only and leave the others "".
 - `link` is a booking/management URL if present, else "".
 - `notes` is free text for anything important with no dedicated field, else "".
@@ -373,6 +374,16 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         details = raw.get("details")
         if not isinstance(details, dict):
             details = {}
+        # Normalize name: for flights/rail build "City → City" from IATA codes
+        # so Claude's airport-code inclusions ("Paris CDG → Doha DOH") are cleaned up.
+        if kind in ("flight", "rail"):
+            orig = details.get("origin") or details.get("start_location")
+            dest = details.get("destination") or details.get("end_location")
+            if orig and dest:
+                orig_name = (_airport_map().get(str(orig).strip().upper()) or str(orig).strip())
+                dest_name = (_airport_map().get(str(dest).strip().upper()) or str(dest).strip())
+                item["name"] = f"{orig_name} → {dest_name}"
+
         # Canonicalise timezones to GMT±X (the format the rest of the app uses).
         if kind in ("flight", "rail"):
             if details.get("depart_tz"):
