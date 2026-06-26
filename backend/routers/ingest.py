@@ -103,10 +103,16 @@ async def ingest_email(request: Request, session: Session = Depends(get_session)
     if not raw:
         return _json(400, {"detail": "empty message"})
 
-    to_addr = request.headers.get("X-Original-To", "") or request.headers.get("Delivered-To", "")
     msg = message_from_bytes(raw, policy=email_default)
-    if not to_addr:
-        to_addr = msg.get("to", "") or ""
+    # Prefer the explicit recipient the pipe passes (postfix ${recipient}); fall
+    # back to the headers postfix adds on local delivery, then the message To.
+    to_addr = (
+        request.headers.get("X-Original-To")
+        or msg.get("X-Original-To")
+        or msg.get("Delivered-To")
+        or msg.get("to")
+        or ""
+    )
     subject = (msg.get("subject") or "").strip()
     from_addr = (msg.get("from") or "").strip()
 

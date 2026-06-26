@@ -75,6 +75,21 @@ def test_ingest_resolves_user_and_creates_email_pending(client, session, ingest_
     assert pc.source_email_id == em.id
 
 
+def test_ingest_reads_token_from_delivered_to_header(client, session, ingest_env):
+    """When the pipe passes no X-Original-To, fall back to the email's headers."""
+    session.add(UserImportToken(user_email="dev@local", token="HDRTOKEN"))
+    session.commit()
+    eml = (b"From: x <x@finnair.com>\n"
+           b"To: antony@gmail.com\n"
+           b"Delivered-To: import+HDRTOKEN@tripplan.hups.club\n"
+           b"Subject: booking\n\nAY132 24.07.2026\n")
+    r = client.post("/ingest/email", content=eml, headers={"X-Ingest-Secret": "s3cret"})
+    assert r.status_code == 202
+    assert r.json()["resolved"] is True
+    pcs = session.exec(select(PendingChange)).all()
+    assert len(pcs) == 1 and pcs[0].created_by == "dev@local"
+
+
 def test_import_address_is_generated_and_stable(client):
     r = client.get("/me/import-address")
     assert r.status_code == 200
