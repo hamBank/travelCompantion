@@ -122,24 +122,87 @@ sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q --
 sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q -r "$APP_DIR/backend/requirements.txt"
 ok "Python dependencies installed"
 
-# ── 5. Frontend build ──────────────────────────────────────────────────────────
+# ── 5. Systemd service + deploy watcher ────────────────────────────────────────
+# Done BEFORE the npm build so the units always exist even if the build fails.
+# The service file only references filesystem paths (VENV, APP_DIR, ENV_FILE)
+# which are already set; systemd doesn't validate them at enable time.
+ENV_FILE="$APP_DIR/.env"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+info "Writing systemd service → $SERVICE_FILE"
+cat > "$SERVICE_FILE" <<SVCEOF
+[Unit]
+Description=Travel Companion API
+After=network.target
+
+[Service]
+Type=simple
+User=$APP_USER
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$ENV_FILE
+ExecStart=$VENV/bin/uvicorn backend.main:app --host 127.0.0.1 --port $BIND_PORT
+Restart=always
+RestartSec=5
+
+# Harden the service
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=$APP_DIR
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+cat > "/etc/systemd/system/${SERVICE_NAME}-update.service" <<USVC
+[Unit]
+Description=Travel Companion auto-update (triggered by webhook)
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/bin/bash $APP_DIR/deploy.sh --update
+ExecStartPost=/bin/rm -f $APP_DIR/.deploy-trigger
+StandardOutput=append:/var/log/travelcomp-deploy.log
+StandardError=append:/var/log/travelcomp-deploy.log
+USVC
+
+cat > "/etc/systemd/system/${SERVICE_NAME}-update.path" <<UPATH
+[Unit]
+Description=Watch for Travel Companion deploy trigger file
+
+[Path]
+PathExists=$APP_DIR/.deploy-trigger
+Unit=${SERVICE_NAME}-update.service
+
+[Install]
+WantedBy=multi-user.target
+UPATH
+
+systemctl daemon-reload
+systemctl enable "$SERVICE_NAME"
+systemctl enable --now "${SERVICE_NAME}-update.path"
+ok "Systemd units created: ${SERVICE_FILE}  watcher: ${SERVICE_NAME}-update.path"
+
+# ── 6b. Frontend build ──────────────────────────────────────────────────────────
+# HOME=$APP_DIR prevents npm writing to /nonexistent when the service user has no home dir.
+NPM="sudo -u $APP_USER HOME=$APP_DIR npm"
 info "Installing Node dependencies"
-sudo -u "$APP_USER" npm --prefix "$APP_DIR/frontend" ci --silent
+$NPM --prefix "$APP_DIR/frontend" ci --silent
 
 info "Building frontend"
-sudo -u "$APP_USER" npm --prefix "$APP_DIR/frontend" run build
+$NPM --prefix "$APP_DIR/frontend" run build
 ok "Frontend built → backend/static"
 
-# ── 5b. Coverage reports → /coverage (best-effort; never abort the deploy) ──────
+# ── 6c. Coverage reports → /coverage (best-effort; never abort the deploy) ──────
 # Generated AFTER the build, since the build empties backend/static.
 info "Generating coverage reports"
 COV_DIR="$APP_DIR/backend/static/coverage"
 sudo -u "$APP_USER" mkdir -p "$COV_DIR"
 sudo -u "$APP_USER" sh -c "cd '$APP_DIR' && '$VENV/bin/python' -m pytest --cov=backend --cov-report=html:backend/static/coverage/backend -q" \
   || warn "backend coverage generation failed (continuing)"
-sudo -u "$APP_USER" npm --prefix "$APP_DIR/frontend" run coverage \
+$NPM --prefix "$APP_DIR/frontend" run coverage \
   || warn "frontend coverage generation failed (continuing)"
-sudo -u "$APP_USER" tee "$COV_DIR/index.html" >/dev/null <<HTML
+tee "$COV_DIR/index.html" >/dev/null <<HTML
 <!doctype html><meta charset="utf-8"><title>Coverage</title>
 <style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.6}a{color:#1e66f5}</style>
 <h1>Test coverage</h1>
@@ -151,8 +214,7 @@ sudo -u "$APP_USER" tee "$COV_DIR/index.html" >/dev/null <<HTML
 HTML
 ok "Coverage reports → /coverage"
 
-# ── 6. Environment file ────────────────────────────────────────────────────────
-ENV_FILE="$APP_DIR/.env"
+# ── 7. Environment file ────────────────────────────────────────────────────────
 if [[ ! -f "$ENV_FILE" ]]; then
   info "Creating $ENV_FILE (fill in secrets before starting)"
   cat > "$ENV_FILE" <<ENVEOF
@@ -187,37 +249,6 @@ ENVEOF
 else
   ok ".env already exists — not overwritten"
 fi
-
-# ── 7. Systemd service ─────────────────────────────────────────────────────────
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-info "Writing systemd service → $SERVICE_FILE"
-cat > "$SERVICE_FILE" <<SVCEOF
-[Unit]
-Description=Travel Companion API
-After=network.target
-
-[Service]
-Type=simple
-User=$APP_USER
-WorkingDirectory=$APP_DIR
-EnvironmentFile=$ENV_FILE
-ExecStart=$VENV/bin/uvicorn backend.main:app --host 127.0.0.1 --port $BIND_PORT
-Restart=always
-RestartSec=5
-
-# Harden the service
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ReadWritePaths=$APP_DIR
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
-
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-ok "Systemd service enabled"
 
 # ── 8. Apache VirtualHost ──────────────────────────────────────────────────────
 info "Writing Apache VirtualHost → $VHOST_CONF"
@@ -258,39 +289,7 @@ else
   warn "Apache config test failed — check: sudo apache2ctl configtest"
 fi
 
-# ── 9. Systemd deploy path watcher ────────────────────────────────────────────
-info "Setting up auto-deploy path watcher"
-
-cat > "/etc/systemd/system/travelcomp-update.service" <<USVC
-[Unit]
-Description=Travel Companion auto-update (triggered by webhook)
-
-[Service]
-Type=oneshot
-User=root
-ExecStart=/bin/bash $APP_DIR/deploy.sh --update
-ExecStartPost=/bin/rm -f $APP_DIR/.deploy-trigger
-StandardOutput=append:/var/log/travelcomp-deploy.log
-StandardError=append:/var/log/travelcomp-deploy.log
-USVC
-
-cat > "/etc/systemd/system/travelcomp-update.path" <<UPATH
-[Unit]
-Description=Watch for Travel Companion deploy trigger file
-
-[Path]
-PathExists=$APP_DIR/.deploy-trigger
-Unit=travelcomp-update.service
-
-[Install]
-WantedBy=multi-user.target
-UPATH
-
-systemctl daemon-reload
-systemctl enable --now travelcomp-update.path
-ok "Deploy path watcher enabled (trigger: $APP_DIR/.deploy-trigger)"
-
-# ── 10. (Re)start service ──────────────────────────────────────────────────────
+# ── 9. (Re)start service ──────────────────────────────────────────────────────
 if $UPDATE_ONLY || $_WAS_RUNNING; then
   info "Restarting $SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
