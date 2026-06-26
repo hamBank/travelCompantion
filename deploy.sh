@@ -178,10 +178,19 @@ Unit=${SERVICE_NAME}-update.service
 WantedBy=multi-user.target
 UPATH
 
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-systemctl enable --now "${SERVICE_NAME}-update.path"
-ok "Systemd units created: ${SERVICE_FILE}  watcher: ${SERVICE_NAME}-update.path"
+# Only enable/start on first install. On updates the units are already active,
+# and calling systemctl from within the running update service itself causes
+# a circular dependency → systemd returns exit code 243/CREDENTIALS.
+if ! $UPDATE_ONLY; then
+  systemctl daemon-reload
+  systemctl enable "$SERVICE_NAME"
+  systemctl enable --now "${SERVICE_NAME}-update.path"
+  ok "Systemd units created and enabled: ${SERVICE_FILE}"
+else
+  # Pick up definition changes without re-enabling or touching the running watcher.
+  systemctl daemon-reload
+  ok "Systemd unit definitions updated (already enabled)"
+fi
 
 # ── 6b. Frontend build ──────────────────────────────────────────────────────────
 # HOME=$APP_DIR prevents npm writing to /nonexistent when the service user has no home dir.
