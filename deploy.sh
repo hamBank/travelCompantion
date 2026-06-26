@@ -167,6 +167,8 @@ Description=Travel Companion auto-update (triggered by webhook)
 [Service]
 Type=oneshot
 User=root
+# No timeout — npm install on a cold cache can take several minutes.
+TimeoutStartSec=0
 ExecStart=/bin/bash $APP_DIR/deploy.sh --update
 ExecStartPost=/bin/rm -f $APP_DIR/.deploy-trigger
 StandardOutput=append:/var/log/travelcomp-deploy.log
@@ -207,7 +209,7 @@ fi
 # HOME=$APP_DIR prevents npm writing to /nonexistent when the service user has no home dir.
 NPM="sudo -u $APP_USER HOME=$APP_DIR npm"
 info "Installing Node dependencies"
-$NPM --prefix "$APP_DIR/frontend" ci --silent
+$NPM --prefix "$APP_DIR/frontend" ci
 
 info "Building frontend"
 $NPM --prefix "$APP_DIR/frontend" run build
