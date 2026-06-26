@@ -187,9 +187,13 @@ if ! $UPDATE_ONLY; then
   systemctl enable --now "${SERVICE_NAME}-update.path"
   ok "Systemd units created and enabled: ${SERVICE_FILE}"
 else
-  # Pick up definition changes without re-enabling or touching the running watcher.
-  systemctl daemon-reload
-  ok "Systemd unit definitions updated (already enabled)"
+  # Never call daemon-reload or enable from within the running update service.
+  # On Debian 13 (systemd 257+) daemon-reload re-evaluates the *running* unit
+  # mid-flight and returns 243/CREDENTIALS, causing the service to fail and
+  # the path watcher to immediately re-trigger (infinite loop).
+  # Unit file definition changes land on the next fresh install or manual:
+  #   sudo systemctl daemon-reload
+  ok "Systemd unit definitions written (daemon-reload skipped inside update service)"
 fi
 
 # ── 6b. Frontend build ──────────────────────────────────────────────────────────
