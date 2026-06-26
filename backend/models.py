@@ -242,3 +242,26 @@ class PendingChangeUpdate(SQLModel):
     suggested_stop_id: Optional[int] = None
     kind: Optional[ItemKind] = None
     payload: Optional[dict] = None
+
+
+# ── Email ingestion ────────────────────────────────────────────────────────────
+
+class IngestedEmail(SQLModel, table=True):
+    """A forwarded email saved for parsing, debugging, and future source display."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    received_at: datetime = Field(default_factory=datetime.utcnow)
+    from_addr: str = ""
+    to_addr: str = ""
+    subject: str = ""
+    storage_dir: str = ""               # uuid dir under the mail store
+    resolved_user_email: str = ""       # from the +token in the recipient
+    status: str = "received"            # received | parsed | error
+    parse_error: str = ""
+    item_count: int = 0
+
+
+class UserImportToken(SQLModel, table=True):
+    """Per-user secret embedded in their forwarding address (import+<token>@…)."""
+    user_email: str = Field(primary_key=True)   # lowercased
+    token: str = Field(index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)

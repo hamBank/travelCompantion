@@ -169,6 +169,10 @@ SHEET_NAMES=
 # Optional: GitHub webhook auto-deploy secret (set same value in GitHub webhook settings)
 # DEPLOY_SECRET=
 
+# Optional: email ingestion (forward bookings to import+<token>@MAIL_DOMAIN)
+# MAIL_INGEST_SECRET=$(openssl rand -hex 32)
+# MAIL_DOMAIN=tripplan.hups.club
+
 # JWT session lifetime in days (default 30)
 # JWT_EXPIRE_DAYS=30
 ENVEOF

@@ -5,13 +5,15 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from .database import create_db_and_tables
-from .routers import trips, stops, items, sheets_import, documents, pending
+from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me
 from .routers.auth_router import router as auth_router
 
 # Paths that never require authentication (static assets + public endpoints).
 # Service-worker scripts and their importScripts deps (workbox-*, sw-update) must
 # be reachable without a token or the SW can't install/update.
-_PUBLIC_PREFIXES = ("/auth/", "/health", "/currency/", "/assets/", "/sw.", "/sw-update", "/workbox-", "/registerSW.", "/manifest.", "/coverage")
+# /ingest/ is authenticated by its own shared secret (the local mail pipe can't
+# hold a user JWT) and is never proxied by Apache — localhost-only in production.
+_PUBLIC_PREFIXES = ("/auth/", "/health", "/currency/", "/assets/", "/sw.", "/sw-update", "/workbox-", "/registerSW.", "/manifest.", "/coverage", "/ingest/")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
                     "/favicon.ico", "/icon-192.png", "/icon-512.png",
                     "/apple-touch-icon.png", "/deploy"}
@@ -35,6 +37,8 @@ app.include_router(items.router, tags=["items"])
 app.include_router(sheets_import.router)
 app.include_router(documents.router, tags=["documents"])
 app.include_router(pending.router, tags=["pending"])
+app.include_router(ingest.router, tags=["ingest"])
+app.include_router(me.router, tags=["me"])
 
 
 @app.post("/deploy")

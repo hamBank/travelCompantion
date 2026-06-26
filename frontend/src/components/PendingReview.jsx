@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getPending, updatePending, applyPending, discardPending } from '../api.js'
+import { getPending, updatePending, applyPending, discardPending, getTrips, getTripTimeline } from '../api.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
 
@@ -24,17 +24,48 @@ function orderedDetails(details) {
   return keys.map(k => [k, details[k]])
 }
 
-export default function PendingReview({ tripId, stops = [], onClose, onChanged }) {
+export default function PendingReview({ tripId = null, stops = [], onClose, onChanged }) {
+  const isGlobal = tripId == null
   const [rows, setRows] = useState(null)
   const [error, setError] = useState(null)
   const [busyId, setBusyId] = useState(null)
+  const [trips, setTrips] = useState([])
+  const [stopsByTrip, setStopsByTrip] = useState({})
+
+  async function ensureStops(tid) {
+    if (!tid || stopsByTrip[tid]) return
+    try {
+      const tl = await getTripTimeline(tid)
+      setStopsByTrip(m => ({ ...m, [tid]: tl.stops || [] }))
+    } catch (_) { /* leave empty */ }
+  }
 
   async function load() {
     setError(null)
-    try { setRows(await getPending(tripId)) }
-    catch (e) { setError(e.message); setRows([]) }
+    try {
+      const data = await getPending(tripId)
+      setRows(data)
+      if (isGlobal) {
+        for (const r of data) if (r.trip_id) ensureStops(r.trip_id)
+      }
+    } catch (e) { setError(e.message); setRows([]) }
   }
   useEffect(() => { load() }, [tripId])
+  useEffect(() => { if (isGlobal) getTrips().then(setTrips).catch(() => {}) }, [isGlobal])
+
+  function stopsFor(row) {
+    return isGlobal ? (stopsByTrip[row.trip_id] || []) : stops
+  }
+
+  async function changeTrip(row, newTripId) {
+    const tid = newTripId ? Number(newTripId) : null
+    setError(null)
+    patchLocal(row.id, { trip_id: tid, suggested_stop_id: null, op: 'create', target_item_id: null, diff: null })
+    if (tid) {
+      await ensureStops(tid)
+      try { await updatePending(row.id, { trip_id: tid }) } catch (e) { setError(e.message) }
+    }
+  }
 
   function patchLocal(id, patch) {
     setRows(rs => rs.map(r => (r.id === id ? { ...r, ...patch } : r)))
@@ -44,6 +75,7 @@ export default function PendingReview({ tripId, stops = [], onClose, onChanged }
   }
 
   async function apply(row) {
+    if (isGlobal && !row.trip_id) { setError('Pick a trip for this item first.'); return }
     if (!row.suggested_stop_id) { setError('Pick a stop for this item first.'); return }
     setBusyId(row.id); setError(null)
     try {
@@ -117,6 +149,18 @@ export default function PendingReview({ tripId, stops = [], onClose, onChanged }
                   className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
                 />
 
+                {isGlobal && (
+                  <select
+                    value={row.trip_id ?? ''}
+                    onChange={e => changeTrip(row, e.target.value)}
+                    style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                    className="w-full rounded-lg px-2 py-2 text-sm outline-none"
+                  >
+                    <option value="">— Select a trip —</option>
+                    {trips.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                )}
+
                 <div className="grid grid-cols-2 gap-2">
                   <select
                     value={row.kind}
@@ -129,11 +173,12 @@ export default function PendingReview({ tripId, stops = [], onClose, onChanged }
                   <select
                     value={row.suggested_stop_id ?? ''}
                     onChange={e => patchLocal(row.id, { suggested_stop_id: e.target.value ? Number(e.target.value) : null })}
+                    disabled={isGlobal && !row.trip_id}
                     style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
-                    className="rounded-lg px-2 py-2 text-sm outline-none"
+                    className="rounded-lg px-2 py-2 text-sm outline-none disabled:opacity-50"
                   >
                     <option value="">— Select a stop —</option>
-                    {stops.map(s => (
+                    {stopsFor(row).map(s => (
                       <option key={s.id} value={s.id}>
                         {s.location}{s.arrive ? ` · ${fmtDay(s.arrive)}` : ''}
                       </option>

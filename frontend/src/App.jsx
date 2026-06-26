@@ -7,8 +7,9 @@ import ThemePicker from './components/ThemePicker.jsx'
 import LoginPage from './components/LoginPage.jsx'
 import UserSettings from './components/UserSettings.jsx'
 import ShareModal from './components/ShareModal.jsx'
+import PendingReview from './components/PendingReview.jsx'
 import { DEFAULT_THEME } from './themes.js'
-import { getAuthConfig, exportTripPdf } from './api.js'
+import { getAuthConfig, exportTripPdf, getPending } from './api.js'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale } from './settings.js'
 
@@ -49,7 +50,14 @@ function AppShell({ user, onLogout }) {
   const [showShare, setShowShare] = useState(false)
   const [stats, setStats] = useState(null)
   const [exporting, setExporting] = useState(false)
+  const [showImports, setShowImports] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
   const online = useOnline()
+
+  function refreshPending() {
+    if (online) getPending().then(p => setPendingCount(p.length)).catch(() => {})
+  }
+  useEffect(() => { refreshPending() }, [online])
 
   async function handleExportPdf() {
     if (!selectedTrip || exporting) return
@@ -121,6 +129,12 @@ function AppShell({ user, onLogout }) {
 
       {showSettings && <UserSettings onClose={() => setShowSettings(false)} />}
       {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={() => setShowShare(false)} />}
+      {showImports && (
+        <PendingReview
+          onClose={() => { setShowImports(false); refreshPending() }}
+          onChanged={refreshPending}
+        />
+      )}
 
       <main className="w-full px-4 sm:px-8 lg:px-16 py-6">
         {selectedTrip
@@ -167,6 +181,15 @@ function AppShell({ user, onLogout }) {
               className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
             >
               {exporting ? 'Exporting…' : 'Export PDF'}
+            </button>
+          )}
+          {online && pendingCount > 0 && (
+            <button
+              onClick={() => setShowImports(true)}
+              style={{ color: 'var(--warning)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)', background: 'color-mix(in srgb, var(--warning) 8%, transparent)' }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              📥 Imports ({pendingCount})
             </button>
           )}
           <button

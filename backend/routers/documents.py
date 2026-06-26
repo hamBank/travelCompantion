@@ -325,7 +325,27 @@ def _compute_diff(existing, item: dict) -> dict:
     return {"before": before, "after": after}
 
 
-def build_pending_changes(session, user_email, trip_id, stops, parsed):
+def _attachments_from_eml(raw: bytes):
+    """[(filename, content_type, bytes), …] for every real attachment in a message."""
+    msg = message_from_bytes(raw, policy=email_default)
+    out = []
+    for part in msg.walk():
+        if part.is_multipart():
+            continue
+        fn = part.get_filename()
+        if not fn:
+            continue
+        try:
+            data = part.get_payload(decode=True)
+        except Exception:
+            data = None
+        if data:
+            out.append((fn, part.get_content_type(), data))
+    return out
+
+
+def build_pending_changes(session, user_email, trip_id, stops, parsed,
+                          source="upload", source_email_id=None):
     """Turn a parsed multi-item result into PendingChange rows (with update-matching)."""
     from .pending import create_pending_from_parse
     kinds = [k.value for k in ItemKind]
@@ -378,6 +398,7 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed):
             confidence=raw.get("confidence") or "low",
             match_reason=raw.get("match_reason") or "",
             op=op, target_item_id=target_id, diff=diff,
+            source=source, source_email_id=source_email_id,
         )
         created.append(pc)
     return created

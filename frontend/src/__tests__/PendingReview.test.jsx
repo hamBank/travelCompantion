@@ -6,8 +6,10 @@ vi.mock('../api.js', () => ({
   updatePending: vi.fn(),
   applyPending: vi.fn(),
   discardPending: vi.fn(),
+  getTrips: vi.fn(),
+  getTripTimeline: vi.fn(),
 }))
-import { getPending, updatePending, applyPending, discardPending } from '../api.js'
+import { getPending, updatePending, applyPending, discardPending, getTrips } from '../api.js'
 import PendingReview from '../components/PendingReview.jsx'
 
 const stops = [{ id: 1, location: 'Rome', arrive: '2026-08-01' }]
@@ -62,5 +64,16 @@ describe('PendingReview', () => {
     getPending.mockResolvedValue([])
     render(<PendingReview tripId={1} stops={stops} onClose={() => {}} />)
     expect(await screen.findByText(/Nothing to review/)).toBeInTheDocument()
+  })
+
+  it('global mode (no tripId): blocks apply until a trip is picked', async () => {
+    getPending.mockResolvedValue([{ ...row, trip_id: null, suggested_stop_id: null }])
+    getTrips.mockResolvedValue([{ id: 7, name: 'Trip A' }])
+    render(<PendingReview onClose={() => {}} />)  // no tripId → global mode
+    await screen.findByDisplayValue('Colosseum')
+    expect(screen.getByText('— Select a trip —')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Add to trip'))
+    await waitFor(() => expect(screen.getByText(/Pick a trip/)).toBeInTheDocument())
+    expect(applyPending).not.toHaveBeenCalled()
   })
 })

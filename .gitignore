@@ -17,6 +17,9 @@ env/
 *.db-shm
 *.db-wal
 
+# Stored inbound emails + attachments (debugging / source display)
+mail_store/
+
 # Google OAuth — never commit these
 credentials.json
 *_token.json

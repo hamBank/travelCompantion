@@ -1,6 +1,32 @@
 import { useState } from 'react'
 import { HOME_CURRENCY_KEY } from '../currency.js'
+import { useState as useReactState, useEffect } from 'react'
 import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound, getHideStopFrames, setHideStopFrames, getFontScale, setFontScale, FONT_SCALE_OPTIONS } from '../settings.js'
+import { getImportAddress } from '../api.js'
+
+function ImportAddress() {
+  const [addr, setAddr] = useReactState(null)
+  const [copied, setCopied] = useReactState(false)
+  useEffect(() => { getImportAddress().then(r => setAddr(r.address)).catch(() => {}) }, [])
+  if (!addr) return null
+  function copy() {
+    navigator.clipboard?.writeText(addr).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
+  }
+  return (
+    <div>
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-1">Forward bookings by email</p>
+      <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2">
+        Forward any booking confirmation here and it'll appear in your pending imports to review.
+      </p>
+      <div className="flex items-center gap-2">
+        <code style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }} className="flex-1 rounded-lg px-2 py-1.5 text-xs break-all">{addr}</code>
+        <button onClick={copy} style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }} className="text-xs px-2 py-1.5 rounded-lg hover:opacity-80 transition-opacity shrink-0">
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 const COMMON_CURRENCIES = [
   'AED', 'ARS', 'AUD', 'BDT', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY',
@@ -101,6 +127,8 @@ export default function UserSettings({ onClose }) {
               </div>
             </div>
           </div>
+
+          <ImportAddress />
 
           <div>
             <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-1">Home currency</p>

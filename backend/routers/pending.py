@@ -163,6 +163,7 @@ def create_pending_from_parse(
     confidence: str = "low", match_reason: str = "",
     op: str = "create", target_item_id: Optional[int] = None,
     diff: Optional[dict] = None, source: str = "upload",
+    source_email_id: Optional[int] = None,
 ) -> PendingChange:
     """Persist one parsed item as a PendingChange (shared by upload/email)."""
     kind = item.get("kind")
@@ -173,6 +174,7 @@ def create_pending_from_parse(
     pc = PendingChange(
         created_by=user_email.lower(),
         source=source,
+        source_email_id=source_email_id,
         trip_id=trip_id,
         op=op,
         target_item_id=target_item_id,

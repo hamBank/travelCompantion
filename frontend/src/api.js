@@ -40,6 +40,7 @@ export const getPending     = (tripId) => req(`/pending${tripId != null ? `?trip
 export const updatePending  = (id, data) => req(`/pending/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 export const applyPending   = (id) => req(`/pending/${id}/apply`, { method: 'POST' })
 export const discardPending = (id) => req(`/pending/${id}/discard`, { method: 'POST' })
+export const getImportAddress = () => req('/me/import-address')
 
 export async function exportTripPdf(id, name) {
   const token = getToken()
