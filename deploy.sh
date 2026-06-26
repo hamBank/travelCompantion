@@ -209,7 +209,17 @@ fi
 # HOME=$APP_DIR prevents npm writing to /nonexistent when the service user has no home dir.
 NPM="sudo -u $APP_USER HOME=$APP_DIR npm"
 info "Installing Node dependencies"
-$NPM --prefix "$APP_DIR/frontend" ci
+# Temporarily disable set -e so we can log the exit code on failure
+set +e
+$NPM --prefix "$APP_DIR/frontend" ci 2>&1
+NPM_CI_EXIT=$?
+set -e
+info "npm ci exit code: $NPM_CI_EXIT"
+if [ $NPM_CI_EXIT -ne 0 ]; then
+  # Fallback: run as root in case sudo/PAM is the culprit on this system
+  warn "sudo npm ci failed ($NPM_CI_EXIT) — retrying as root"
+  env HOME="$APP_DIR" npm --prefix "$APP_DIR/frontend" ci
+fi
 
 info "Building frontend"
 $NPM --prefix "$APP_DIR/frontend" run build
