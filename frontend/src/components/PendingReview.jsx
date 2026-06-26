@@ -2,6 +2,15 @@ import { useState, useEffect } from 'react'
 import { getPending, updatePending, applyPending, discardPending, getTrips, getTripTimeline } from '../api.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
+import { airportName } from '../airportNames.js'
+
+function flightDisplayName(row) {
+  const d = (row.payload || {}).details || {}
+  const o = d.origin, dest = d.destination
+  if ((row.kind === 'flight' || row.kind === 'rail') && o && dest)
+    return `${airportName(o)} → ${airportName(dest)}`
+  return null
+}
 
 const CONFIDENCE_COLOR = { high: 'var(--success)', medium: 'var(--warning)', low: 'var(--error)' }
 const labelize = k => k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
@@ -79,11 +88,12 @@ export default function PendingReview({ tripId = null, stops = [], onClose, onCh
     if (!row.suggested_stop_id) { setError('Pick a stop for this item first.'); return }
     setBusyId(row.id); setError(null)
     try {
+      const cleanName = flightDisplayName(row) || (row.payload || {}).name || 'Imported item'
       await updatePending(row.id, {
         trip_id: row.trip_id ?? tripId,
         suggested_stop_id: Number(row.suggested_stop_id),
         kind: row.kind,
-        payload: row.payload,
+        payload: { ...(row.payload || {}), name: cleanName },
       })
       await applyPending(row.id)
       await load()
@@ -128,6 +138,8 @@ export default function PendingReview({ tripId = null, stops = [], onClose, onCh
           {rows?.map(row => {
             const color = KIND_VAR[row.kind] ?? 'var(--text-muted)'
             const p = row.payload || {}
+            // For flight/rail use airportName to build "City → City" regardless of what's stored
+            const displayName = flightDisplayName(row) || p.name || ''
             const details = orderedDetails(p.details)
             const busy = busyId === row.id
             return (
@@ -143,7 +155,7 @@ export default function PendingReview({ tripId = null, stops = [], onClose, onCh
                 </div>
 
                 <input
-                  value={p.name || ''}
+                  value={displayName}
                   onChange={e => patchPayload(row.id, 'name', e.target.value)}
                   style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
                   className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
