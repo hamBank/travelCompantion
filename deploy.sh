@@ -39,6 +39,13 @@ echo "════════════════════════�
 _WAS_RUNNING=false
 systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null && _WAS_RUNNING=true
 
+# When triggered by the path watcher, remove the trigger file immediately.
+# ExecStartPost only runs on success, so if we leave it to ExecStartPost and
+# the deploy fails, the file stays and the watcher re-fires → infinite loop.
+if $UPDATE_ONLY; then
+  rm -f "$APP_DIR/.deploy-trigger" 2>/dev/null || true
+fi
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 info()  { echo -e "\033[1;34m▶\033[0m $*"; }
 ok()    { echo -e "\033[1;32m✓\033[0m $*"; }
@@ -294,12 +301,12 @@ cat > "$VHOST_CONF" <<VHEOF
 </VirtualHost>
 VHEOF
 
-a2ensite "$(basename "$VHOST_CONF")"
-if apache2ctl configtest 2>&1; then
-  systemctl reload apache2
+a2ensite "$(basename "$VHOST_CONF")" 2>/dev/null || true
+if /usr/sbin/apache2ctl configtest 2>/dev/null; then
+  systemctl reload apache2 || true
   ok "Apache VirtualHost enabled and reloaded: $(ls /etc/apache2/sites-enabled/ | tr '\n' ' ')"
 else
-  warn "Apache config test failed — check: sudo apache2ctl configtest"
+  warn "Apache config test failed (broken cert?) — check: sudo apache2ctl configtest"
 fi
 
 # ── 9. (Re)start service ──────────────────────────────────────────────────────
