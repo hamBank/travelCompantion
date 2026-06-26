@@ -124,6 +124,21 @@ ok "Application installed at $APP_DIR"
 
 ENV_FILE="$APP_DIR/.env"
 
+# ── 2b. Make the app the primary Apache site on this (dedicated) box ─────────────
+# deploy.sh writes & enables the vhost, but Debian's stock 000-default is also a
+# *:80 vhost and would otherwise win for IP/pre-DNS requests. On a dedicated box
+# we disable it so the app responds on every name.
+info "Finalising Apache (modules + enabling $DOMAIN, disabling default site)"
+a2enmod proxy proxy_http headers rewrite >/dev/null 2>&1 || true
+a2ensite "${DOMAIN}.conf"  >/dev/null 2>&1 || true
+a2dissite 000-default      >/dev/null 2>&1 || true
+if apache2ctl configtest >/dev/null 2>&1; then
+  systemctl reload apache2
+  ok "Apache enabled sites: $(ls /etc/apache2/sites-enabled 2>/dev/null | tr '\n' ' ')"
+else
+  warn "apache2ctl configtest failed — inspect with: sudo apache2ctl configtest"
+fi
+
 # ── 3. HTTPS (optional) ─────────────────────────────────────────────────────────
 if $WITH_HTTPS; then
   info "Requesting Let's Encrypt certificate for $DOMAIN"
