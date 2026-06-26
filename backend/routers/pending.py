@@ -112,12 +112,36 @@ def apply_pending(
         item = session.get(ItineraryItem, pc.target_item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Target item no longer exists")
-        fields = {k: p[k] for k in ("name", "scheduled_at", "link", "cost", "notes", "details") if k in p}
-        iu = ItemUpdate(kind=pc.kind, **fields)
-        for field, value in iu.model_dump(exclude_unset=True).items():
-            setattr(item, field, value)
-            if field == "details":
-                flag_modified(item, "details")
+
+        diff_after = (pc.diff or {}).get("after", {}) if pc.diff is not None else None
+
+        if diff_after is not None:
+            # Diff was computed: apply granular field-by-field updates so passenger
+            # fields (seats/loyalty/meal) use merged values from diff["after"].
+            for f in ("name", "scheduled_at", "link", "cost", "notes"):
+                if f in diff_after:
+                    setattr(item, f, diff_after[f])
+
+            merged_details = dict(item.details or {})
+            new_details = p.get("details") or {}
+            scalar_keys = {"name", "scheduled_at", "link", "cost", "notes"}
+            for k, v in diff_after.items():
+                if k not in scalar_keys:
+                    merged_details[k] = v
+            # Fill new detail keys from the payload that weren't in the existing record.
+            for k, v in new_details.items():
+                if k not in merged_details or not merged_details[k]:
+                    merged_details[k] = v
+            item.details = merged_details
+            flag_modified(item, "details")
+        else:
+            # No diff — apply payload wholesale (original behaviour, e.g. manual edits).
+            fields = {k: p[k] for k in ("name", "scheduled_at", "link", "cost", "notes", "details") if k in p}
+            iu = ItemUpdate(kind=pc.kind, **fields)
+            for field, value in iu.model_dump(exclude_unset=True).items():
+                setattr(item, field, value)
+                if field == "details":
+                    flag_modified(item, "details")
         session.add(item)
     else:
         ic = ItemCreate(

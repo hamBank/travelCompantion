@@ -310,8 +310,28 @@ def _match_existing(session, trip_id, kind, details):
     return None
 
 
+# Detail fields that are per-passenger, not per-flight. When a second confirmation
+# for the same flight arrives (different passenger), these are merged rather than
+# replaced so both passengers' info is preserved on the same flight record.
+_PASSENGER_FIELDS = {"seats", "seat", "loyalty_info", "passengers", "meal", "baggage"}
+
+
+def _merge_field(existing_val, new_val) -> str:
+    """Combine two comma-separated values, deduplicating."""
+    parts = [p.strip() for p in str(existing_val).split(",") if p.strip()]
+    for part in str(new_val).split(","):
+        p = part.strip()
+        if p and p not in parts:
+            parts.append(p)
+    return ", ".join(parts)
+
+
 def _compute_diff(existing, item: dict) -> dict:
-    """before/after of the fields this extraction would change on an existing item."""
+    """before/after of the fields this extraction would change on an existing item.
+
+    For passenger-specific fields (seat, loyalty, meal, baggage) on the same flight,
+    values are merged rather than replaced so both passengers' data is preserved.
+    """
     before, after = {}, {}
     old_d = existing.details or {}
     new_d = item.get("details") or {}
@@ -319,7 +339,13 @@ def _compute_diff(existing, item: dict) -> dict:
         if nv in (None, "", []):
             continue
         ov = old_d.get(k)
-        if str(ov or "") != str(nv):
+        if str(ov or "") == str(nv):
+            continue
+        if k in _PASSENGER_FIELDS and ov:
+            merged = _merge_field(ov, nv)
+            before[k] = ov
+            after[k] = merged
+        else:
             before[k] = ov
             after[k] = nv
     for f in ("name", "cost", "link", "notes"):

@@ -158,6 +158,55 @@ def test_transit_leg_assigned_to_departing_stop_not_destination(client, session)
     )
 
 
+def test_passenger_fields_merged_not_replaced(client, session):
+    """Second confirmation for same flight should merge seats/loyalty/meal, not overwrite."""
+    trip, stop = _trip_with_stop(client)
+    # Existing flight with passenger 1's details
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "SIN → HEL", "status": "pending",
+        "details": {"flight_number": "AY132", "depart_time": "2026-07-24T21:35",
+                    "seats": "12E", "loyalty_info": "1017525755", "meal": "Asian Vegetarian"},
+    })
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
+    # Second email: same flight, passenger 2's details
+    parsed = {"items": [{
+        "kind": "flight", "name": "SIN → HEL", "matched_stop_id": stop["id"],
+        "confidence": "high", "match_reason": "same flight",
+        "details": {"flight_number": "AY132", "depart_time": "2026-07-24T21:35",
+                    "seats": "14A", "loyalty_info": "1184071914", "meal": "Standard"},
+    }]}
+    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    assert len(pcs) == 1
+    pc = pcs[0]
+    assert pc.op == "update"
+    diff = pc.diff or {}
+    # Merged values should be in diff["after"]
+    assert diff["after"]["seats"] == "12E, 14A"
+    assert diff["after"]["loyalty_info"] == "1017525755, 1184071914"
+    assert diff["after"]["meal"] == "Asian Vegetarian, Standard"
+
+
+def test_passenger_fields_not_duplicated_if_same(client, session):
+    """Re-importing the same passenger's info should not double-up values."""
+    trip, stop = _trip_with_stop(client)
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "SIN → HEL", "status": "pending",
+        "details": {"flight_number": "AY132", "depart_time": "2026-07-24T21:35",
+                    "seats": "12E", "loyalty_info": "1017525755"},
+    })
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
+    parsed = {"items": [{
+        "kind": "flight", "name": "SIN → HEL", "matched_stop_id": stop["id"],
+        "confidence": "high", "match_reason": "same flight",
+        "details": {"flight_number": "AY132", "depart_time": "2026-07-24T21:35",
+                    "seats": "12E", "loyalty_info": "1017525755"},
+    }]}
+    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    # Identical — diff should be empty (no changes to apply)
+    assert pcs[0].op == "update"
+    assert pcs[0].diff == {"before": {}, "after": {}}
+
+
 def test_match_existing_requires_identifier(client, session):
     trip, stop = _trip_with_stop(client)
     client.post(f"/stops/{stop['id']}/items", json={
