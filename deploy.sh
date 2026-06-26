@@ -81,7 +81,7 @@ if ! $UPDATE_ONLY; then
 
   # ── Apache modules ─────────────────────────────────────────────────────────
   info "Enabling Apache modules (proxy, headers)"
-  a2enmod proxy proxy_http headers rewrite &>/dev/null
+  a2enmod proxy proxy_http headers rewrite
   ok "Apache modules enabled"
 fi
 
@@ -250,13 +250,12 @@ cat > "$VHOST_CONF" <<VHEOF
 </VirtualHost>
 VHEOF
 
-a2ensite "$(basename "$VHOST_CONF")" &>/dev/null
-apache2ctl configtest 2>&1 | grep -v "^Syntax OK" || true
-if apache2ctl configtest &>/dev/null; then
+a2ensite "$(basename "$VHOST_CONF")"
+if apache2ctl configtest 2>&1; then
   systemctl reload apache2
-  ok "Apache VirtualHost enabled and reloaded"
+  ok "Apache VirtualHost enabled and reloaded: $(ls /etc/apache2/sites-enabled/ | tr '\n' ' ')"
 else
-  warn "Apache config test failed — check: apache2ctl configtest"
+  warn "Apache config test failed — check: sudo apache2ctl configtest"
 fi
 
 # ── 9. Systemd deploy path watcher ────────────────────────────────────────────

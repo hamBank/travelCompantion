@@ -115,29 +115,68 @@ if $WITH_MAIL; then
   ok "Postfix installed"
 fi
 
-# ── 2. Application install (delegated to deploy.sh) ─────────────────────────────
+# ── 2. Apache: modules + vhost (done here, before deploy.sh, so it's always visible) ──
+# deploy.sh also writes the vhost on updates; doing it here first means a fresh install
+# has a working Apache even if the app build takes a while or later steps need reloading.
+
+VHOST_CONF="/etc/apache2/sites-available/${DOMAIN}.conf"
+
+info "Enabling Apache proxy/header modules"
+a2enmod proxy proxy_http headers rewrite
+ok "Apache modules enabled"
+
+info "Writing Apache VirtualHost → $VHOST_CONF"
+cat > "$VHOST_CONF" <<VHEOF
+<VirtualHost *:80>
+    ServerName ${DOMAIN}
+    ServerAlias www.${DOMAIN}
+
+    ErrorLog  \${APACHE_LOG_DIR}/travelcomp_error.log
+    CustomLog \${APACHE_LOG_DIR}/travelcomp_access.log combined
+
+    # Security headers
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Proxy everything to uvicorn
+    ProxyPreserveHost On
+    ProxyPass        / http://127.0.0.1:${BIND_PORT}/
+    ProxyPassReverse / http://127.0.0.1:${BIND_PORT}/
+
+    # Forward real client IP to FastAPI
+    RequestHeader set X-Forwarded-Proto "http"
+    RequestHeader set X-Real-IP "%{REMOTE_ADDR}s"
+
+    # Aggressive caching for Vite content-hashed assets
+    <LocationMatch "^/assets/">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </LocationMatch>
+</VirtualHost>
+VHEOF
+
+# Enable the app site; disable Debian's catch-all default (dedicated box only).
+a2ensite  "$(basename "$VHOST_CONF")"
+a2dissite 000-default 2>/dev/null || true   # may already be absent — not an error
+
+if apache2ctl configtest 2>&1; then
+  systemctl reload apache2
+  ok "Apache configured: $(ls /etc/apache2/sites-enabled/ | tr '\n' ' ')"
+else
+  # configtest prints its own error; leave Apache running on old config
+  warn "apache2ctl configtest failed — fix the config then: sudo systemctl reload apache2"
+fi
+
+# ── 3. Application install (delegated to deploy.sh) ─────────────────────────────
+# Pass the vhost conf path so deploy.sh doesn't overwrite it with a conflicting path.
 info "Running application deploy (deploy.sh)"
 DOMAIN="$DOMAIN" REPO_URL="$REPO_URL" REPO_BRANCH="$REPO_BRANCH" \
-APP_DIR="$APP_DIR" APP_USER="$APP_USER" SERVICE_NAME="$SERVICE_NAME" BIND_PORT="$BIND_PORT" \
+APP_DIR="$APP_DIR" APP_USER="$APP_USER" SERVICE_NAME="$SERVICE_NAME" \
+BIND_PORT="$BIND_PORT" VHOST_CONF="$VHOST_CONF" \
   bash "$REPO_ROOT/deploy.sh"
 ok "Application installed at $APP_DIR"
 
 ENV_FILE="$APP_DIR/.env"
-
-# ── 2b. Make the app the primary Apache site on this (dedicated) box ─────────────
-# deploy.sh writes & enables the vhost, but Debian's stock 000-default is also a
-# *:80 vhost and would otherwise win for IP/pre-DNS requests. On a dedicated box
-# we disable it so the app responds on every name.
-info "Finalising Apache (modules + enabling $DOMAIN, disabling default site)"
-a2enmod proxy proxy_http headers rewrite >/dev/null 2>&1 || true
-a2ensite "${DOMAIN}.conf"  >/dev/null 2>&1 || true
-a2dissite 000-default      >/dev/null 2>&1 || true
-if apache2ctl configtest >/dev/null 2>&1; then
-  systemctl reload apache2
-  ok "Apache enabled sites: $(ls /etc/apache2/sites-enabled 2>/dev/null | tr '\n' ' ')"
-else
-  warn "apache2ctl configtest failed — inspect with: sudo apache2ctl configtest"
-fi
 
 # ── 3. HTTPS (optional) ─────────────────────────────────────────────────────────
 if $WITH_HTTPS; then
