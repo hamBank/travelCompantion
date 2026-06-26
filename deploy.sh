@@ -17,14 +17,15 @@
 
 set -euo pipefail
 
-# ── Config ─────────────────────────────────────────────────────────────────────
-APP_USER="travelcomp"
-APP_DIR="/opt/travelcomp"
-REPO_URL="https://github.com/hamBank/travelCompantion.git"
-REPO_BRANCH="main"
-SERVICE_NAME="travelcomp"
-VHOST_CONF="/etc/apache2/sites-available/tripplan.hups.club.conf"
-BIND_PORT="8000"
+# ── Config (override via environment for a new server) ──────────────────────────
+APP_USER="${APP_USER:-travelcomp}"
+APP_DIR="${APP_DIR:-/opt/travelcomp}"
+REPO_URL="${REPO_URL:-https://github.com/hamBank/travelCompantion.git}"
+REPO_BRANCH="${REPO_BRANCH:-main}"
+SERVICE_NAME="${SERVICE_NAME:-travelcomp}"
+DOMAIN="${DOMAIN:-tripplan.hups.club}"
+VHOST_CONF="${VHOST_CONF:-/etc/apache2/sites-available/${DOMAIN}.conf}"
+BIND_PORT="${BIND_PORT:-8000}"
 # ──────────────────────────────────────────────────────────────────────────────
 
 UPDATE_ONLY=false
@@ -216,13 +217,13 @@ ok "Systemd service enabled"
 
 # ── 8. Apache VirtualHost ──────────────────────────────────────────────────────
 info "Writing Apache VirtualHost → $VHOST_CONF"
-cat > "$VHOST_CONF" <<'VHEOF'
+cat > "$VHOST_CONF" <<VHEOF
 <VirtualHost *:80>
-    ServerName tripplan.hups.club
-    ServerAlias www.tripplan.hups.club
+    ServerName ${DOMAIN}
+    ServerAlias www.${DOMAIN}
 
-    ErrorLog  ${APACHE_LOG_DIR}/travelcomp_error.log
-    CustomLog ${APACHE_LOG_DIR}/travelcomp_access.log combined
+    ErrorLog  \${APACHE_LOG_DIR}/travelcomp_error.log
+    CustomLog \${APACHE_LOG_DIR}/travelcomp_access.log combined
 
     # Security headers
     Header always set X-Content-Type-Options "nosniff"
@@ -231,8 +232,8 @@ cat > "$VHOST_CONF" <<'VHEOF'
 
     # Proxy everything to uvicorn
     ProxyPreserveHost On
-    ProxyPass        / http://127.0.0.1:8000/
-    ProxyPassReverse / http://127.0.0.1:8000/
+    ProxyPass        / http://127.0.0.1:${BIND_PORT}/
+    ProxyPassReverse / http://127.0.0.1:${BIND_PORT}/
 
     # Forward real client IP to FastAPI
     RequestHeader set X-Forwarded-Proto "http"
@@ -303,7 +304,7 @@ else
   echo ""
   echo "  Optional — enable HTTPS with Let's Encrypt:"
   echo "    sudo apt install certbot python3-certbot-apache"
-  echo "    sudo certbot --apache -d tripplan.hups.club"
+  echo "    sudo certbot --apache -d $DOMAIN"
 fi
 
 ok "Done"
