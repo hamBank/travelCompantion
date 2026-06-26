@@ -114,6 +114,9 @@ else
   sudo -u "$APP_USER" git -C "$APP_DIR" reset --hard "origin/$REPO_BRANCH"
 fi
 ok "Repo up to date"
+# Ensure pipe scripts are executable (git clone preserves mode bits, but an
+# explicit chmod guards against any umask or fs-mount edge cases).
+chmod +x "$APP_DIR/mail_ingest.py" "$APP_DIR/scripts/mail_ingest_wrapper.sh" 2>/dev/null || true
 
 # ── 4. Python virtualenv + dependencies ───────────────────────────────────────
 VENV="$APP_DIR/.venv"
