@@ -54,6 +54,18 @@ def _store_email(raw: bytes, attachments) -> str:
     return dirname
 
 
+def _stops_for_user(session: Session, user_email: str):
+    """All stops across all trips the user is a member of, for Claude to match against."""
+    from ..models import TripMembership, Stop, Trip
+    memberships = session.exec(
+        select(TripMembership).where(TripMembership.user_email == user_email.lower())
+    ).all()
+    stops = []
+    for m in memberships:
+        stops.extend(session.exec(select(Stop).where(Stop.trip_id == m.trip_id)).all())
+    return stops
+
+
 def parse_ingested(session: Session, ingested: IngestedEmail, raw: bytes, attachments):
     """Best-effort parse of a stored email into PendingChange rows."""
     from .documents import _text_from_eml, _build_prompt, _call_claude, build_pending_changes
@@ -72,11 +84,14 @@ def parse_ingested(session: Session, ingested: IngestedEmail, raw: bytes, attach
             pdf_b64 = base64.standard_b64encode(data).decode()
             break
 
+    # Load all of the user's stops so Claude can match to the right trip.
+    stops = _stops_for_user(session, ingested.resolved_user_email)
+
     try:
         kinds = [k.value for k in ItemKind]
-        parsed = _call_claude(_build_prompt([], kinds), pdf_b64, doc_text)
+        parsed = _call_claude(_build_prompt(stops, kinds), pdf_b64, doc_text)
         pcs = build_pending_changes(
-            session, ingested.resolved_user_email, None, [], parsed,
+            session, ingested.resolved_user_email, None, stops, parsed,
             source="email", source_email_id=ingested.id,
         )
         ingested.status = "parsed"

@@ -386,7 +386,15 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
             "details": details,
         }
 
-        existing = _match_existing(session, trip_id, kind, details)
+        # Derive trip_id from the matched stop when the caller didn't provide one
+        # (e.g. email ingest passes trip_id=None but provides all user stops).
+        effective_trip_id = trip_id
+        if effective_trip_id is None and matched:
+            stop_obj = session.get(Stop, matched)
+            if stop_obj:
+                effective_trip_id = stop_obj.trip_id
+
+        existing = _match_existing(session, effective_trip_id, kind, details)
         op = "update" if existing else "create"
         target_id = existing.id if existing else None
         diff = _compute_diff(existing, item) if existing else None
@@ -394,7 +402,7 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         suggested_stop = (existing.stop_id if existing else None) or matched
 
         pc = create_pending_from_parse(
-            session, user_email, trip_id, item, suggested_stop,
+            session, user_email, effective_trip_id, item, suggested_stop,
             confidence=raw.get("confidence") or "low",
             match_reason=raw.get("match_reason") or "",
             op=op, target_item_id=target_id, diff=diff,
