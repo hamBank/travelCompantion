@@ -134,6 +134,13 @@ Do NOT merge two flights into one item, and do NOT invent items that aren't in t
 The trip has these stops (match each item to the most likely one by location AND date):
 {json.dumps(stop_lines, indent=2)}
 
+Stop-matching rules for flights and rail (important):
+- Match to the stop whose location corresponds to the DEPARTURE city/airport of that segment.
+- If the departure city is NOT a stop (e.g. a transit/layover airport), match to the LAST stop
+  whose depart date is on or before the flight's departure date — i.e. the stop the traveller
+  departed from to reach this transit point. Do NOT match a transit segment to the final
+  destination stop unless the destination IS an explicit stop and no earlier stop fits.
+
 Choose each `kind` from this exact list: {", ".join(kinds)}
 
 For `details`, use these snake_case keys per kind (include only those you can fill):
@@ -393,6 +400,39 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
             stop_obj = session.get(Stop, matched)
             if stop_obj:
                 effective_trip_id = stop_obj.trip_id
+
+        # For transit/connecting flights whose departure city isn't a trip stop,
+        # Claude may match to the destination stop. Correct this by finding the
+        # last stop (by depart date) that is on or before the flight's departure —
+        # that is the stop the traveller was at before this transit segment.
+        if kind in ("flight", "rail") and matched and stops:
+            dep_str = details.get("depart_time") or ""
+            dep_date = _datepart(dep_str)
+            if dep_date:
+                matched_stop = session.get(Stop, matched)
+                if matched_stop:
+                    from datetime import date as _date
+                    try:
+                        dep_d = _date.fromisoformat(dep_date)
+                    except ValueError:
+                        dep_d = None
+                    if dep_d and matched_stop.arrive:
+                        arr_d = matched_stop.arrive.date() if hasattr(matched_stop.arrive, "date") else None
+                        # If Claude picked a stop whose arrive date is AFTER the flight departs,
+                        # it chose a future/destination stop — find the correct departing stop.
+                        if arr_d and arr_d > dep_d:
+                            best = None
+                            for st in stops:
+                                if st.depart is None:
+                                    continue
+                                st_dep = st.depart.date() if hasattr(st.depart, "date") else None
+                                if st_dep and st_dep <= dep_d:
+                                    if best is None or st_dep > (best.depart.date() if hasattr(best.depart, "date") else _date.min):
+                                        best = st
+                            if best and best.id != matched:
+                                matched = best.id
+                                if effective_trip_id is None:
+                                    effective_trip_id = best.trip_id
 
         existing = _match_existing(session, effective_trip_id, kind, details)
         op = "update" if existing else "create"

@@ -118,6 +118,46 @@ def test_build_pending_normalizes_flight_tz(client, session):
     assert d["arrive_tz"] == "GMT+3"
 
 
+def test_transit_leg_assigned_to_departing_stop_not_destination(client, session):
+    """A transit flight whose departure city isn't a stop should land on the
+    last stop before its departure date, not the final destination stop."""
+    trip = client.post("/trips/", json={"name": "T"}).json()
+    # stop A: Paris, departs 2026-08-19 (where the journey starts)
+    stop_a = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Paris", "status": "planned",
+        "arrive": "2026-08-16T00:00", "depart": "2026-08-19T00:00",
+    }).json()
+    # stop B: Canberra, arrives 2026-08-21 (final destination)
+    stop_b = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Canberra", "status": "planned",
+        "arrive": "2026-08-21T00:00", "depart": "2026-08-23T00:00",
+    }).json()
+
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
+
+    # Transit leg DOH→PER departing 2026-08-20.
+    # Claude mistakenly matches it to stop B (Canberra, the destination).
+    parsed = {"items": [{
+        "kind": "flight", "name": "Doha → Perth",
+        "matched_stop_id": stop_b["id"],          # wrong: Claude picked destination
+        "confidence": "medium",
+        "match_reason": "Connects to Canberra stop",
+        "details": {
+            "flight_number": "QR900",
+            "depart_time": "2026-08-20T01:15",   # departs 20 Aug — after Paris stop departs 19 Aug
+            "arrive_time": "2026-08-20T14:00",
+            "origin": "DOH", "destination": "PER",
+        },
+    }]}
+
+    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    assert len(pcs) == 1
+    # Should be corrected to stop A (Paris, last stop whose depart ≤ flight date)
+    assert pcs[0].suggested_stop_id == stop_a["id"], (
+        f"Transit leg should land on departing stop {stop_a['id']}, got {pcs[0].suggested_stop_id}"
+    )
+
+
 def test_match_existing_requires_identifier(client, session):
     trip, stop = _trip_with_stop(client)
     client.post(f"/stops/{stop['id']}/items", json={
