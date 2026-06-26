@@ -125,6 +125,21 @@ import@tripplan.hups.club    travelcomp:
 sudo postmap /etc/postfix/transport
 ```
 
+Create `/etc/postfix/local_recipients` — this tells Postfix to accept the
+`import` address before routing it. Without this, Postfix rejects at RCPT
+time with "User unknown in local recipient table" because `import` is not a
+real Unix user. With `recipient_delimiter = +`, a lookup for `import+TOKEN@…`
+automatically falls back to `import@…`, so one entry covers all tokens:
+
+```
+import@tripplan.hups.club OK
+```
+
+```sh
+sudo postmap /etc/postfix/local_recipients
+sudo postconf -e "local_recipient_maps = hash:/etc/postfix/local_recipients"
+```
+
 Add the pipe service to the end of `/etc/postfix/master.cf`:
 
 ```
@@ -209,6 +224,7 @@ PY
 | `resolved:false`, `IngestedEmail.status=error "unknown recipient token"` | The `+token` didn't match a `UserImportToken`. Re-copy the address from Settings; check `recipient_delimiter = +`. |
 | `status=received`, no items | `ANTHROPIC_API_KEY` not set — the email is saved but not parsed. Set it and re-send. |
 | `status=error` with a parse message | Claude/extraction failed; the raw email is still in `mail_store/` for inspection. |
+| `550 5.1.1 User unknown in local recipient table` | `local_recipient_maps` not configured — Postfix rejects at RCPT before routing. Create `/etc/postfix/local_recipients` with `import@domain OK`, run `postmap` and `postconf -e "local_recipient_maps = hash:/etc/postfix/local_recipients"`, then `postfix reload`. |
 | pipe never runs (`mail.log` shows delivery to a local mailbox) | `mydestination`/`transport` mismatch, or `postmap` not run after editing `/etc/postfix/transport`. |
 | pipe runs but `mail_ingest: post failed` | API down, wrong `INGEST_URL`, or `.env` not readable by `travelcomp`. |
 

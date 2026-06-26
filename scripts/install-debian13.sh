@@ -213,9 +213,16 @@ if $WITH_MAIL; then
   postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost, $MAIL_DOMAIN"
   postconf -e "smtpd_recipient_restrictions = permit_mynetworks, reject_unauth_destination"
 
-  # transport map
+  # transport map: route the import address to the pipe
   echo "import@$MAIL_DOMAIN    travelcomp:" > /etc/postfix/transport
   postmap /etc/postfix/transport
+
+  # local recipient map: declare import@ as a valid recipient so Postfix
+  # doesn't reject at RCPT time with "User unknown in local recipient table".
+  # With recipient_delimiter=+, a lookup for import+TOKEN@ falls back to import@.
+  echo "import@$MAIL_DOMAIN OK" > /etc/postfix/local_recipients
+  postmap /etc/postfix/local_recipients
+  postconf -e "local_recipient_maps = hash:/etc/postfix/local_recipients"
 
   # master.cf pipe service (idempotent)
   if ! grep -q '^travelcomp ' /etc/postfix/master.cf; then
