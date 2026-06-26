@@ -374,16 +374,6 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         details = raw.get("details")
         if not isinstance(details, dict):
             details = {}
-        # Normalize name: for flights/rail build "City → City" from IATA codes
-        # so Claude's airport-code inclusions ("Paris CDG → Doha DOH") are cleaned up.
-        if kind in ("flight", "rail"):
-            orig = details.get("origin") or details.get("start_location")
-            dest = details.get("destination") or details.get("end_location")
-            if orig and dest:
-                orig_name = (_airport_map().get(str(orig).strip().upper()) or str(orig).strip())
-                dest_name = (_airport_map().get(str(dest).strip().upper()) or str(dest).strip())
-                item["name"] = f"{orig_name} → {dest_name}"
-
         # Canonicalise timezones to GMT±X (the format the rest of the app uses).
         if kind in ("flight", "rail"):
             if details.get("depart_tz"):
@@ -394,9 +384,22 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         if not isinstance(matched, int) or matched not in stop_ids:
             matched = None
 
+        # For flights/rail build the name from IATA codes via the airport map so
+        # codes Claude includes ("Paris CDG → Doha DOH") are stripped to city names.
+        if kind in ("flight", "rail"):
+            orig = details.get("origin") or details.get("start_location")
+            dest = details.get("destination") or details.get("end_location")
+            if orig and dest:
+                amap = _airport_map()
+                raw_name = f"{amap.get(str(orig).strip().upper(), str(orig).strip())} → {amap.get(str(dest).strip().upper(), str(dest).strip())}"
+            else:
+                raw_name = (raw.get("name") or "Imported item").strip()
+        else:
+            raw_name = (raw.get("name") or "Imported item").strip()
+
         item = {
             "kind": kind,
-            "name": (raw.get("name") or "Imported item").strip(),
+            "name": raw_name,
             "scheduled_at": raw.get("scheduled_at") or None,
             "cost": raw.get("cost") or "",
             "link": raw.get("link") or "",
