@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import TripList from './components/TripList.jsx'
 import TripTimeline from './components/TripTimeline.jsx'
@@ -58,6 +58,14 @@ function AppShell({ user, onLogout }) {
     if (online) getPending().then(p => setPendingCount(p.length)).catch(() => {})
   }
   useEffect(() => { refreshPending() }, [online])
+
+  // Poll for new pending imports every 60 s so email arrivals surface without a reload.
+  const pendingTimerRef = useRef(null)
+  useEffect(() => {
+    if (!online) return
+    pendingTimerRef.current = setInterval(refreshPending, 60_000)
+    return () => clearInterval(pendingTimerRef.current)
+  }, [online])
 
   async function handleExportPdf() {
     if (!selectedTrip || exporting) return
