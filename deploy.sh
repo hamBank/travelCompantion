@@ -70,10 +70,14 @@ if ! $UPDATE_ONLY; then
     fi
   fi
 
+  # npm is bundled with NodeSource's nodejs but is a SEPARATE package in the
+  # Debian repos — install it explicitly if it's not already on PATH.
+  command -v npm &>/dev/null || apt-get install -y -qq npm
+
   # git (Apache already present)
   apt-get install -y -qq git
 
-  ok "System packages ready  python=$(python3 --version | cut -d' ' -f2)  node=$(node -v)"
+  ok "System packages ready  python=$(python3 --version | cut -d' ' -f2)  node=$(node -v)  npm=$(npm -v)"
 
   # ── Apache modules ─────────────────────────────────────────────────────────
   info "Enabling Apache modules (proxy, headers)"

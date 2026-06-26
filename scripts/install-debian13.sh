@@ -92,10 +92,14 @@ echo "════════════════════════�
 export DEBIAN_FRONTEND=noninteractive
 
 # ── 1. Base OS prerequisites ────────────────────────────────────────────────────
+# Debian 13 (trixie) ships Node.js 20 + npm in its own repos, so install them here
+# (npm is a separate package on Debian). deploy.sh then sees Node >= 20 and skips
+# its NodeSource path, which doesn't reliably target trixie yet.
 info "Updating apt and installing base packages"
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl git openssl apache2 tzdata
-ok "Base packages installed (apache=$(apache2 -v | head -1 | awk '{print $3}'))"
+apt-get install -y -qq ca-certificates curl git openssl apache2 tzdata nodejs npm
+command -v npm >/dev/null || die "npm still not found after install — check: apt-get install npm"
+ok "Base packages installed (apache=$(apache2 -v | head -1 | awk '{print $3}')  node=$(node -v)  npm=$(npm -v))"
 
 if $WITH_HTTPS; then
   info "Installing Certbot (Apache plugin)"
