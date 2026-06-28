@@ -152,13 +152,16 @@ fi
 # which are already set; systemd doesn't validate them at enable time.
 #
 # write_unit FILE CONTENT — only writes when content differs, to avoid noise.
+# write_unit FILE CONTENT — writes only when content differs; returns 0 if written, 1 if unchanged.
 write_unit() {
   local file="$1" content="$2"
   if [[ -f "$file" ]] && [[ "$(cat "$file")" == "$content" ]]; then
     ok "$(basename "$file") unchanged"
+    return 1
   else
     printf '%s\n' "$content" > "$file"
     info "$(basename "$file") updated"
+    return 0
   fi
 }
 
@@ -338,14 +341,14 @@ _VHOST_CONTENT="<VirtualHost *:80>
     </LocationMatch>
 </VirtualHost>"
 
-write_unit "$VHOST_CONF" "$_VHOST_CONTENT"
-
-a2ensite "$(basename "$VHOST_CONF")" 2>/dev/null || true
-if /usr/sbin/apache2ctl configtest 2>/dev/null; then
-  systemctl reload apache2 || true
-  ok "Apache VirtualHost enabled and reloaded: $(ls /etc/apache2/sites-enabled/ | tr '\n' ' ')"
-else
-  warn "Apache config test failed (broken cert?) — check: sudo apache2ctl configtest"
+if write_unit "$VHOST_CONF" "$_VHOST_CONTENT"; then
+  a2ensite "$(basename "$VHOST_CONF")" 2>/dev/null || true
+  if /usr/sbin/apache2ctl configtest 2>/dev/null; then
+    systemctl reload apache2 || true
+    ok "Apache VirtualHost updated and reloaded"
+  else
+    warn "Apache config test failed — check: sudo apache2ctl configtest"
+  fi
 fi
 
 # ── 9. First-deploy instructions (service already restarted above if it was running) ──
