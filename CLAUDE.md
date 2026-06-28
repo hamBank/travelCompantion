@@ -10,11 +10,30 @@ python -m uvicorn backend.main:app --reload
 # → http://localhost:8000
 ```
 
-## Frontend build (required after any change to frontend/src/)
+## Frontend build
+The app bakes the current git SHA into the JS bundle so the SHA health-poller can
+detect stale clients. The build MUST run after the source commit so it captures the
+correct SHA. Always follow this order:
+
 ```bash
+# 1. Commit source changes (frontend/src/ and/or backend/)
+git add ...
+git commit -m "..."
+
+# 2. Build — HEAD is now the new commit, so the correct SHA is baked in
 cd frontend && npm run build
-# Outputs to backend/static/ — commit those files too
+
+# 3. Amend the build output into the same commit
+cd ..
+git add backend/static/
+git commit --amend --no-edit
+
+# 4. Push
+git push origin main          # or --force-with-lease for amended commits on main
 ```
+
+Never build before committing — __BUILD_SHA__ will be one commit behind and the
+SHA health-poller will reload the page in an infinite loop.
 
 ## Repository
 - Remote: https://github.com/hamBank/travelCompantion.git
@@ -22,8 +41,6 @@ cd frontend && npm run build
 - Always use HTTPS with PAT for git push
 
 ## Git workflow
-1. Create a branch from `origin/main`
-2. Edit source files
-3. If any `frontend/src/` files changed, run `npm run build` inside `frontend/`
-4. Commit source files + `backend/static/` together
-5. Push branch to origin
+1. Commit source files
+2. If any `frontend/src/` files changed, build then amend (see above)
+3. Push — use `--force-with-lease` when amending main
