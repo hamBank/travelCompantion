@@ -299,11 +299,83 @@ def _norm_duration(s: str) -> str:
     return s
 
 
+# Manufacturer prefixes Claude includes that we strip to get a canonical base.
+_AIRCRAFT_MFR = re.compile(
+    r'^(?:Airbus|Boeing|Embraer|ATR|Bombardier|De\s+Havilland|McDonnell\s+Douglas|Fokker|Saab)\s+',
+    re.IGNORECASE,
+)
+
+# Maps alternative designations → preferred detailed form.
+# Keys are lower-cased for lookup; values are the canonical display string.
+_AIRCRAFT_LOOKUP: dict[str, str] = {
+    # Airbus narrowbody
+    "a318": "A318", "a319": "A319", "a319neo": "A319neo",
+    "a320": "A320", "a320ceo": "A320", "a320neo": "A320neo",
+    "a321": "A321", "a321neo": "A321neo", "a321xlr": "A321XLR",
+    # Airbus widebody
+    "a220": "A220", "a220-100": "A220-100", "a220-300": "A220-300",
+    "a330": "A330", "a330-200": "A330-200", "a330-300": "A330-300",
+    "a330neo": "A330neo", "a330-800neo": "A330-800neo", "a330-900neo": "A330-900neo",
+    "a340": "A340", "a340-300": "A340-300", "a340-500": "A340-500", "a340-600": "A340-600",
+    "a350": "A350", "a350-900": "A350-900", "a350-1000": "A350-1000",
+    "a380": "A380", "a380-800": "A380",          # A380-800 is the only variant
+    # Boeing narrowbody
+    "737": "737", "737-700": "737-700", "737-800": "737-800", "737-900": "737-900",
+    "737-900er": "737-900ER",
+    "737 max": "737 MAX", "737 max 8": "737 MAX 8", "737 max 9": "737 MAX 9",
+    "737 max 10": "737 MAX 10", "737max8": "737 MAX 8", "737max9": "737 MAX 9",
+    "757": "757", "757-200": "757-200", "757-300": "757-300",
+    # Boeing widebody
+    "747": "747", "747-400": "747-400", "747-8": "747-8", "747-8i": "747-8",
+    "767": "767", "767-300": "767-300", "767-300er": "767-300ER", "767-400er": "767-400ER",
+    "777": "777", "777-200": "777-200", "777-200er": "777-200ER", "777-200lr": "777-200LR",
+    "777-300": "777-300", "777-300er": "777-300ER",
+    "777x": "777X", "777-8": "777-8", "777-9": "777-9",
+    "787": "787", "787-8": "787-8", "787-9": "787-9", "787-10": "787-10",
+    "dreamliner": "787",
+    # Embraer
+    "e170": "E170", "e175": "E175", "e190": "E190", "e195": "E195",
+    "e175-e2": "E175-E2", "e190-e2": "E190-E2", "e195-e2": "E195-E2",
+    "erj-135": "ERJ-135", "erj-145": "ERJ-145",
+    # ATR
+    "atr 42": "ATR 42", "atr 72": "ATR 72", "atr-72": "ATR 72",
+    # Bombardier / De Havilland
+    "crj-200": "CRJ-200", "crj-700": "CRJ-700", "crj-900": "CRJ-900", "crj-1000": "CRJ-1000",
+    "dash 8": "Dash 8", "q400": "Q400", "dhc-8-400": "Q400",
+}
+
+
+def _norm_aircraft(s: str) -> str:
+    """Canonicalise aircraft name: strip manufacturer prefix, apply lookup table.
+
+    Prefers the more detailed designation — e.g. 'A330-200' beats 'A330'.
+    """
+    if not s:
+        return s
+    stripped = _AIRCRAFT_MFR.sub('', str(s).strip())
+    canonical = _AIRCRAFT_LOOKUP.get(stripped.lower())
+    return canonical if canonical else stripped
+
+
 _NORMALIZERS = {
     "flight_number": _norm_flight_number,
     "train_number":  _norm_flight_number,
     "duration":      _norm_duration,
+    "aircraft":      _norm_aircraft,
 }
+
+
+def _aircraft_is_more_specific(new_val: str, old_val: str) -> bool:
+    """Return True if new_val is strictly more specific than old_val.
+
+    'A330-200' is more specific than 'A330'; 'A330' is not more specific than 'A330-200'.
+    Used so a vaguer re-import doesn't overwrite a detailed stored value.
+    """
+    n, o = new_val.upper(), old_val.upper()
+    if n == o:
+        return False
+    # new starts with old → new is a variant/extension of old → more specific
+    return n.startswith(o) or (len(n) > len(o) and o in n)
 
 
 def _normalize_details(details: dict) -> dict:
@@ -432,6 +504,10 @@ def _compute_diff(existing, item: dict) -> dict:
         ov_cmp = norm(ov) if (norm and ov) else ov
         nv_cmp = norm(nv) if norm else nv
         if _val_eq(ov_cmp, nv_cmp):
+            continue
+        # For aircraft: only update if the new value is strictly more specific.
+        # 'A330' won't overwrite 'A330-200', but 'A330-200' will fill in 'A330'.
+        if k == "aircraft" and ov_cmp and nv_cmp and not _aircraft_is_more_specific(str(nv_cmp), str(ov_cmp)):
             continue
         if k in _PASSENGER_FIELDS:
             merged = _merge_field(ov, nv) if ov else nv
