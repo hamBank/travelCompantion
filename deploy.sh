@@ -113,6 +113,8 @@ else
   sudo -u "$APP_USER" git -C "$APP_DIR" checkout "$REPO_BRANCH"
   sudo -u "$APP_USER" git -C "$APP_DIR" reset --hard "origin/$REPO_BRANCH"
 fi
+# Remove untracked files from static/assets so old content-hashed bundles don't linger.
+sudo -u "$APP_USER" git -C "$APP_DIR" clean -fd backend/static/assets/ 2>/dev/null || true
 ok "Repo up to date"
 # Ensure pipe scripts are executable (git clone preserves mode bits, but an
 # explicit chmod guards against any umask or fs-mount edge cases).
