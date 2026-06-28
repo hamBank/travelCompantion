@@ -136,11 +136,22 @@ ok "Python dependencies installed"
 # Done BEFORE the npm build so the units always exist even if the build fails.
 # The service file only references filesystem paths (VENV, APP_DIR, ENV_FILE)
 # which are already set; systemd doesn't validate them at enable time.
+#
+# write_unit FILE CONTENT — only writes when content differs, to avoid noise.
+write_unit() {
+  local file="$1" content="$2"
+  if [[ -f "$file" ]] && [[ "$(cat "$file")" == "$content" ]]; then
+    ok "$(basename "$file") unchanged"
+  else
+    printf '%s\n' "$content" > "$file"
+    info "$(basename "$file") updated"
+  fi
+}
+
 ENV_FILE="$APP_DIR/.env"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-info "Writing systemd service → $SERVICE_FILE"
-cat > "$SERVICE_FILE" <<SVCEOF
-[Unit]
+
+write_unit "$SERVICE_FILE" "[Unit]
 Description=Travel Companion API
 After=network.target
 
@@ -160,11 +171,9 @@ ProtectSystem=strict
 ReadWritePaths=$APP_DIR
 
 [Install]
-WantedBy=multi-user.target
-SVCEOF
+WantedBy=multi-user.target"
 
-cat > "/etc/systemd/system/${SERVICE_NAME}-update.service" <<USVC
-[Unit]
+write_unit "/etc/systemd/system/${SERVICE_NAME}-update.service" "[Unit]
 Description=Travel Companion auto-update (triggered by webhook)
 
 [Service]
@@ -175,11 +184,9 @@ TimeoutStartSec=0
 ExecStart=/bin/bash $APP_DIR/deploy.sh --update
 ExecStartPost=/bin/rm -f $APP_DIR/.deploy-trigger
 StandardOutput=append:/var/log/travelcomp-deploy.log
-StandardError=append:/var/log/travelcomp-deploy.log
-USVC
+StandardError=append:/var/log/travelcomp-deploy.log"
 
-cat > "/etc/systemd/system/${SERVICE_NAME}-update.path" <<UPATH
-[Unit]
+write_unit "/etc/systemd/system/${SERVICE_NAME}-update.path" "[Unit]
 Description=Watch for Travel Companion deploy trigger file
 
 [Path]
@@ -187,8 +194,7 @@ PathExists=$APP_DIR/.deploy-trigger
 Unit=${SERVICE_NAME}-update.service
 
 [Install]
-WantedBy=multi-user.target
-UPATH
+WantedBy=multi-user.target"
 
 # Only enable/start on first install. On updates the units are already active,
 # and calling systemctl from within the running update service itself causes
@@ -205,7 +211,7 @@ else
   # the path watcher to immediately re-trigger (infinite loop).
   # Unit file definition changes land on the next fresh install or manual:
   #   sudo systemctl daemon-reload
-  ok "Systemd unit definitions written (daemon-reload skipped inside update service)"
+  ok "Systemd unit definitions checked (daemon-reload skipped inside update service)"
 fi
 
 # ── 6b. Frontend build ──────────────────────────────────────────────────────────
