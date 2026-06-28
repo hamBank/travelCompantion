@@ -430,12 +430,30 @@ def _norm_iata(s: str) -> str:
             if base in rev:
                 return rev[base]
 
-    # 6. Try the part before a hyphen/dash separator ("Helsinki-Vantaa" → "Helsinki")
+    # 6. First word (handles "Singapore Changi" → "singapore" → SIN,
+    #    "Melbourne Tullamarine" → "melbourne" → MEL)
+    first = clean.split()[0]
+    if first != clean and first in rev:
+        return rev[first]
+
+    # 7. Part before a hyphen/dash ("Helsinki-Vantaa" → "Helsinki")
     m = re.match(r'^([^–—\-]+)', clean)
     if m:
         city = m.group(1).strip()
-        if city in rev:
+        if city and city != clean and city in rev:
             return rev[city]
+
+    # 8. Primary-airport overrides for cities with multiple airports where one
+    #    is the clear international gateway.  Only reached when all above fail.
+    _PRIMARY = {
+        "paris": "CDG", "london": "LHR", "new york": "JFK",
+        "chicago": "ORD", "los angeles": "LAX", "tokyo": "NRT",
+        "moscow": "SVO", "milan": "MXP", "rome": "FCO",
+        "amsterdam": "AMS", "frankfurt": "FRA", "dubai": "DXB",
+        "istanbul": "IST", "bangkok": "BKK",
+    }
+    if clean in _PRIMARY:
+        return _PRIMARY[clean]
 
     return s  # can't confidently normalise — leave as-is
 
