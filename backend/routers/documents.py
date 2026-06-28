@@ -210,8 +210,6 @@ def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> di
         with client.messages.stream(
             model=_MODEL,
             max_tokens=max_tokens,
-            thinking={"type": "adaptive"},
-            output_config={"effort": "medium"},
             messages=[{"role": "user", "content": content}],
         ) as stream:
             resp = stream.get_final_message()
