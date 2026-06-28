@@ -132,6 +132,18 @@ sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q --
 sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q -r "$APP_DIR/backend/requirements.txt"
 ok "Python dependencies installed"
 
+# ── 4b. (Re)start service — runs HERE so npm below can never block it ──────────
+# backend/static/ is already correct from git reset --hard; there is no reason
+# to wait for npm before bringing up the new Python code and static assets.
+if $UPDATE_ONLY || $_WAS_RUNNING; then
+  info "Restarting $SERVICE_NAME"
+  systemctl restart "$SERVICE_NAME"
+  sleep 2
+  systemctl is-active --quiet "$SERVICE_NAME" \
+    && ok "Service running  ($(curl -sf http://127.0.0.1:8000/health | python3 -c 'import sys,json; d=json.load(sys.stdin); print("sha=" + d.get("sha","?"))' 2>/dev/null || echo 'health check skipped'))" \
+    || warn "Service failed — check: journalctl -u $SERVICE_NAME -n 40"
+fi
+
 # ── 5. Systemd service + deploy watcher ────────────────────────────────────────
 # Done BEFORE the npm build so the units always exist even if the build fails.
 # The service file only references filesystem paths (VENV, APP_DIR, ENV_FILE)
@@ -215,21 +227,25 @@ else
 fi
 
 # ── 6b. Frontend build ──────────────────────────────────────────────────────────
-# The compiled frontend (backend/static/) is committed to git, so on updates the
-# correct build is already present after `git reset --hard`.  Only run npm on a
-# first install where node_modules don't exist yet.
+# backend/static/ is committed to git — the correct build is already on disk after
+# git reset --hard.  npm is only needed the very first time node_modules doesn't
+# exist yet.  Never run npm on webhook updates (UPDATE_ONLY=true).
 NPM="sudo -u $APP_USER HOME=$APP_DIR npm"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/.npm" 2>/dev/null || true
 
-if ! $UPDATE_ONLY; then
-  info "Installing Node dependencies (first install)"
-  $NPM --prefix "$APP_DIR/frontend" ci --silent
+if [[ ! -d "$APP_DIR/frontend/node_modules" ]]; then
+  info "Installing Node dependencies (node_modules absent)"
+  $NPM --prefix "$APP_DIR/frontend" ci --silent \
+    || warn "npm ci failed — frontend static files from git will still be served"
 
-  info "Building frontend (first install)"
-  $NPM --prefix "$APP_DIR/frontend" run build
-  ok "Frontend built → backend/static"
+  if [[ -d "$APP_DIR/frontend/node_modules" ]]; then
+    info "Building frontend"
+    $NPM --prefix "$APP_DIR/frontend" run build \
+      || warn "Frontend build failed — static files from git will still be served"
+    ok "Frontend built → backend/static"
+  fi
 else
-  ok "Frontend static files already up-to-date from git pull — skipping npm build"
+  ok "Frontend node_modules present — skipping npm (static files served from git)"
 fi
 
 # ── 6c. Coverage reports → /coverage (best-effort; never abort the deploy) ──────
@@ -330,15 +346,8 @@ else
   warn "Apache config test failed (broken cert?) — check: sudo apache2ctl configtest"
 fi
 
-# ── 9. (Re)start service ──────────────────────────────────────────────────────
-if $UPDATE_ONLY || $_WAS_RUNNING; then
-  info "Restarting $SERVICE_NAME"
-  systemctl restart "$SERVICE_NAME"
-  sleep 2
-  systemctl is-active --quiet "$SERVICE_NAME" \
-    && ok "Service running" \
-    || warn "Service failed — check: journalctl -u $SERVICE_NAME -n 40"
-else
+# ── 9. First-deploy instructions (service already restarted above if it was running) ──
+if ! $UPDATE_ONLY && ! $_WAS_RUNNING; then
   warn "First deploy complete. Next steps:"
   echo ""
   echo "  1. Fill in secrets:    sudo nano $ENV_FILE"
