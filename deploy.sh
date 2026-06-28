@@ -136,11 +136,22 @@ ok "Python dependencies installed"
 # Done BEFORE the npm build so the units always exist even if the build fails.
 # The service file only references filesystem paths (VENV, APP_DIR, ENV_FILE)
 # which are already set; systemd doesn't validate them at enable time.
+#
+# write_unit FILE CONTENT — only writes when content differs, to avoid noise.
+write_unit() {
+  local file="$1" content="$2"
+  if [[ -f "$file" ]] && [[ "$(cat "$file")" == "$content" ]]; then
+    ok "$(basename "$file") unchanged"
+  else
+    printf '%s\n' "$content" > "$file"
+    info "$(basename "$file") updated"
+  fi
+}
+
 ENV_FILE="$APP_DIR/.env"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-info "Writing systemd service → $SERVICE_FILE"
-cat > "$SERVICE_FILE" <<SVCEOF
-[Unit]
+
+write_unit "$SERVICE_FILE" "[Unit]
 Description=Travel Companion API
 After=network.target
 
@@ -160,11 +171,9 @@ ProtectSystem=strict
 ReadWritePaths=$APP_DIR
 
 [Install]
-WantedBy=multi-user.target
-SVCEOF
+WantedBy=multi-user.target"
 
-cat > "/etc/systemd/system/${SERVICE_NAME}-update.service" <<USVC
-[Unit]
+write_unit "/etc/systemd/system/${SERVICE_NAME}-update.service" "[Unit]
 Description=Travel Companion auto-update (triggered by webhook)
 
 [Service]
@@ -175,11 +184,9 @@ TimeoutStartSec=0
 ExecStart=/bin/bash $APP_DIR/deploy.sh --update
 ExecStartPost=/bin/rm -f $APP_DIR/.deploy-trigger
 StandardOutput=append:/var/log/travelcomp-deploy.log
-StandardError=append:/var/log/travelcomp-deploy.log
-USVC
+StandardError=append:/var/log/travelcomp-deploy.log"
 
-cat > "/etc/systemd/system/${SERVICE_NAME}-update.path" <<UPATH
-[Unit]
+write_unit "/etc/systemd/system/${SERVICE_NAME}-update.path" "[Unit]
 Description=Watch for Travel Companion deploy trigger file
 
 [Path]
@@ -187,8 +194,7 @@ PathExists=$APP_DIR/.deploy-trigger
 Unit=${SERVICE_NAME}-update.service
 
 [Install]
-WantedBy=multi-user.target
-UPATH
+WantedBy=multi-user.target"
 
 # Only enable/start on first install. On updates the units are already active,
 # and calling systemctl from within the running update service itself causes
@@ -205,33 +211,39 @@ else
   # the path watcher to immediately re-trigger (infinite loop).
   # Unit file definition changes land on the next fresh install or manual:
   #   sudo systemctl daemon-reload
-  ok "Systemd unit definitions written (daemon-reload skipped inside update service)"
+  ok "Systemd unit definitions checked (daemon-reload skipped inside update service)"
 fi
 
 # ── 6b. Frontend build ──────────────────────────────────────────────────────────
-# HOME=$APP_DIR prevents npm writing to /nonexistent when the service user has no home dir.
+# The compiled frontend (backend/static/) is committed to git, so on updates the
+# correct build is already present after `git reset --hard`.  Only run npm on a
+# first install where node_modules don't exist yet.
 NPM="sudo -u $APP_USER HOME=$APP_DIR npm"
-# Ensure the npm cache dir is owned by the service user (root can write it
-# on first install, leaving files that block subsequent travelcomp-owned runs).
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/.npm" 2>/dev/null || true
 
-info "Installing Node dependencies"
-$NPM --prefix "$APP_DIR/frontend" ci --silent
+if ! $UPDATE_ONLY; then
+  info "Installing Node dependencies (first install)"
+  $NPM --prefix "$APP_DIR/frontend" ci --silent
 
-info "Building frontend"
-$NPM --prefix "$APP_DIR/frontend" run build
-ok "Frontend built → backend/static"
+  info "Building frontend (first install)"
+  $NPM --prefix "$APP_DIR/frontend" run build
+  ok "Frontend built → backend/static"
+else
+  ok "Frontend static files already up-to-date from git pull — skipping npm build"
+fi
 
 # ── 6c. Coverage reports → /coverage (best-effort; never abort the deploy) ──────
-# Generated AFTER the build, since the build empties backend/static.
-info "Generating coverage reports"
-COV_DIR="$APP_DIR/backend/static/coverage"
-sudo -u "$APP_USER" mkdir -p "$COV_DIR"
-sudo -u "$APP_USER" sh -c "cd '$APP_DIR' && '$VENV/bin/python' -m pytest --cov=backend --cov-report=html:backend/static/coverage/backend -q" \
-  || warn "backend coverage generation failed (continuing)"
-$NPM --prefix "$APP_DIR/frontend" run coverage \
-  || warn "frontend coverage generation failed (continuing)"
-tee "$COV_DIR/index.html" >/dev/null <<HTML
+# Only regenerate on first install; on updates the coverage dirs are stale but
+# running the full test suite on every webhook deploy is too expensive.
+if ! $UPDATE_ONLY; then
+  info "Generating coverage reports"
+  COV_DIR="$APP_DIR/backend/static/coverage"
+  sudo -u "$APP_USER" mkdir -p "$COV_DIR"
+  sudo -u "$APP_USER" sh -c "cd '$APP_DIR' && '$VENV/bin/python' -m pytest --cov=backend --cov-report=html:backend/static/coverage/backend -q" \
+    || warn "backend coverage generation failed (continuing)"
+  $NPM --prefix "$APP_DIR/frontend" run coverage \
+    || warn "frontend coverage generation failed (continuing)"
+  tee "$COV_DIR/index.html" >/dev/null <<HTML
 <!doctype html><meta charset="utf-8"><title>Coverage</title>
 <style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.6}a{color:#1e66f5}</style>
 <h1>Test coverage</h1>
@@ -241,7 +253,8 @@ tee "$COV_DIR/index.html" >/dev/null <<HTML
   <li><a href="./frontend/index.html">Frontend (vitest)</a></li>
 </ul>
 HTML
-ok "Coverage reports → /coverage"
+  ok "Coverage reports → /coverage"
+fi
 
 # ── 7. Environment file ────────────────────────────────────────────────────────
 if [[ ! -f "$ENV_FILE" ]]; then

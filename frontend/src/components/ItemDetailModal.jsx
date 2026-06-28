@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { fetchGpxText, downloadGpx } from '../api.js'
 import CostDisplay from './CostDisplay.jsx'
 import DetailActions from './DetailActions.jsx'
+import ItemHistoryModal from './ItemHistoryModal.jsx'
 import RichText from './RichText.jsx'
 import { fmtDayTime } from '../dates.js'
 
@@ -523,6 +524,8 @@ const KIND_COLOR = {
 }
 
 export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
+  const [showHistory, setShowHistory] = useState(false)
+
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -532,6 +535,7 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
   const kindColor = KIND_COLOR[item.kind] ?? 'var(--text-faint)'
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'var(--overlay)' }}
@@ -576,8 +580,11 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
           {item.kind !== 'note' && item.notes && <Row label="Notes">{item.notes}</Row>}
         </div>
 
-        <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose} />
+        <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose}
+                       onHistory={() => setShowHistory(true)} />
       </div>
     </div>
+    {showHistory && <ItemHistoryModal item={item} onClose={() => setShowHistory(false)} />}
+    </>
   )
 }

@@ -19,6 +19,7 @@ from ..models import (
     PendingChange, PendingChangeRead, PendingChangeUpdate, PendingStatus,
     ItineraryItem, ItemRead, ItemCreate, ItemUpdate, Stop, TripRole, ItemKind,
 )
+from .items import record_item_history, _item_snapshot
 
 router = APIRouter()
 
@@ -107,12 +108,14 @@ def apply_pending(
     require_stop_role(session, user, pc.suggested_stop_id, TripRole.editor)
 
     p = pc.payload or {}
+    before_snap = None
 
     if pc.op == "update" and pc.target_item_id:
         item = session.get(ItineraryItem, pc.target_item_id)
         if not item:
             raise HTTPException(status_code=404, detail="Target item no longer exists")
 
+        before_snap = _item_snapshot(item)
         diff_after = (pc.diff or {}).get("after", {}) if pc.diff is not None else None
 
         if diff_after is not None:
@@ -176,6 +179,13 @@ def apply_pending(
     session.add(pc)
     session.commit()
     session.refresh(item)
+
+    # Record history — op mirrors the pending change op; source comes from the PC
+    history_before = before_snap if pc.op == "update" else None
+    record_item_history(session, item, pc.op, user["email"],
+                        before=history_before, source=pc.source)
+    session.commit()
+
     return item
 
 
