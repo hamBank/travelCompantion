@@ -501,19 +501,29 @@ def _normalize_details(details: dict) -> dict:
     return details
 
 
-def _match_existing(session, trip_id, kind, details):
+def _match_existing(session, trip_id, kind, details, all_stop_ids=None):
     """Find an existing item this extraction most likely updates, or None.
 
-    Flights match on flight_number + departure date, rail on train_number + date,
-    accommodation on check-in date. Conservative on purpose — a wrong match would
-    silently overwrite a good record, so we only match on strong identifiers.
+    Primary match  — flight/train number + departure date (strongest signal).
+    Fallback match — origin + destination (+ date if available) when no number
+                     was extracted from the document.
+
+    When trip_id is None (email ingest) and all_stop_ids is provided, searches
+    across all those stops so imports still match even when Claude can't assign
+    a stop.
     """
     from ..models import ItineraryItem, Stop
-    if not trip_id:
+
+    if trip_id:
+        stop_ids = [s.id for s in session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()]
+    elif all_stop_ids:
+        stop_ids = list(all_stop_ids)
+    else:
         return None
-    stop_ids = [s.id for s in session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()]
+
     if not stop_ids:
         return None
+
     items = session.exec(select(ItineraryItem).where(ItineraryItem.stop_id.in_(stop_ids))).all()
 
     def norm(v):
@@ -522,15 +532,34 @@ def _match_existing(session, trip_id, kind, details):
     if kind in ("flight", "rail"):
         key = "flight_number" if kind == "flight" else "train_number"
         num = norm(details.get(key))
-        if not num:
-            return None
         dd = _datepart(details.get("depart_time"))
-        for it in items:
-            if it.kind != kind:
-                continue
-            d = it.details or {}
-            if norm(d.get(key)) == num and (not dd or _datepart(d.get("depart_time")) == dd):
-                return it
+
+        if num:
+            # Primary: match on flight/train number (+ date when available)
+            for it in items:
+                if it.kind != kind:
+                    continue
+                d = it.details or {}
+                if norm(d.get(key)) == num and (not dd or _datepart(d.get("depart_time")) == dd):
+                    return it
+
+        # Fallback: match on origin + destination (+ date when available).
+        # Only used when the document didn't contain a flight number.
+        orig = norm(details.get("origin"))
+        dest = norm(details.get("destination"))
+        if orig and dest and not num:
+            candidates = []
+            for it in items:
+                if it.kind != kind:
+                    continue
+                d = it.details or {}
+                if norm(d.get("origin")) == orig and norm(d.get("destination")) == dest:
+                    if not dd or _datepart(d.get("depart_time")) == dd:
+                        candidates.append(it)
+            # Only match if unambiguous (single candidate)
+            if len(candidates) == 1:
+                return candidates[0]
+
     elif kind == "accommodation":
         ci = _datepart(details.get("checkin"))
         if not ci:
@@ -540,6 +569,7 @@ def _match_existing(session, trip_id, kind, details):
                 continue
             if _datepart((it.details or {}).get("checkin")) == ci:
                 return it
+
     return None
 
 
@@ -763,7 +793,15 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
                                 if effective_trip_id is None:
                                     effective_trip_id = best.trip_id
 
-        existing = _match_existing(session, effective_trip_id, kind, details)
+        # Pass all user stops so route-based fallback matching works even when
+        # trip_id is unknown (e.g. email ingest without a matched stop).
+        existing = _match_existing(session, effective_trip_id, kind, details,
+                                   all_stop_ids=stop_ids if not effective_trip_id else None)
+        # If the fallback route-match found an item, derive the trip from it.
+        if existing and not effective_trip_id:
+            src_stop = session.get(Stop, existing.stop_id)
+            if src_stop:
+                effective_trip_id = src_stop.trip_id
         op = "update" if existing else "create"
         target_id = existing.id if existing else None
         diff = _compute_diff(existing, item) if existing else None
