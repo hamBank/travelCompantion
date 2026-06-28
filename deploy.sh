@@ -293,9 +293,7 @@ else
 fi
 
 # ── 8. Apache VirtualHost ──────────────────────────────────────────────────────
-info "Writing Apache VirtualHost → $VHOST_CONF"
-cat > "$VHOST_CONF" <<VHEOF
-<VirtualHost *:80>
+_VHOST_CONTENT="<VirtualHost *:80>
     ServerName ${DOMAIN}
     ServerAlias www.${DOMAIN}
 
@@ -303,9 +301,9 @@ cat > "$VHOST_CONF" <<VHEOF
     CustomLog \${APACHE_LOG_DIR}/travelcomp_access.log combined
 
     # Security headers
-    Header always set X-Content-Type-Options "nosniff"
-    Header always set X-Frame-Options "DENY"
-    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set X-Content-Type-Options \"nosniff\"
+    Header always set X-Frame-Options \"DENY\"
+    Header always set Referrer-Policy \"strict-origin-when-cross-origin\"
 
     # Proxy everything to uvicorn
     ProxyPreserveHost On
@@ -313,15 +311,16 @@ cat > "$VHOST_CONF" <<VHEOF
     ProxyPassReverse / http://127.0.0.1:${BIND_PORT}/
 
     # Forward real client IP to FastAPI
-    RequestHeader set X-Forwarded-Proto "http"
-    RequestHeader set X-Real-IP "%{REMOTE_ADDR}s"
+    RequestHeader set X-Forwarded-Proto \"http\"
+    RequestHeader set X-Real-IP \"%{REMOTE_ADDR}s\"
 
     # Aggressive caching for Vite content-hashed assets
-    <LocationMatch "^/assets/">
-        Header set Cache-Control "public, max-age=31536000, immutable"
+    <LocationMatch \"^/assets/\">
+        Header set Cache-Control \"public, max-age=31536000, immutable\"
     </LocationMatch>
-</VirtualHost>
-VHEOF
+</VirtualHost>"
+
+write_unit "$VHOST_CONF" "$_VHOST_CONTENT"
 
 a2ensite "$(basename "$VHOST_CONF")" 2>/dev/null || true
 if /usr/sbin/apache2ctl configtest 2>/dev/null; then
