@@ -15,6 +15,19 @@ function flightDisplayName(row) {
 const CONFIDENCE_COLOR = { high: 'var(--success)', medium: 'var(--warning)', low: 'var(--error)' }
 const labelize = k => k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
+function fmtDetailValue(v) {
+  if (Array.isArray(v)) {
+    return v.map(p => {
+      if (typeof p !== 'object' || !p) return String(p)
+      const { name, ticket, loyalty, ff_tier, seat, meal, baggage, ...rest } = p
+      const parts = [name, ticket && `tkt:${ticket}`, loyalty, ff_tier, seat && `seat:${seat}`, meal, baggage]
+        .filter(Boolean)
+      return parts.length ? parts.join(' · ') : Object.values(rest).filter(Boolean).join(' · ')
+    }).join('\n')
+  }
+  return String(v)
+}
+
 const DETAIL_ORDER = [
   'origin', 'destination', 'depart_time', 'arrive_time', 'train_number',
   'flight_number', 'operator', 'airline', 'location', 'checkin', 'checkout',
@@ -236,7 +249,7 @@ export default function PendingReview({ tripId = null, stops = [], onClose, onCh
                     {details.map(([k, v]) => (
                       <div key={k} className="flex gap-2 text-xs">
                         <span style={{ color: 'var(--text-faint)' }} className="w-28 shrink-0">{labelize(k)}</span>
-                        <span style={{ color: 'var(--text)' }} className="flex-1 break-words">{String(v)}</span>
+                        <span style={{ color: 'var(--text)', whiteSpace: 'pre-line' }} className="flex-1 break-words">{fmtDetailValue(v)}</span>
                       </div>
                     ))}
                   </div>
@@ -248,9 +261,9 @@ export default function PendingReview({ tripId = null, stops = [], onClose, onCh
                     {Object.keys(row.diff.after).map(k => (
                       <div key={k} className="flex gap-2 text-xs items-baseline">
                         <span style={{ color: 'var(--text-faint)' }} className="w-24 shrink-0">{labelize(k)}</span>
-                        <span style={{ color: 'var(--text-faint)' }} className="line-through truncate" >{String(row.diff.before?.[k] ?? '—')}</span>
+                        <span style={{ color: 'var(--text-faint)', whiteSpace: 'pre-line' }} className="line-through truncate">{fmtDetailValue(row.diff.before?.[k] ?? '—')}</span>
                         <span style={{ color: 'var(--text-muted)' }}>→</span>
-                        <span style={{ color: 'var(--text)' }} className="flex-1 break-words">{String(row.diff.after[k])}</span>
+                        <span style={{ color: 'var(--text)', whiteSpace: 'pre-line' }} className="flex-1 break-words">{fmtDetailValue(row.diff.after[k])}</span>
                       </div>
                     ))}
                   </div>
