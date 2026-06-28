@@ -200,10 +200,14 @@ def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> di
     if doc_text:
         content.append({"type": "text", "text": f"\n\n--- DOCUMENT ---\n{doc_text}"})
 
+    # Scale max_tokens with number of PDF documents — each PDF can produce many items.
+    n_docs = len([c for c in content if c.get("type") == "document"])
+    max_tokens = min(8000 + n_docs * 4000, 32000)
+
     try:
         resp = client.messages.create(
             model=_MODEL,
-            max_tokens=8000,
+            max_tokens=max_tokens,
             thinking={"type": "adaptive"},
             output_config={"effort": "medium"},
             messages=[{"role": "user", "content": content}],
@@ -222,7 +226,8 @@ def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> di
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        raise HTTPException(status_code=502, detail="Could not parse the extraction result.")
+        preview = text[:300].replace("\n", " ") if text else "(empty)"
+        raise HTTPException(status_code=502, detail=f"Could not parse extraction result (stop_reason={resp.stop_reason}): {preview}")
 
 
 _CITY_TZ = {
