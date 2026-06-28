@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getPending, updatePending, applyPending, discardPending, getTrips, getTripTimeline } from '../api.js'
+import { getPending, updatePending, applyPending, discardPending, getTrips, getTripTimeline, getIngestedEmail, downloadIngestedEmail } from '../api.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
 import { airportName } from '../airportNames.js'
@@ -40,6 +40,8 @@ export default function PendingReview({ tripId = null, stops = [], onClose, onCh
   const [busyId, setBusyId] = useState(null)
   const [trips, setTrips] = useState([])
   const [stopsByTrip, setStopsByTrip] = useState({})
+  // source email viewer: { [rowId]: { open: bool, loading: bool, data: obj|null, err: str|null } }
+  const [emailViewer, setEmailViewer] = useState({})
 
   async function ensureStops(tid) {
     if (!tid || stopsByTrip[tid]) return
@@ -107,6 +109,26 @@ export default function PendingReview({ tripId = null, stops = [], onClose, onCh
     try { await discardPending(row.id); await load(); onChanged?.() }
     catch (e) { setError(e.message) }
     finally { setBusyId(null) }
+  }
+
+  async function toggleEmail(row) {
+    const emailId = row.source_email_id
+    if (!emailId) return
+    const cur = emailViewer[row.id] || {}
+    if (cur.open) {
+      setEmailViewer(v => ({ ...v, [row.id]: { ...cur, open: false } }))
+      return
+    }
+    // Open: show immediately with loading state, fetch if not yet cached
+    setEmailViewer(v => ({ ...v, [row.id]: { open: true, loading: !cur.data, data: cur.data || null, err: null } }))
+    if (!cur.data) {
+      try {
+        const data = await getIngestedEmail(emailId)
+        setEmailViewer(v => ({ ...v, [row.id]: { open: true, loading: false, data, err: null } }))
+      } catch (e) {
+        setEmailViewer(v => ({ ...v, [row.id]: { open: true, loading: false, data: null, err: e.message } }))
+      }
+    }
   }
 
   return (
@@ -235,6 +257,61 @@ export default function PendingReview({ tripId = null, stops = [], onClose, onCh
                 )}
 
                 {p.notes && <p style={{ color: 'var(--text-muted)' }} className="text-xs italic">{p.notes}</p>}
+
+                {row.source === 'email' && row.source_email_id && (() => {
+                  const ev = emailViewer[row.id] || {}
+                  const em = ev.data
+                  return (
+                    <div>
+                      <button
+                        onClick={() => toggleEmail(row)}
+                        style={{ color: 'var(--accent)' }}
+                        className="text-xs hover:opacity-75 transition-opacity"
+                      >
+                        {ev.open ? '▾ Hide source email' : '▸ View source email'}
+                      </button>
+                      {ev.open && (
+                        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)' }} className="rounded-lg mt-2 p-3 space-y-2">
+                          {ev.loading && <p style={{ color: 'var(--text-faint)' }} className="text-xs">Loading…</p>}
+                          {ev.err && <p style={{ color: 'var(--error)' }} className="text-xs">{ev.err}</p>}
+                          {em && (
+                            <>
+                              <div className="space-y-0.5">
+                                {em.subject && (
+                                  <div className="flex gap-2 text-xs">
+                                    <span style={{ color: 'var(--text-faint)' }} className="w-10 shrink-0">Subject</span>
+                                    <span style={{ color: 'var(--text)' }} className="flex-1 break-words font-medium">{em.subject}</span>
+                                  </div>
+                                )}
+                                {em.from_addr && (
+                                  <div className="flex gap-2 text-xs">
+                                    <span style={{ color: 'var(--text-faint)' }} className="w-10 shrink-0">From</span>
+                                    <span style={{ color: 'var(--text-muted)' }} className="flex-1 break-all">{em.from_addr}</span>
+                                  </div>
+                                )}
+                              </div>
+                              {em.body_text ? (
+                                <pre
+                                  style={{ color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'inherit' }}
+                                  className="text-xs rounded p-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words"
+                                >{em.body_text}</pre>
+                              ) : (
+                                <p style={{ color: 'var(--text-faint)' }} className="text-xs italic">No text body available.</p>
+                              )}
+                              <button
+                                onClick={() => downloadIngestedEmail(row.source_email_id).catch(() => {})}
+                                style={{ color: 'var(--accent)' }}
+                                className="text-xs hover:opacity-75 transition-opacity"
+                              >
+                                ↓ Download raw .eml
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 <div className="flex gap-2 pt-0.5">
                   <button

@@ -40,7 +40,22 @@ export const getPending     = (tripId) => req(`/pending${tripId != null ? `?trip
 export const updatePending  = (id, data) => req(`/pending/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 export const applyPending   = (id) => req(`/pending/${id}/apply`, { method: 'POST' })
 export const discardPending = (id) => req(`/pending/${id}/discard`, { method: 'POST' })
-export const getImportAddress = () => req('/me/import-address')
+export const getImportAddress  = () => req('/me/import-address')
+export const getIngestedEmail  = (id) => req(`/me/emails/${id}`)
+
+export async function downloadIngestedEmail(id) {
+  const token = getToken()
+  const r = await fetch(`/me/emails/${id}/raw`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!r.ok) throw new Error('Download failed')
+  const blob = await r.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `email-${id}.eml`
+  document.body.appendChild(a); a.click()
+  document.body.removeChild(a); URL.revokeObjectURL(url)
+}
 
 export async function exportTripPdf(id, name) {
   const token = getToken()

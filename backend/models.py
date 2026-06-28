@@ -224,6 +224,7 @@ class PendingChangeRead(SQLModel):
     id: int
     created_by: str
     source: str
+    source_email_id: Optional[int] = None
     trip_id: Optional[int] = None
     op: str
     target_item_id: Optional[int] = None
@@ -258,6 +259,19 @@ class IngestedEmail(SQLModel, table=True):
     status: str = "received"            # received | parsed | error
     parse_error: str = ""
     item_count: int = 0
+
+
+class IngestedEmailRead(SQLModel):
+    """API-safe view of a stored email, including the extracted text body."""
+    id: int
+    received_at: datetime
+    from_addr: str
+    to_addr: str
+    subject: str
+    status: str
+    parse_error: str
+    item_count: int
+    body_text: str = ""   # extracted plain-text body; empty if file unavailable
 
 
 class UserImportToken(SQLModel, table=True):

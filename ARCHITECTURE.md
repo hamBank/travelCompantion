@@ -1,13 +1,14 @@
 # Travel Companion — Architecture & Reference
 
-> Snapshot for re-loading context in future sessions. Last updated: 2026-06-22.
+> Snapshot for re-loading context in future sessions. Last updated: 2026-06-28.
 
 ## Overview
 
 A personal travel itinerary web app. A FastAPI + SQLite backend serves a REST API
 **and** the compiled React SPA from the same origin. Users organise **Trips →
 Stops → Itinerary Items**, with rich per-kind detail (flights, rail, hotels,
-activities, etc.), multi-currency cost tracking, and Google Sheets import.
+activities, etc.), multi-currency cost tracking, Google Sheets import, and
+email ingestion of booking confirmations (parsed by Claude).
 
 - **Repo:** `https://github.com/hamBank/travelCompantion.git` (default branch `main`)
 - **Local root:** `F:\Users\foobi\Downloads\travelApp\backend\travelCompantion\`
@@ -31,16 +32,25 @@ backend/
   auth.py            # JWT + Google token verification, AUTH_ENABLED flag
   importer.py        # Google Sheets CSV → DB seeding
   sheets.py          # Google Sheets OAuth fetch
+  documents.py       # Claude-based email/document parsing → PendingChange builder
+  permissions.py     # require_trip_role / require_stop_role / require_item_role
   routers/
     trips.py         # /trips CRUD + /trips/{id}/timeline
     stops.py         # /trips/{id}/stops, /stops/{id} CRUD + reorder
     items.py         # /items CRUD, enrich, flight/rail check, gpx, geocode, route-elevation
     sheets_import.py # /import/* endpoints
     auth_router.py   # /auth/google, /auth/me, /auth/config
+    ingest.py        # POST /ingest/email — receives raw .eml from postfix pipe
+    pending.py       # GET/PATCH /pending, POST /pending/{id}/apply|discard
+    me.py            # GET /me/import-address — stable per-user email forwarding address
   static/            # COMPILED frontend output (committed) — served at /
+mail_ingest.py                   # stdlib-only stdin→POST shim (run by postfix pipe)
+scripts/
+  mail_ingest_wrapper.sh         # sources .env, execs mail_ingest.py; run as travelcomp user
 frontend/
   src/
-    App.jsx                  # Shell: auth gate, header, theme, settings gear
+    App.jsx                  # Shell: auth gate, header, theme, settings gear,
+                             #   📥 Imports badge (60s poll), PendingReview modal trigger
     api.js                   # fetch wrapper + all endpoint helpers
     kinds.js                 # SINGLE SOURCE OF TRUTH for item kinds (see below)
     currency.js              # cost parsing, conversion, formatting, isFullyPaid
@@ -56,8 +66,10 @@ frontend/
       FlightDetailModal, RailDetailModal   # kind-specific detail views
       DetailActions          # shared Edit + Delete footer (inline confirm)
       CostDisplay            # cost + converted + paid/outstanding breakdown
-      UserSettings           # currency picker + hide-completed toggle
-      ThemePicker, LoginPage
+      UserSettings           # currency picker + hide-completed toggle +
+                             #   ImportAddress ("Forward bookings by email")
+      PendingReview          # modal: review/apply/discard email-ingested items
+      ThemePicker, LoginPage, ShareModal
 ```
 
 ## Data Model (`backend/models.py`)
@@ -82,6 +94,28 @@ sort_order, status`
 - **`details`** is a free-form JSON blob holding kind-specific fields. This is where
   most per-kind data lives. **When patching `details`, the backend calls
   `flag_modified(item, 'details')`** so SQLAlchemy detects the JSON change.
+
+### PendingChange
+`id, source, source_email_id?, trip_id?, suggested_stop_id?, op, payload(JSON),
+diff(JSON)?, confidence, match_reason, status`
+- Created by email ingestion and document upload; reviewed/applied by the user
+- `source ∈ {upload, email}`; `source_email_id` FK → `IngestedEmail`
+- `op ∈ {create, update}`; `status ∈ {pending, applied, discarded}`
+- `payload` is the parsed item fields; `diff` is before→after for `op=update`
+
+### IngestedEmail
+`id, received_at, from_addr, to_addr, subject, storage_dir, resolved_user_email,
+status, parse_error?, item_count`
+- `status ∈ {received, parsed, error}`
+- `storage_dir` → `mail_store/<uuid>/` containing `raw.eml` + numbered attachments
+- `status=received` when `ANTHROPIC_API_KEY` is absent (stored but not parsed)
+
+### UserImportToken
+`user_email (PK), token (indexed), created_at`
+- One row per user; generated on first call to `GET /me/import-address`
+- Token appears as the `+extension` in `import+<token>@<MAIL_DOMAIN>`
+- Rotation: delete the row (a new token is issued on next Settings view).
+  No in-app rotation UI exists yet.
 
 #### Notable `details` keys by kind
 - **All (with cost):** `amount_paid`, `converted_cost`, `converted_amount_paid`,
@@ -147,8 +181,10 @@ See **PERMISSIONS.md** for the full role/sharing design. In brief: per-trip role
   frontend auto-logs-in as a dev user, and all permission checks return `owner`.
 - When enabled: middleware validates `Authorization: Bearer <JWT>` except for
   public prefixes: `/auth/`, `/health`, `/currency/`, `/assets/`, `/sw.`,
-  `/registerSW.`, `/manifest.` and exact public paths (`/`, `/index.html`, static
-  icons, `/privacy.html`, `/tos.html`, `/deploy`).
+  `/registerSW.`, `/manifest.`, **`/ingest/`** and exact public paths (`/`,
+  `/index.html`, static icons, `/privacy.html`, `/tos.html`, `/deploy`).
+  `/ingest/` uses its own shared-secret auth (`X-Ingest-Secret` header) and must
+  stay localhost-only — Apache never proxies it.
 - Google OAuth client id served via `/auth/config`; login posts credential to
   `/auth/google`, returns JWT stored in `localStorage` as `tc-token`.
 
@@ -166,12 +202,58 @@ Items:   GET/POST /stops/{id}/items ; GET/PATCH/DELETE /items/{id}
          GET /geocode?q= ; GET /route-elevation?lat1=&lng1=&lat2=&lng2=
 Import:  POST /import/sheets ; /import/sheets/flights/{trip_id} ; …backfill endpoints
 Auth:    POST /auth/google ; GET /auth/me ; GET /auth/config
+Me:      GET /me/import-address          (generate/return stable email forwarding address)
+Ingest:  POST /ingest/email              (localhost-only; secret-auth; called by postfix pipe)
+Pending: GET /pending[?trip_id=N]        (list PendingChanges, includes null-trip rows)
+         PATCH /pending/{id}             (edit trip/stop/kind/payload)
+         POST /pending/{id}/apply        (create or update item; enforces trip role)
+         POST /pending/{id}/discard      (204)
 System:  POST /deploy (GitHub webhook, HMAC) ; GET /health ; GET /currency/convert
 ```
 
 External services: Google Places (`GOOGLE_PLACES_API_KEY`), AviationStack
 (`AVIATIONSTACK_KEY`), open.er-api.com (currency, no key), OpenStreetMap tiles +
-OpenTopoData (GPX map/elevation, client-side), Google Sheets OAuth.
+OpenTopoData (GPX map/elevation, client-side), Google Sheets OAuth,
+Anthropic Claude API (`ANTHROPIC_API_KEY`, email parsing).
+
+## Email ingestion
+
+Users forward booking confirmation emails to a personal address
+(`import+<token>@<MAIL_DOMAIN>`). Postfix pipes the raw message to
+`scripts/mail_ingest_wrapper.sh`, which calls `mail_ingest.py` (stdlib-only
+stdin→POST shim). The shim POSTs the raw `.eml` to `POST /ingest/email`
+(localhost only) with `X-Ingest-Secret` + `X-Original-To` headers.
+
+The endpoint:
+1. Authenticates via the shared secret (`MAIL_INGEST_SECRET` env var).
+2. Extracts the `+token` from the recipient address and looks up `UserImportToken`.
+3. Stores `raw.eml` + attachments in `mail_store/<uuid>/` and creates an
+   `IngestedEmail` row.
+4. If `ANTHROPIC_API_KEY` is set, calls `documents.py` → Claude → creates
+   `PendingChange` rows (one per extracted item, `source="email"`).
+5. Returns `202 {id, resolved, items}` (pipe exits 0; on failure exits 75 so
+   postfix retries).
+
+Frontend flow:
+- **Settings → "Forward bookings by email"** (`ImportAddress` component in
+  `UserSettings`) shows the stable forwarding address with a Copy button.
+- `App.jsx` polls `GET /pending` every 60 seconds; when `pendingCount > 0` a
+  `📥 Imports (N)` footer badge appears.
+- Clicking the badge opens `PendingReview` modal: trip/stop/kind selectors,
+  parsed fields, confidence score, and Apply / Discard buttons.
+- `TripTimeline` also shows a per-trip "Review pending" button.
+
+Env vars: `MAIL_INGEST_SECRET`, `MAIL_DOMAIN` (default `tripplan.hups.club`),
+`MAIL_STORE_DIR` (default `/opt/travelcomp/mail_store`), `ANTHROPIC_API_KEY`.
+
+See `docs/email-ingestion.md` for the full Postfix/DNS setup runbook.
+
+**Known gaps (not yet implemented):**
+- No `DELETE /me/import-token` endpoint or in-app "Regenerate address" button —
+  token rotation requires a manual DB delete.
+- `PendingReview` does not display the `source` field or link back to the
+  originating email — the data is captured in `PendingChange.source_email_id`
+  but the UI does not surface it yet.
 
 ## Build & deploy workflow
 
@@ -213,7 +295,9 @@ SSH: `ssh -i C:/Users/foobi/.ssh/travelcomp_id anto@camelidcastle.hups.club`
 
 ## Conventions / gotchas
 
-- `SPEC.md` holds the original product spec + data model reference.
+- `SPEC.md` holds the original product spec + data model reference (note: predates
+  email ingestion — `PendingChange`, `IngestedEmail`, `UserImportToken`, and the
+  ingest/pending/me routers are not reflected there).
 - The compiled `backend/static/` bundle is committed — always rebuild before commit.
 - JSON `details` edits need `flag_modified` server-side (already handled in
   `routers/items.py`).
