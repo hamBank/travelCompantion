@@ -189,6 +189,117 @@
   --input-icon-filter: invert(0.8);
 }
 
+/* ─── Midnight (OLED black) ─────────────────────────────────────── */
+[data-theme="midnight"] {
+  --bg:          #000000;
+  --surface:     #0d0d0d;
+  --surface-2:   #1a1a1a;
+  --modal-bg:    #000000;
+  --border:      #2a2a2a;
+  --text:        #f0f0f0;
+  --text-muted:  #a0a0a0;
+  --text-faint:  #606060;
+  --accent:      #00d4ff;
+  --accent-fg:   #000000;
+  --accent-alt:  #7c3aed;
+  --success:     #22c55e;
+  --error:       #ff4d6d;
+  --warning:     #fbbf24;
+  --overlay:     rgba(0,0,0,0.85);
+  --status-planned:   #606060;
+  --status-confirmed: #00d4ff;
+  --status-completed: #22c55e;
+  --status-cancelled: #ff4d6d;
+  --kind-activity:      #60a5fa;
+  --kind-restaurant:    #4ade80;
+  --kind-note:          #fcd34d;
+  --kind-accommodation: #c084fc;
+  --kind-flight:        #22d3ee;
+  --kind-cycling:       #fb923c;
+  --kind-rail:          #818cf8;
+  --kind-walk:          #34d399;
+  --kind-transfer:      #f59e0b;
+  --kind-tour:          #f472b6;
+  --kind-food:          #fda4af;
+  --kind-purchase:      #ff6b6b;
+  --kind-show:          #d946ef;
+  --input-icon-filter: invert(0.8);
+}
+
+/* ─── Desert (warm light) ───────────────────────────────────────── */
+[data-theme="desert"] {
+  --bg:          #faf7f0;
+  --surface:     #ffffff;
+  --surface-2:   #f0ebe0;
+  --modal-bg:    #ffffff;
+  --border:      #d6c9b8;
+  --text:        #2d1f0e;
+  --text-muted:  #7a6654;
+  --text-faint:  #a89880;
+  --accent:      #c2571a;
+  --accent-fg:   #ffffff;
+  --accent-alt:  #2b7a4b;
+  --success:     #2b7a4b;
+  --error:       #c0392b;
+  --warning:     #d97706;
+  --overlay:     rgba(45,31,14,0.45);
+  --status-planned:   #a89880;
+  --status-confirmed: #0e7c9c;
+  --status-completed: #2b7a4b;
+  --status-cancelled: #c0392b;
+  --kind-activity:      #1d6fa4;
+  --kind-restaurant:    #2b7a4b;
+  --kind-note:          #b37700;
+  --kind-accommodation: #8b44ac;
+  --kind-flight:        #0e7c9c;
+  --kind-cycling:       #c2571a;
+  --kind-rail:          #5246c0;
+  --kind-walk:          #1a7a6e;
+  --kind-transfer:      #a35c1a;
+  --kind-tour:          #ad2d7c;
+  --kind-food:          #a33030;
+  --kind-purchase:      #8b2635;
+  --kind-show:          #7b2d8b;
+  --input-icon-filter: none;
+}
+
+/* ─── Evergreen (dark green) ────────────────────────────────────── */
+[data-theme="evergreen"] {
+  --bg:          #0f1c14;
+  --surface:     #162118;
+  --surface-2:   #0d1a11;
+  --modal-bg:    #0f1c14;
+  --border:      #234229;
+  --text:        #d4e8d4;
+  --text-muted:  #8aab8a;
+  --text-faint:  #527050;
+  --accent:      #52c873;
+  --accent-fg:   #0f1c14;
+  --accent-alt:  #7ab8f5;
+  --success:     #52c873;
+  --error:       #f07070;
+  --warning:     #f0c060;
+  --overlay:     rgba(0,0,0,0.75);
+  --status-planned:   #527050;
+  --status-confirmed: #7ab8f5;
+  --status-completed: #52c873;
+  --status-cancelled: #f07070;
+  --kind-activity:      #7ab8f5;
+  --kind-restaurant:    #52c873;
+  --kind-note:          #f0c060;
+  --kind-accommodation: #c084fc;
+  --kind-flight:        #5dd5e8;
+  --kind-cycling:       #f0803c;
+  --kind-rail:          #8080f0;
+  --kind-walk:          #60d8a8;
+  --kind-transfer:      #e0a060;
+  --kind-tour:          #f080c0;
+  --kind-food:          #f090a0;
+  --kind-purchase:      #f07070;
+  --kind-show:          #d070e0;
+  --input-icon-filter: invert(0.8);
+}
+
 /* ─── Global ────────────────────────────────────────────────────── */
 body {
   background-color: var(--bg);
