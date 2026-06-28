@@ -345,6 +345,101 @@ _AIRCRAFT_LOOKUP: dict[str, str] = {
 }
 
 
+import functools
+
+@functools.lru_cache(maxsize=1)
+def _airport_rev() -> tuple:
+    """Return (fwd, rev) maps built from airportNames.js.
+
+    fwd: IATA → display name
+    rev: lower-cased name/alias → IATA  (only unambiguous entries kept)
+    """
+    from ..pdf_export import _airport_map
+    fwd = _airport_map()
+    rev: dict = {}
+    city_map: dict = {}
+
+    for iata, name in fwd.items():
+        # Full display name  e.g. "Tokyo Narita"
+        key = name.lower()
+        if key in rev:
+            rev[key] = None      # collision → ambiguous
+        else:
+            rev[key] = iata
+
+        # First word (city)  e.g. "tokyo"
+        city = name.split()[0].lower()
+        if city in city_map:
+            city_map[city] = None
+        else:
+            city_map[city] = iata
+
+    # Merge city map into rev (only for keys that don't already exist)
+    for city, iata in city_map.items():
+        if iata and city not in rev:
+            rev[city] = iata
+
+    return fwd, {k: v for k, v in rev.items() if v}
+
+
+def _norm_iata(s: str) -> str:
+    """Normalise an airport identifier to a 3-letter IATA code where possible.
+
+    Handles (in order):
+    - Already a bare IATA code: 'SIN' → 'SIN'
+    - Code in parentheses: 'Singapore (SIN)' → 'SIN'
+    - Bare code embedded in string: 'Paris CDG' → 'CDG'
+    - Exact display name: 'Singapore' → 'SIN', 'Tokyo Narita' → 'NRT'
+    - Name with common suffixes stripped: 'Helsinki-Vantaa International' → 'HEL'
+    - City prefix before separator: 'Helsinki-Vantaa' → first try full, then 'Helsinki'
+    Falls back to the original value if no match found.
+    """
+    if not s:
+        return s
+    s = str(s).strip()
+    fwd, rev = _airport_rev()
+
+    # 1. Bare 3-letter code (valid in our map or plausible IATA)
+    up = s.upper()
+    if re.match(r'^[A-Z]{3}$', up):
+        return up  # trust Claude when it gives us a 3-letter code
+
+    # 2. Code in parentheses: "Singapore (SIN)"
+    m = re.search(r'\(([A-Z]{3})\)\s*$', up)
+    if m and m.group(1) in fwd:
+        return m.group(1)
+
+    # 3. Embedded bare code: "Paris CDG", "CDG –"
+    for token in re.findall(r'\b([A-Z]{3})\b', up):
+        if token in fwd:
+            return token
+
+    # 4. Exact display name lookup (case-insensitive)
+    clean = s.lower().strip()
+    if clean in rev:
+        return rev[clean]
+
+    # 5. Strip trailing noise words and retry
+    suffixes = (
+        ' international airport', ' international', ' airport',
+        ' intl.', ' intl', ' arpt',
+    )
+    for suffix in suffixes:
+        if clean.endswith(suffix):
+            base = clean[:-len(suffix)].strip()
+            if base in rev:
+                return rev[base]
+
+    # 6. Try the part before a hyphen/dash separator ("Helsinki-Vantaa" → "Helsinki")
+    m = re.match(r'^([^–—\-]+)', clean)
+    if m:
+        city = m.group(1).strip()
+        if city in rev:
+            return rev[city]
+
+    return s  # can't confidently normalise — leave as-is
+
+
 def _norm_aircraft(s: str) -> str:
     """Canonicalise aircraft name: strip manufacturer prefix, apply lookup table.
 
@@ -362,6 +457,8 @@ _NORMALIZERS = {
     "train_number":  _norm_flight_number,
     "duration":      _norm_duration,
     "aircraft":      _norm_aircraft,
+    "origin":        _norm_iata,
+    "destination":   _norm_iata,
 }
 
 
