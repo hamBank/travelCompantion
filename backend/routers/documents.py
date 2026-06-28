@@ -273,6 +273,47 @@ def _datepart(s) -> str:
     return (str(s) or "")[:10] if s else ""
 
 
+# ── Post-extraction normalizers ────────────────────────────────────────────────
+
+def _norm_flight_number(s: str) -> str:
+    """Canonicalise flight/train number spacing: 'AY132' → 'AY 132'."""
+    if not s:
+        return s
+    m = re.match(r'^([A-Z]{1,3})\s*[-]?\s*(\d+[A-Z]?)$', str(s).strip().upper())
+    return f"{m.group(1)} {m.group(2)}" if m else str(s).strip()
+
+
+def _norm_duration(s: str) -> str:
+    """Normalise flight/rail duration to 'Xh Ym': '13:25', '08:10', '13h25m' → '13h 25m'."""
+    if not s:
+        return s
+    s = str(s).strip()
+    m = re.match(r'^(\d{1,2}):(\d{2})$', s)
+    if m:
+        h, mn = int(m.group(1)), int(m.group(2))
+        return f"{h}h {mn}m" if mn else f"{h}h"
+    m = re.match(r'^(\d+)\s*h\s*(?:(\d+)\s*m)?$', s, re.IGNORECASE)
+    if m:
+        h, mn = int(m.group(1)), int(m.group(2) or 0)
+        return f"{h}h {mn}m" if mn else f"{h}h"
+    return s
+
+
+_NORMALIZERS = {
+    "flight_number": _norm_flight_number,
+    "train_number":  _norm_flight_number,
+    "duration":      _norm_duration,
+}
+
+
+def _normalize_details(details: dict) -> dict:
+    """Apply field-level normalizers to a details dict in-place and return it."""
+    for k, fn in _NORMALIZERS.items():
+        if k in details and details[k]:
+            details[k] = fn(details[k])
+    return details
+
+
 def _match_existing(session, trip_id, kind, details):
     """Find an existing item this extraction most likely updates, or None.
 
@@ -386,7 +427,11 @@ def _compute_diff(existing, item: dict) -> dict:
         if nv in (None, "", []):
             continue
         ov = old_d.get(k)
-        if _val_eq(ov, nv):
+        # Normalise both sides so formatting differences don't generate noise.
+        norm = _NORMALIZERS.get(k)
+        ov_cmp = norm(ov) if (norm and ov) else ov
+        nv_cmp = norm(nv) if norm else nv
+        if _val_eq(ov_cmp, nv_cmp):
             continue
         if k in _PASSENGER_FIELDS:
             merged = _merge_field(ov, nv) if ov else nv
@@ -394,12 +439,16 @@ def _compute_diff(existing, item: dict) -> dict:
             after[k] = merged
         else:
             before[k] = ov
-            after[k] = nv
+            after[k] = nv_cmp  # store normalised value
     for f in ("name", "cost", "link", "notes"):
         nv = item.get(f)
         if not nv:
             continue
         ov = getattr(existing, f, "")
+        # notes is LLM-generated prose — re-importing the same email will always
+        # produce slightly different wording. Skip it if the record already has notes.
+        if f == "notes" and ov:
+            continue
         if str(ov or "") != str(nv):
             before[f] = ov
             after[f] = nv
@@ -453,6 +502,8 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
                 details["depart_tz"] = _normalize_tz(details["depart_tz"], details.get("depart_time"))
             if details.get("arrive_tz"):
                 details["arrive_tz"] = _normalize_tz(details["arrive_tz"], details.get("arrive_time"))
+        # Normalise values that Claude formats inconsistently across runs.
+        _normalize_details(details)
         matched = raw.get("matched_stop_id")
         if not isinstance(matched, int) or matched not in stop_ids:
             matched = None
