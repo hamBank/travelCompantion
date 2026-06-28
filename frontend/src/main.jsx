@@ -29,10 +29,10 @@ function safeReload() {
     } catch { /* offline — ignore */ }
   }
   setInterval(check, 60_000)
-  window.addEventListener('focus', check)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') check()
-  })
+  //window.addEventListener('focus', check)
+  //document.addEventListener('visibilitychange', () => {
+  //  if (document.visibilityState === 'visible') check()
+  //})
 })()
 
 // ── Service worker: secondary reload path via controllerchange ─────────────────
