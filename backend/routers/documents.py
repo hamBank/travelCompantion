@@ -90,8 +90,11 @@ def _text_from_eml(raw: bytes) -> str:
         if part.is_multipart():
             continue
         ctype = part.get_content_type()
-        if part.get_filename():
-            continue  # skip attachments
+        # Skip binary attachments — but DO include text/plain and text/html even
+        # when they have a filename (e.g. "itinerary.html", "eticket.txt").
+        # PDFs are handled separately as document blocks; skip them here.
+        if part.get_filename() and ctype not in ("text/plain", "text/html"):
+            continue
         try:
             body = part.get_content()
         except Exception:
@@ -183,12 +186,12 @@ Respond with ONLY a JSON object, no markdown fences, no commentary:
 }}"""
 
 
-def _call_claude(prompt: str, pdf_b64: str | None, doc_text: str | None) -> dict:
+def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> dict:
     import anthropic
 
     client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
     content: list = []
-    if pdf_b64:
+    for pdf_b64 in (pdf_b64s or []):
         content.append({
             "type": "document",
             "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64},
@@ -836,12 +839,18 @@ async def parse_document(
 
     name = (file.filename or "").lower()
     ctype = (file.content_type or "").lower()
-    pdf_b64 = doc_text = None
+    pdf_b64s = []
+    doc_text = None
 
     if name.endswith(".pdf") or "pdf" in ctype:
-        pdf_b64 = base64.standard_b64encode(raw).decode()
+        pdf_b64s = [base64.standard_b64encode(raw).decode()]
     elif name.endswith(".eml") or ctype in ("message/rfc822",):
         doc_text = _text_from_eml(raw)
+        pdf_b64s = [
+            base64.standard_b64encode(data).decode()
+            for fn, ct, data in _attachments_from_eml(raw)
+            if fn.lower().endswith(".pdf") or "pdf" in (ct or "")
+        ]
     else:
         text = raw.decode("utf-8", "replace")
         doc_text = _strip_html(text) if ("<html" in text.lower() or name.endswith((".html", ".htm"))) else text
@@ -857,7 +866,7 @@ async def parse_document(
     ).all()
     kinds = [k.value for k in ItemKind]
 
-    parsed = _call_claude(_build_prompt(stops, kinds), pdf_b64, doc_text)
+    parsed = _call_claude(_build_prompt(stops, kinds), pdf_b64s, doc_text)
 
     # Persist each extracted item as a pending change (with update-matching).
     pcs = build_pending_changes(session, user["email"], trip_id, stops, parsed)

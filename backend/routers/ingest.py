@@ -78,18 +78,18 @@ def parse_ingested(session: Session, ingested: IngestedEmail, raw: bytes, attach
         return []
 
     doc_text = _text_from_eml(raw)
-    pdf_b64 = None
-    for fn, ctype, data in attachments:
-        if fn.lower().endswith(".pdf") or "pdf" in (ctype or ""):
-            pdf_b64 = base64.standard_b64encode(data).decode()
-            break
+    pdf_b64s = [
+        base64.standard_b64encode(data).decode()
+        for fn, ctype, data in attachments
+        if fn.lower().endswith(".pdf") or "pdf" in (ctype or "")
+    ]
 
     # Load all of the user's stops so Claude can match to the right trip.
     stops = _stops_for_user(session, ingested.resolved_user_email)
 
     try:
         kinds = [k.value for k in ItemKind]
-        parsed = _call_claude(_build_prompt(stops, kinds), pdf_b64, doc_text)
+        parsed = _call_claude(_build_prompt(stops, kinds), pdf_b64s, doc_text)
         pcs = build_pending_changes(
             session, ingested.resolved_user_email, None, stops, parsed,
             source="email", source_email_id=ingested.id,
