@@ -461,6 +461,26 @@ def _norm_iata(s: str) -> str:
     return s  # can't confidently normalise — leave as-is
 
 
+def _norm_terminal(s: str) -> str:
+    """Strip 'Terminal ' / 'T' prefix so we store just the designator ('2B', '1', 'F').
+
+    The FlightDetailModal display already prepends 'T', so storing the bare
+    designator avoids 'TTerminal 2B' and keeps diffs clean.
+    """
+    if not s:
+        return s
+    s = str(s).strip()
+    # "Terminal 2B", "terminal 2b" → "2B"
+    cleaned = re.sub(r'^[Tt]erminal\s+', '', s).strip()
+    if cleaned:
+        return cleaned.upper()
+    # "T2B", "t1" → "2B", "1"  (only strip single T followed by alphanumeric)
+    m = re.match(r'^[Tt]([A-Z0-9].*)$', s, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+    return s.upper()
+
+
 def _norm_aircraft(s: str) -> str:
     """Canonicalise aircraft name: strip manufacturer prefix, apply lookup table.
 
@@ -474,12 +494,14 @@ def _norm_aircraft(s: str) -> str:
 
 
 _NORMALIZERS = {
-    "flight_number": _norm_flight_number,
-    "train_number":  _norm_flight_number,
-    "duration":      _norm_duration,
-    "aircraft":      _norm_aircraft,
-    "origin":        _norm_iata,
-    "destination":   _norm_iata,
+    "flight_number":    _norm_flight_number,
+    "train_number":     _norm_flight_number,
+    "duration":         _norm_duration,
+    "aircraft":         _norm_aircraft,
+    "origin":           _norm_iata,
+    "destination":      _norm_iata,
+    "origin_terminal":  _norm_terminal,
+    "arrive_terminal":  _norm_terminal,
 }
 
 

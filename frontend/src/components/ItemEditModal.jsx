@@ -484,8 +484,8 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setTimed('arrive_time', v)} min={d('depart_time')} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Dep terminal" value={d('origin_terminal')} onChange={v => setD('origin_terminal', v)} placeholder="T1" />
-          <Field label="Arr terminal" value={d('arrive_terminal')} onChange={v => setD('arrive_terminal', v)} placeholder="T2" />
+          <Field label="Dep terminal" value={d('origin_terminal')} onChange={v => setD('origin_terminal', v)} placeholder="1" />
+          <Field label="Arr terminal" value={d('arrive_terminal')} onChange={v => setD('arrive_terminal', v)} placeholder="2B" />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Dep gate" value={d('origin_gate')} onChange={v => setD('origin_gate', v)} placeholder="D12" />
