@@ -42,17 +42,22 @@ _MAX_TEXT_CHARS = 60_000  # bound token usage on huge HTML emails
 # created record displays correctly. Times are local "YYYY-MM-DDTHH:MM".
 _DETAIL_HINTS = {
     "rail": "origin, destination, train_number, operator, depart_time, arrive_time, "
-            "depart_platform, arrive_platform, duration, rail_class, coach, seats, meal, "
-            "passengers, loyalty_info, booking_ref, booking_phone",
+            "depart_platform, arrive_platform, duration, rail_class, coach, booking_ref, booking_phone, "
+            "passengers (array of objects — one per traveller: {name, ticket, loyalty, seat, meal}; "
+            "omit sub-fields you cannot fill)",
     "flight": "origin, destination (IATA codes), flight_number, airline, depart_time, arrive_time, "
               "origin_terminal, arrive_terminal, origin_gate, arrive_gate, checkin_desk, depart_tz, "
-              "arrive_tz, duration, seats, layover, connects_to, aircraft, fare_class, baggage, meal, "
-              "passengers, loyalty_info, booking_ref, booking_airline, booking_phone",
+              "arrive_tz, duration, layover, connects_to, aircraft, fare_class, distance, "
+              "booking_ref, booking_airline, booking_phone, "
+              "passengers (array of objects — one per traveller: {name, ticket, loyalty, ff_tier, seat, meal, baggage}; "
+              "omit sub-fields you cannot fill)",
     "accommodation": "location, checkin, checkout, booking_ref, contact_phone, contact_email, description",
     "transfer": "start_location, end_location, depart_time, arrive_time, duration, distance, provider, booking_ref",
-    "tour": "meeting_point, reservation_time, duration, description, contact_phone, booking_ref",
+    "tour": "meeting_point, reservation_time, duration, description, contact_phone, booking_ref, "
+            "participants (array of objects: {name, ticket}; one per person)",
     "activity": "location, description, duration, contact_phone, contact_email",
-    "show": "location (venue), tickets (ticket numbers), seats, duration, booking_ref, description, contact_phone",
+    "show": "location (venue), duration, booking_ref, description, contact_phone, "
+            "participants (array of objects: {name, ticket, seat}; one per person)",
     "restaurant": "location, reservation_time, description, contact_phone, contact_email",
     "food": "description",
     "purchase": "location, description",
@@ -310,14 +315,49 @@ def _match_existing(session, trip_id, kind, details):
     return None
 
 
-# Detail fields that are per-passenger, not per-flight. When a second confirmation
-# for the same flight arrives (different passenger), these are merged rather than
-# replaced so both passengers' info is preserved on the same flight record.
-_PASSENGER_FIELDS = {"seats", "seat", "loyalty_info", "passengers", "meal", "baggage"}
+# Fields whose values are per-person arrays (or legacy strings) — merged rather than
+# replaced when a second confirmation for the same transport arrives.
+_PASSENGER_FIELDS = {"passengers", "participants"}
 
 
-def _merge_field(existing_val, new_val) -> str:
-    """Combine two comma-separated values, deduplicating."""
+def _norm_name(s: str) -> str:
+    """Strip person title and normalise for matching (case-insensitive, collapsed spaces)."""
+    s = re.sub(r'^(?:Mr|Mrs|Ms|Dr|Miss|Mx|Master)\.?\s+', '', str(s).strip(), flags=re.IGNORECASE)
+    return re.sub(r'\s+', ' ', s).lower().strip()
+
+
+def _merge_passengers_array(existing: list, new: list) -> list:
+    """Merge two passenger/participant arrays, matching by name and filling missing sub-fields."""
+    result = [dict(p) for p in (existing or [])]
+    name_idx = {_norm_name(p.get('name', '')): i for i, p in enumerate(result) if p.get('name')}
+    for new_p in (new or []):
+        if not isinstance(new_p, dict):
+            continue
+        new_name = _norm_name(new_p.get('name', ''))
+        if new_name and new_name in name_idx:
+            idx = name_idx[new_name]
+            for k, v in new_p.items():
+                if v is not None and v != '' and not result[idx].get(k):
+                    result[idx][k] = v
+        elif new_p.get('name'):
+            result.append(dict(new_p))
+            name_idx[new_name] = len(result) - 1
+    return result
+
+
+def _merge_field(existing_val, new_val):
+    """Merge two passenger/participant values.
+
+    New format: both are lists → merge arrays by name.
+    Mixed: new is a list, old is a string → replace (migrate to array format).
+    Legacy: both strings → simple comma-dedup.
+    """
+    if isinstance(new_val, list):
+        ex_list = existing_val if isinstance(existing_val, list) else []
+        return _merge_passengers_array(ex_list, new_val)
+    if isinstance(existing_val, list):
+        return existing_val  # keep existing array; new string value is ignored
+    # Legacy string-vs-string dedup
     parts = [p.strip() for p in str(existing_val).split(",") if p.strip()]
     for part in str(new_val).split(","):
         p = part.strip()
@@ -326,11 +366,18 @@ def _merge_field(existing_val, new_val) -> str:
     return ", ".join(parts)
 
 
+def _val_eq(a, b) -> bool:
+    """Equality check that handles lists correctly."""
+    if isinstance(a, list) or isinstance(b, list):
+        return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
+    return str(a or "") == str(b or "")
+
+
 def _compute_diff(existing, item: dict) -> dict:
     """before/after of the fields this extraction would change on an existing item.
 
-    For passenger-specific fields (seat, loyalty, meal, baggage) on the same flight,
-    values are merged rather than replaced so both passengers' data is preserved.
+    For passengers/participants, values are merged (array-aware) so a second
+    confirmation for the same transport adds to rather than replaces existing data.
     """
     before, after = {}, {}
     old_d = existing.details or {}
@@ -339,10 +386,10 @@ def _compute_diff(existing, item: dict) -> dict:
         if nv in (None, "", []):
             continue
         ov = old_d.get(k)
-        if str(ov or "") == str(nv):
+        if _val_eq(ov, nv):
             continue
-        if k in _PASSENGER_FIELDS and ov:
-            merged = _merge_field(ov, nv)
+        if k in _PASSENGER_FIELDS:
+            merged = _merge_field(ov, nv) if ov else nv
             before[k] = ov
             after[k] = merged
         else:

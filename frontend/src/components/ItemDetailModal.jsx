@@ -3,6 +3,7 @@ import { fetchGpxText, downloadGpx } from '../api.js'
 import CostDisplay from './CostDisplay.jsx'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
+import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
 import { fmtDayTime } from '../dates.js'
 
@@ -171,8 +172,6 @@ function ShowBody({ item }) {
              style={{ color: 'var(--accent)' }} className="hover:underline">{d.location}</a>
         </Row>
       )}
-      {d.tickets && <Row label="Tickets">{d.tickets}</Row>}
-      {d.seats && <Row label="Seats">{d.seats}</Row>}
       {d.booking_ref && <Row label="Booking ref">{d.booking_ref}</Row>}
       {d.description && <Row label="Description">{d.description}</Row>}
       {d.contact_phone && (
@@ -189,6 +188,7 @@ function ShowBody({ item }) {
         </Row>
       )}
       {item.cost && <Row label="Cost"><CostDisplay item={item} /></Row>}
+      <PassengersTable passengers={d.participants} label="Participants" />
     </div>
   )
 }

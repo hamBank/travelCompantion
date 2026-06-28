@@ -120,10 +120,10 @@ def apply_pending(
 
         if diff_after is not None:
             # Diff was computed: apply granular field-by-field updates.
-            # For passenger fields (seats/loyalty/meal/baggage) we re-merge against
-            # the CURRENT item value at apply time — not the stored diff — because
-            # another pending change may have been applied since the diff was computed.
-            from ..routers.documents import _PASSENGER_FIELDS, _merge_field
+            # For passengers/participants we re-merge against the CURRENT item value
+            # at apply time — not the stored diff — because another pending change may
+            # have been applied since the diff was computed.
+            from ..routers.documents import _PASSENGER_FIELDS, _merge_field, _val_eq
 
             scalar_keys = {"name", "scheduled_at", "link", "cost", "notes"}
             for f in scalar_keys:
@@ -133,12 +133,12 @@ def apply_pending(
             merged_details = dict(item.details or {})
             new_details = p.get("details") or {}
 
-            # Apply diff keys into details, re-merging passenger fields live.
+            # Apply diff keys into details, re-merging passenger/participant arrays live.
             for k, v in diff_after.items():
                 if k in scalar_keys:
                     continue
                 current = merged_details.get(k)
-                if k in _PASSENGER_FIELDS and current and str(current) != str(v):
+                if k in _PASSENGER_FIELDS and current and not _val_eq(current, v):
                     merged_details[k] = _merge_field(current, v)
                 else:
                     merged_details[k] = v

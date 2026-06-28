@@ -137,6 +137,115 @@ function SectionBox({ label, children }) {
   )
 }
 
+// ── Passenger / participant editor ────────────────────────────────────────────
+
+const PASSENGER_FIELDS_BY_KIND = {
+  flight: [
+    { key: 'name',    label: 'Name',      placeholder: 'Mr Antony Wuth',   span: 2 },
+    { key: 'ticket',  label: 'Ticket #',  placeholder: '081-2382295145' },
+    { key: 'seat',    label: 'Seat',      placeholder: '14A' },
+    { key: 'loyalty', label: 'Loyalty #', placeholder: 'QF 9657053' },
+    { key: 'ff_tier', label: 'FF Tier',   placeholder: 'Bronze' },
+    { key: 'meal',    label: 'Meal',      placeholder: 'Standard' },
+    { key: 'baggage', label: 'Baggage',   placeholder: '23 kg' },
+  ],
+  rail: [
+    { key: 'name',    label: 'Name',      placeholder: 'Mr Antony Wuth',   span: 2 },
+    { key: 'ticket',  label: 'Ticket #',  placeholder: 'e-ticket ref' },
+    { key: 'seat',    label: 'Seat',      placeholder: '14A' },
+    { key: 'loyalty', label: 'Loyalty #', placeholder: 'Rail card #' },
+    { key: 'meal',    label: 'Meal',      placeholder: 'Standard' },
+  ],
+  participants: [
+    { key: 'name',   label: 'Name',     placeholder: 'Mr Antony Wuth' },
+    { key: 'ticket', label: 'Ticket #', placeholder: 'TKT-001' },
+    { key: 'seat',   label: 'Seat',     placeholder: 'F12' },
+  ],
+}
+
+function PassengerEditor({ details, setDetails, kind }) {
+  const isParticipants = kind !== 'flight' && kind !== 'rail'
+  const field = isParticipants ? 'participants' : 'passengers'
+  const raw = details[field]
+  const fields = PASSENGER_FIELDS_BY_KIND[isParticipants ? 'participants' : kind] ?? PASSENGER_FIELDS_BY_KIND.flight
+
+  // Legacy string format — show old textareas unchanged
+  if (typeof raw === 'string') {
+    return (
+      <SectionBox label="Passengers">
+        <TextArea label="Names" value={details.passengers ?? ''} onChange={v => setDetails(d => ({ ...d, passengers: v }))} placeholder="Antony Wuth, Nicole Wuth" />
+        <TextArea label="Loyalty numbers" value={details.loyalty_info ?? ''} onChange={v => setDetails(d => ({ ...d, loyalty_info: v }))} placeholder="QF 9657053, QF 4419892" />
+      </SectionBox>
+    )
+  }
+
+  const passengers = Array.isArray(raw) ? raw : []
+
+  function update(i, key, val) {
+    const next = passengers.map((p, j) => j === i ? { ...p, [key]: val || undefined } : p)
+    setDetails(d => ({ ...d, [field]: next }))
+  }
+
+  function add() {
+    setDetails(d => ({ ...d, [field]: [...passengers, {}] }))
+  }
+
+  function remove(i) {
+    const next = passengers.filter((_, j) => j !== i)
+    setDetails(d => ({ ...d, [field]: next.length ? next : undefined }))
+  }
+
+  const sectionLabel = isParticipants ? 'Participants' : 'Passengers'
+
+  return (
+    <SectionBox label={sectionLabel}>
+      <div className="space-y-3">
+        {passengers.map((p, i) => (
+          <div
+            key={i}
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
+            className="p-3 space-y-2"
+          >
+            <div className="flex justify-between items-center">
+              <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">
+                {isParticipants ? 'Person' : 'Passenger'} {i + 1}
+              </span>
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                style={{ color: 'var(--error)' }}
+                className="text-xs hover:opacity-70 transition-opacity"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {fields.map(f => (
+                <div key={f.key} className={f.span === 2 ? 'col-span-2' : ''}>
+                  <Field
+                    label={f.label}
+                    value={p[f.key] ?? ''}
+                    onChange={v => update(i, f.key, v)}
+                    placeholder={f.placeholder}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={add}
+        style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}
+        className="w-full py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity mt-1"
+      >
+        + Add {isParticipants ? 'person' : 'passenger'}
+      </button>
+    </SectionBox>
+  )
+}
+
 function AutoFillButton({ enriching, enrichMsg, onClick }) {
   return (
     <div className="flex flex-col items-end gap-1">
@@ -387,10 +496,7 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Depart TZ" value={d('depart_tz')} onChange={v => setTimed('depart_tz', v)} placeholder="GMT+8" />
           <Field label="Arrive TZ" value={d('arrive_tz')} onChange={v => setTimed('arrive_tz', v)} placeholder="GMT+3" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="13h 25m" />
-          <Field label="Seats" value={d('seats')} onChange={v => setD('seats', v)} placeholder="12A, 12B" />
-        </div>
+        <Field label="Duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="13h 25m" />
       </SectionBox>
       <SectionBox label="Connection">
         <div className="grid grid-cols-2 gap-3">
@@ -403,20 +509,13 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Aircraft" value={d('aircraft')} onChange={v => setD('aircraft', v)} placeholder="Airbus A350-900" />
           <Field label="Fare class" value={d('fare_class')} onChange={v => setD('fare_class', v)} placeholder="Business" />
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Field label="Stops" value={d('stops')} onChange={v => setD('stops', v)} placeholder="nonstop" />
           <Field label="Distance" value={d('distance')} onChange={v => setD('distance', v)} placeholder="5,759 mi" />
-          <Field label="Baggage" value={d('baggage')} onChange={v => setD('baggage', v)} placeholder="23 kg" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Meal" value={d('meal')} onChange={v => setD('meal', v)} placeholder="Yes / type" />
-          <Field label="Entertainment" value={d('entertainment')} onChange={v => setD('entertainment', v)} placeholder="Yes / IFE" />
-        </div>
+        <Field label="Entertainment" value={d('entertainment')} onChange={v => setD('entertainment', v)} placeholder="Yes / IFE" />
       </SectionBox>
-      <SectionBox label="Passengers">
-        <TextArea label="Names" value={d('passengers')} onChange={v => setD('passengers', v)} placeholder="Antony Wuth, Nicole Wuth" />
-        <TextArea label="Loyalty numbers" value={d('loyalty_info')} onChange={v => setD('loyalty_info', v)} placeholder="Antony (Loyalty …), Nicole (Loyalty …)" />
-      </SectionBox>
+      <PassengerEditor kind="flight" details={details} setDetails={setDetails} />
       <SectionBox label="Booking">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="DYL7CY" />
@@ -519,15 +618,12 @@ function ShowForm({ itemId, core, details, setCore, setDetails }) {
         <Field label="Doors / duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="Doors 19:00 · 2h" />
       </div>
       <Field label="Venue" value={d('location')} onChange={v => setD('location', v)} placeholder="Théâtre du Châtelet, Paris" />
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Ticket numbers" value={d('tickets')} onChange={v => setD('tickets', v)} placeholder="TKT-001, TKT-002" />
-        <Field label="Seats" value={d('seats')} onChange={v => setD('seats', v)} placeholder="Stalls F12–F13" />
-      </div>
       <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="ABC123" />
       <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="What's on, performers…" rows={3} />
       <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+33 1 23 45 67 89" />
       <Field label="Website / tickets URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
       <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Notes…" />
+      <PassengerEditor kind="show" details={details} setDetails={setDetails} />
     </div>
   )
 }
@@ -970,18 +1066,11 @@ function RailForm({ core, details, setCore, setDetails }) {
       </SectionBox>
       <SectionBox label="Service">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Class"  value={d('rail_class')} onChange={v => setD('rail_class', v)} placeholder="Business Premier" />
-          <Field label="Coach"  value={d('coach')}      onChange={v => setD('coach', v)}      placeholder="Coach 12" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Seats"  value={d('seats')}      onChange={v => setD('seats', v)}      placeholder="12A, 12B" />
-          <Field label="Meal"   value={d('meal')}       onChange={v => setD('meal', v)}       placeholder="Yes" />
+          <Field label="Class" value={d('rail_class')} onChange={v => setD('rail_class', v)} placeholder="Business Premier" />
+          <Field label="Coach" value={d('coach')}      onChange={v => setD('coach', v)}      placeholder="Coach 12" />
         </div>
       </SectionBox>
-      <SectionBox label="Passengers">
-        <TextArea label="Names"           value={d('passengers')}  onChange={v => setD('passengers', v)}  placeholder="Antony Wuth, Nicole Wuth" />
-        <TextArea label="Loyalty numbers" value={d('loyalty_info')} onChange={v => setD('loyalty_info', v)} placeholder="Eurostar Plus points…" />
-      </SectionBox>
+      <PassengerEditor kind="rail" details={details} setDetails={setDetails} />
       <SectionBox label="Booking">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="BKTX42" />

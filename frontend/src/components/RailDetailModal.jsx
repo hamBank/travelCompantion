@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { updateItem } from '../api.js'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
+import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
 import { fmtDayTime } from '../dates.js'
 
@@ -443,10 +444,10 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
             <Row label="Operator"   value={d.operator} />
             <Row label="Class"      value={d.rail_class} />
             <Row label="Coach"      value={d.coach} />
-            <Row label="Seats"      value={d.seats} />
-            <Row label="Meal"       value={d.meal} />
-            <Row label="Passengers" value={d.passengers} />
-            <Row label="Loyalty"    value={d.loyalty_info} />
+            {!Array.isArray(d.passengers) && <Row label="Seats" value={d.seats} />}
+            {!Array.isArray(d.passengers) && <Row label="Meal"  value={d.meal} />}
+            <PassengersTable passengers={d.passengers} label="Passengers" />
+            {!Array.isArray(d.passengers) && <Row label="Loyalty" value={d.loyalty_info} />}
             <Row label="Notes"      value={item.notes} />
           </div>
 

@@ -3,6 +3,7 @@ import { checkFlight, updateItem } from '../api.js'
 import { airportName, airportLabel } from '../airportNames.js'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
+import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
 import { getPowerbankPolicy } from '../powerbank.js'
 import { fmtDayTime, fmtDay } from '../dates.js'
@@ -312,9 +313,10 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
 
           <div className="space-y-0">
             <Row label="Status"        value={d.flight_status} />
-            <Row label="Seats"         value={d.seats} />
-            <Row label="Baggage"       value={d.baggage} />
-            <Row label="Meal"          value={d.meal} />
+            {/* Legacy flat fields — only shown when passengers is not a structured array */}
+            {!Array.isArray(d.passengers) && <Row label="Seats"   value={d.seats} />}
+            {!Array.isArray(d.passengers) && <Row label="Baggage" value={d.baggage} />}
+            {!Array.isArray(d.passengers) && <Row label="Meal"    value={d.meal} />}
             <Row label="Entertainment" value={d.entertainment} />
             <Row label="Lounge"        value={d.lounge} />
             <Row label="Check-in"      value={d.checkin} />
@@ -322,8 +324,8 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             {(d.layover || d.connects_to) && (
               <Row label="Layover" value={[d.layover, d.connects_to && `→ ${d.connects_to}`].filter(Boolean).join(' ')} />
             )}
-            <Row label="Passengers"    value={d.passengers} />
-            <Row label="Loyalty"       value={d.loyalty_info} />
+            <PassengersTable passengers={d.passengers} label="Passengers" />
+            {!Array.isArray(d.passengers) && <Row label="Loyalty" value={d.loyalty_info} />}
             <Row label="Distance"      value={d.distance} />
             <Row label="Notes"         value={item.notes} />
           </div>
