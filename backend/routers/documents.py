@@ -601,6 +601,50 @@ def _match_existing(session, trip_id, kind, details, all_stop_ids=None):
             if _datepart((it.details or {}).get("checkin")) == ci:
                 return it
 
+    elif kind in ("transfer", "restaurant", "tour", "show"):
+        # Primary: booking_ref (normalised — strip spaces/dashes)
+        def norm_ref(v):
+            return re.sub(r'[\s\-]', '', str(v or '')).upper()
+
+        ref = norm_ref(details.get("booking_ref"))
+        if ref:
+            for it in items:
+                if it.kind != kind:
+                    continue
+                if norm_ref((it.details or {}).get("booking_ref")) == ref:
+                    return it
+
+        # Fallback for transfer: depart_time + start/end location
+        if kind == "transfer":
+            dt = _datepart(details.get("depart_time"))
+            orig = norm(details.get("start_location") or details.get("origin") or "")
+            dest = norm(details.get("end_location") or details.get("destination") or "")
+            if dt and (orig or dest):
+                for it in items:
+                    if it.kind != "transfer":
+                        continue
+                    d = it.details or {}
+                    it_dt = _datepart(d.get("depart_time"))
+                    it_orig = norm(d.get("start_location") or d.get("origin") or "")
+                    it_dest = norm(d.get("end_location") or d.get("destination") or "")
+                    if it_dt == dt and it_orig == orig and it_dest == dest:
+                        return it
+
+        # Fallback for restaurant: reservation_time + partial location match
+        if kind == "restaurant":
+            rt = _datepart(details.get("reservation_time") or details.get("scheduled_at") or "")
+            loc = norm(details.get("location") or "")
+            if rt and loc:
+                for it in items:
+                    if it.kind != "restaurant":
+                        continue
+                    d = it.details or {}
+                    it_rt = _datepart(d.get("reservation_time") or "") or _datepart(it.scheduled_at)
+                    it_loc = norm(d.get("location") or "")
+                    # Match on date + at least 8 chars of location in common
+                    if it_rt == rt and it_loc and loc and (it_loc[:8] == loc[:8]):
+                        return it
+
     return None
 
 
@@ -739,6 +783,24 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         raw_items = [parsed] if parsed.get("kind") else []
 
     created = []
+    # Track items seen in this batch to prevent duplicate pending rows when
+    # multiple PDFs in the same email describe the same booking.
+    _seen_keys: set = set()
+
+    def _item_key(kind, details, payload):
+        """Stable dedup key for an extracted item."""
+        d = details or {}
+        ref = re.sub(r'[\s\-]', '', str(d.get("booking_ref") or "")).upper()
+        if ref:
+            return (kind, ref)
+        # Fall back to kind + primary date + route/name
+        date = _datepart(d.get("depart_time") or d.get("checkin") or
+                         d.get("reservation_time") or payload.get("scheduled_at") or "")
+        route = (str(d.get("origin") or d.get("start_location") or "") + "→" +
+                 str(d.get("destination") or d.get("end_location") or "")).upper().replace(" ", "")
+        name_key = re.sub(r'\W', '', str(payload.get("name") or "")).upper()[:20]
+        return (kind, date, route or name_key)
+
     for raw in raw_items:
         if not isinstance(raw, dict):
             continue
@@ -838,6 +900,12 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         diff = _compute_diff(existing, item) if existing else None
         # If matched but the item lands on a different stop, keep the existing stop.
         suggested_stop = (existing.stop_id if existing else None) or matched
+
+        # Skip duplicates from the same multi-PDF email.
+        ikey = _item_key(kind, details, item)
+        if ikey in _seen_keys:
+            continue
+        _seen_keys.add(ikey)
 
         pc = create_pending_from_parse(
             session, user_email, effective_trip_id, item, suggested_stop,
