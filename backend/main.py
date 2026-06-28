@@ -82,7 +82,22 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-def _git_sha():
+def _frontend_sha():
+    """Return the SHA baked into the frontend build (written by vite at build time).
+
+    Using the build SHA rather than git HEAD means backend-only commits don't
+    cause the SHA health-poller to reload all clients — only actual frontend
+    rebuilds advance the value the poller compares against.
+    """
+    build_sha_file = os.path.join(os.path.dirname(__file__), "static", "build-sha.txt")
+    try:
+        with open(build_sha_file) as f:
+            sha = f.read().strip()
+            if sha:
+                return sha
+    except Exception:
+        pass
+    # Fallback: git HEAD (old behaviour, used before build-sha.txt exists on server)
     try:
         import subprocess
         return subprocess.check_output(
@@ -95,7 +110,7 @@ def _git_sha():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "sha": _git_sha()}
+    return {"status": "ok", "sha": _frontend_sha()}
 
 
 @app.get("/currency/convert")

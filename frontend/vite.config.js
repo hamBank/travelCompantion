@@ -2,14 +2,26 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { execSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
 
 let BUILD_SHA = 'dev'
 try { BUILD_SHA = execSync('git rev-parse --short HEAD').toString().trim() } catch {}
+
+// Writes build-sha.txt into the output dir so /health can return the frontend
+// build SHA rather than git HEAD — preventing backend-only commits from
+// triggering the SHA health-poller reload on all clients.
+const writeBuildSha = {
+  name: 'write-build-sha',
+  closeBundle() {
+    try { writeFileSync('../backend/static/build-sha.txt', BUILD_SHA) } catch {}
+  },
+}
 
 export default defineConfig({
   define: { __BUILD_SHA__: JSON.stringify(BUILD_SHA) },
   plugins: [
     react(),
+    writeBuildSha,
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
