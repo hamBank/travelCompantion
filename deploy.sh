@@ -31,6 +31,19 @@ BIND_PORT="${BIND_PORT:-8000}"
 UPDATE_ONLY=false
 [[ "${1:-}" == "--update" ]] && UPDATE_ONLY=true
 
+# ── Concurrency guard ──────────────────────────────────────────────────────────
+# Rapid-fire webhook triggers can start a second deploy while the first is still
+# running. Rather than let systemd report a hard failure (exit 1), we acquire a
+# lock and skip cleanly so the journal stays noise-free.
+LOCKFILE="/tmp/travelcomp-deploy.lock"
+exec 9>"$LOCKFILE"
+if ! flock -n 9 2>/dev/null; then
+  echo "  Deploy already running — skipping this trigger ($(date '+%H:%M:%S'))"
+  # Still remove the trigger file so the path watcher doesn't loop.
+  rm -f "${APP_DIR:-/opt/travelcomp}/.deploy-trigger" 2>/dev/null || true
+  exit 0
+fi
+
 echo "═══════════════════════════════════════════════════════"
 echo "  Deploy triggered: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "═══════════════════════════════════════════════════════"
