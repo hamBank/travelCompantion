@@ -467,6 +467,53 @@ def _norm_iata(s: str) -> str:
     return s  # can't confidently normalise — leave as-is
 
 
+def _norm_name_fuzzy(s: str) -> str:
+    """Normalise a venue/item name for fuzzy comparison.
+
+    Strips common meal/event prefixes ('Dinner - ', 'Lunch at ') that get
+    added manually but may be absent in imported booking data.
+    """
+    s = re.sub(
+        r'^(?:Dinner|Lunch|Breakfast|Brunch|Supper|Déjeuner|Dîner)\s*[-–:]\s*',
+        '', str(s).strip(), flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r'^(?:Dinner|Lunch|Breakfast|Brunch|Supper)\s+(?:at|@)\s+',
+        '', s, flags=re.IGNORECASE,
+    )
+    return re.sub(r'\s+', ' ', re.sub(r'[^\w\s]', ' ', s.lower())).strip()
+
+
+def _fuzzy_name_match(a: str, b: str) -> bool:
+    """Return True if two item names refer to the same place/event.
+
+    Accepts if one normalised name contains the other, or if word-level
+    Jaccard similarity ≥ 0.5 (ignoring very short words).
+    """
+    na, nb = _norm_name_fuzzy(a), _norm_name_fuzzy(b)
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    wa = {w for w in na.split() if len(w) > 2}
+    wb = {w for w in nb.split() if len(w) > 2}
+    if wa and wb:
+        return len(wa & wb) / len(wa | wb) >= 0.5
+    return False
+
+
+def _within_hours(t1: str, t2: str, hours: float = 2.0) -> bool:
+    """True if two ISO datetime strings are within `hours` of each other."""
+    if not t1 or not t2:
+        return True  # no time on one side → don't reject on time alone
+    try:
+        from datetime import datetime as _dt
+        diff = abs((_dt.fromisoformat(t1[:16]) - _dt.fromisoformat(t2[:16])).total_seconds())
+        return diff <= hours * 3600
+    except Exception:
+        return True
+
+
 def _norm_terminal(s: str) -> str:
     """Strip 'Terminal ' / 'T' prefix so we store just the designator ('2B', '1', 'F').
 
@@ -532,7 +579,8 @@ def _normalize_details(details: dict) -> dict:
     return details
 
 
-def _match_existing(session, trip_id, kind, details, all_stop_ids=None):
+def _match_existing(session, trip_id, kind, details, all_stop_ids=None,
+                    name: str = "", scheduled_at: str = ""):
     """Find an existing item this extraction most likely updates, or None.
 
     Primary match  — flight/train number + departure date (strongest signal).
@@ -630,20 +678,23 @@ def _match_existing(session, trip_id, kind, details, all_stop_ids=None):
                     if it_dt == dt and it_orig == orig and it_dest == dest:
                         return it
 
-        # Fallback for restaurant: reservation_time + partial location match
-        if kind == "restaurant":
-            rt = _datepart(details.get("reservation_time") or details.get("scheduled_at") or "")
-            loc = norm(details.get("location") or "")
-            if rt and loc:
-                for it in items:
-                    if it.kind != "restaurant":
-                        continue
-                    d = it.details or {}
-                    it_rt = _datepart(d.get("reservation_time") or "") or _datepart(it.scheduled_at)
-                    it_loc = norm(d.get("location") or "")
-                    # Match on date + at least 8 chars of location in common
-                    if it_rt == rt and it_loc and loc and (it_loc[:8] == loc[:8]):
-                        return it
+        # Fallback for restaurant / show / activity:
+        # fuzzy name match + optional 2-hour time window.
+        # The time window is deliberately permissive when one side has no time
+        # (entries are often created before a reservation is confirmed).
+        if kind in ("restaurant", "show", "activity", "tour"):
+            new_time = (details.get("reservation_time") or details.get("depart_time")
+                        or scheduled_at or "")
+            for it in items:
+                if it.kind != kind:
+                    continue
+                if not _fuzzy_name_match(name, it.name or ""):
+                    continue
+                d = it.details or {}
+                it_time = (d.get("reservation_time") or d.get("depart_time")
+                           or (it.scheduled_at.isoformat() if it.scheduled_at else ""))
+                if _within_hours(new_time, it_time, hours=2.0):
+                    return it
 
     return None
 
@@ -889,7 +940,9 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         # Pass all user stops so route-based fallback matching works even when
         # trip_id is unknown (e.g. email ingest without a matched stop).
         existing = _match_existing(session, effective_trip_id, kind, details,
-                                   all_stop_ids=stop_ids if not effective_trip_id else None)
+                                   all_stop_ids=stop_ids if not effective_trip_id else None,
+                                   name=item.get("name", ""),
+                                   scheduled_at=item.get("scheduled_at", ""))
         # If the fallback route-match found an item, derive the trip from it.
         if existing and not effective_trip_id:
             src_stop = session.get(Stop, existing.stop_id)
