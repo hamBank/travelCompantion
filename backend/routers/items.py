@@ -33,7 +33,7 @@ def _item_snapshot(item) -> dict:
 
 
 def record_item_history(session, item, op: str, changed_by: str,
-                        before: dict | None = None, source: str = ""):
+                        before=None, source: str = ""):
     snap = _item_snapshot(item)
     diff = {"before": before, "after": snap} if before is not None else None
     session.add(ItemHistory(
