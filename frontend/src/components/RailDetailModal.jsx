@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { updateItem } from '../api.js'
 import DetailActions from './DetailActions.jsx'
+import ItemHistoryModal from './ItemHistoryModal.jsx'
 import RichText from './RichText.jsx'
 import { fmtDayTime } from '../dates.js'
 
@@ -338,6 +339,7 @@ function RailCheckPanel({ item, onItemUpdate }) {
 
 export default function RailDetailModal({ item: initialItem, onClose, onSave, onEdit, onDeleted }) {
   const [item, setItem] = useState(initialItem)
+  const [showHistory, setShowHistory] = useState(false)
   const d = item.details ?? {}
 
   function onItemUpdate(updated) {
@@ -355,6 +357,7 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
   const trainLabel = [d.train_number, d.operator].filter(Boolean).join(' · ')
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'var(--overlay)' }}
@@ -486,8 +489,11 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
           )}
         </div>
 
-        <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose} />
+        <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose}
+                       onHistory={() => setShowHistory(true)} />
       </div>
     </div>
+    {showHistory && <ItemHistoryModal item={item} onClose={() => setShowHistory(false)} />}
+    </>
   )
 }

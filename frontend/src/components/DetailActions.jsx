@@ -3,23 +3,25 @@ import { deleteItem } from '../api.js'
 import { useCanEdit } from '../roles.js'
 
 /**
- * Shared footer for detail modals — Edit + Delete actions with inline
- * delete confirmation. Renders nothing unless onEdit or onDeleted is given.
+ * Shared footer for detail modals — History + Edit + Delete actions.
  *
  * Props:
  *   item       — the item being viewed
- *   onEdit     — called when Edit is clicked (e.g. close detail, open edit modal)
- *   onDeleted  — called with item.id after a successful delete
+ *   onEdit     — called when Edit is clicked (editors only)
+ *   onDeleted  — called with item.id after a successful delete (editors only)
  *   onClose    — called to close the detail modal after delete
+ *   onHistory  — called to open the history modal (all users)
  */
-export default function DetailActions({ item, onEdit, onDeleted, onClose }) {
+export default function DetailActions({ item, onEdit, onDeleted, onClose, onHistory }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState(null)
 
-  // Viewers (read-only) get no edit/delete actions.
-  if (!useCanEdit()) return null
-  if (!onEdit && !onDeleted) return null
+  const canEdit = useCanEdit()
+
+  // Render nothing if there's nothing to show.
+  if (!onHistory && !canEdit) return null
+  if (!onHistory && !onEdit && !onDeleted) return null
 
   async function handleDelete() {
     setDeleting(true); setError(null)
@@ -60,9 +62,19 @@ export default function DetailActions({ item, onEdit, onDeleted, onClose }) {
         </>
       ) : (
         <>
+          {onHistory && (
+            <button
+              onClick={onHistory}
+              style={{ color: 'var(--text-faint)' }}
+              className="text-sm hover:opacity-70 transition-opacity"
+              title="Change history"
+            >
+              🕐 History
+            </button>
+          )}
           {error && <span style={{ color: 'var(--error)' }} className="text-xs flex-1">{error}</span>}
           {!error && <div className="flex-1" />}
-          {onDeleted && (
+          {canEdit && onDeleted && (
             <button
               onClick={() => setConfirming(true)}
               style={{ color: 'var(--error)', border: '1px solid color-mix(in srgb, var(--error) 35%, transparent)' }}
@@ -71,7 +83,7 @@ export default function DetailActions({ item, onEdit, onDeleted, onClose }) {
               Delete
             </button>
           )}
-          {onEdit && (
+          {canEdit && onEdit && (
             <button
               onClick={onEdit}
               style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}

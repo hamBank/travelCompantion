@@ -279,3 +279,31 @@ class UserImportToken(SQLModel, table=True):
     user_email: str = Field(primary_key=True)   # lowercased
     token: str = Field(index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ── ItemHistory (versioning / audit log) ──────────────────────────────────────
+
+class ItemHistory(SQLModel, table=True):
+    """One entry per create/update/delete on an ItineraryItem.
+
+    item_id is intentionally not a foreign key so history survives item deletion.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    item_id: int = Field(index=True)
+    op: str                                      # "create" | "update" | "delete"
+    changed_by: str                              # user email
+    changed_at: datetime = Field(default_factory=datetime.utcnow)
+    snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    diff: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    source: str = ""                             # "" (manual) | "upload" | "email"
+
+
+class ItemHistoryRead(SQLModel):
+    id: int
+    item_id: int
+    op: str
+    changed_by: str
+    changed_at: datetime
+    snapshot: Optional[dict] = None
+    diff: Optional[dict] = None
+    source: str = ""

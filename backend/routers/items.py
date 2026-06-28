@@ -9,13 +9,40 @@ from pydantic import BaseModel
 from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
-from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, Stop, StopRead, TripRole
+from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, Stop, StopRead, TripRole
 
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _GPX_DIR  = os.path.join(_APP_ROOT, 'uploads', 'gpx')
 
 router = APIRouter()
 
+
+# ── History helpers ────────────────────────────────────────────────────────────
+
+def _item_snapshot(item) -> dict:
+    return {
+        "kind": item.kind,
+        "name": item.name,
+        "scheduled_at": item.scheduled_at.isoformat() if item.scheduled_at else None,
+        "link": item.link,
+        "cost": item.cost,
+        "notes": item.notes,
+        "status": item.status,
+        "details": item.details,
+    }
+
+
+def record_item_history(session, item, op: str, changed_by: str,
+                        before: dict | None = None, source: str = ""):
+    snap = _item_snapshot(item)
+    diff = {"before": before, "after": snap} if before is not None else None
+    session.add(ItemHistory(
+        item_id=item.id, op=op, changed_by=changed_by,
+        snapshot=snap, diff=diff, source=source,
+    ))
+
+
+# ── CRUD ──────────────────────────────────────────────────────────────────────
 
 @router.get("/stops/{stop_id}/items", response_model=List[ItemRead])
 def list_items(stop_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
@@ -34,6 +61,8 @@ def create_item(stop_id: int, item_in: ItemCreate, session: Session = Depends(ge
     session.add(item)
     session.commit()
     session.refresh(item)
+    record_item_history(session, item, "create", user["email"])
+    session.commit()
     return item
 
 
@@ -47,6 +76,7 @@ def get_item(item_id: int, session: Session = Depends(get_session), user: dict =
 def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     require_item_role(session, user, item_id, TripRole.editor)
     item = session.get(ItineraryItem, item_id)
+    before = _item_snapshot(item)
     for field, value in item_in.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
         if field == 'details':
@@ -54,6 +84,8 @@ def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(ge
     session.add(item)
     session.commit()
     session.refresh(item)
+    record_item_history(session, item, "update", user["email"], before=before)
+    session.commit()
     return item
 
 
@@ -61,6 +93,7 @@ def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(ge
 def delete_item(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     require_item_role(session, user, item_id, TripRole.editor)
     item = session.get(ItineraryItem, item_id)
+    before = _item_snapshot(item)
     # For accommodation items, clear the legacy stop.accommodation field so the
     # startup backfill and timeline lazy-migration don't recreate the item.
     if item.kind == "accommodation":
@@ -70,8 +103,20 @@ def delete_item(item_id: int, session: Session = Depends(get_session), user: dic
             stop.accommodation_link = ""
             stop.accommodation_notes = ""
             session.add(stop)
+    record_item_history(session, item, "delete", user["email"], before=before)
     session.delete(item)
     session.commit()
+
+
+@router.get("/items/{item_id}/history", response_model=List[ItemHistoryRead])
+def item_history(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Change history for an item — newest entries first."""
+    require_item_role(session, user, item_id, TripRole.viewer)
+    return session.exec(
+        select(ItemHistory)
+        .where(ItemHistory.item_id == item_id)
+        .order_by(ItemHistory.changed_at.desc())
+    ).all()
 
 
 @router.get("/items/{item_id}/sibling-stops", response_model=List[StopRead])

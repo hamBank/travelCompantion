@@ -96,6 +96,7 @@ export const updateItem = (id, data) =>
   req(`/items/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 export const deleteItem = (id) => req(`/items/${id}`, { method: 'DELETE' })
 
+export const getItemHistory = (id) => req(`/items/${id}/history`)
 export const getItemStops = (id) => req(`/items/${id}/sibling-stops`)
 export const moveItem = (id, stopId) =>
   req(`/items/${id}/move`, { method: 'POST', body: JSON.stringify({ stop_id: stopId }) })
