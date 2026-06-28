@@ -209,29 +209,35 @@ else
 fi
 
 # ── 6b. Frontend build ──────────────────────────────────────────────────────────
-# HOME=$APP_DIR prevents npm writing to /nonexistent when the service user has no home dir.
+# The compiled frontend (backend/static/) is committed to git, so on updates the
+# correct build is already present after `git reset --hard`.  Only run npm on a
+# first install where node_modules don't exist yet.
 NPM="sudo -u $APP_USER HOME=$APP_DIR npm"
-# Ensure the npm cache dir is owned by the service user (root can write it
-# on first install, leaving files that block subsequent travelcomp-owned runs).
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/.npm" 2>/dev/null || true
 
-info "Installing Node dependencies"
-$NPM --prefix "$APP_DIR/frontend" ci --silent
+if ! $UPDATE_ONLY; then
+  info "Installing Node dependencies (first install)"
+  $NPM --prefix "$APP_DIR/frontend" ci --silent
 
-info "Building frontend"
-$NPM --prefix "$APP_DIR/frontend" run build
-ok "Frontend built → backend/static"
+  info "Building frontend (first install)"
+  $NPM --prefix "$APP_DIR/frontend" run build
+  ok "Frontend built → backend/static"
+else
+  ok "Frontend static files already up-to-date from git pull — skipping npm build"
+fi
 
 # ── 6c. Coverage reports → /coverage (best-effort; never abort the deploy) ──────
-# Generated AFTER the build, since the build empties backend/static.
-info "Generating coverage reports"
-COV_DIR="$APP_DIR/backend/static/coverage"
-sudo -u "$APP_USER" mkdir -p "$COV_DIR"
-sudo -u "$APP_USER" sh -c "cd '$APP_DIR' && '$VENV/bin/python' -m pytest --cov=backend --cov-report=html:backend/static/coverage/backend -q" \
-  || warn "backend coverage generation failed (continuing)"
-$NPM --prefix "$APP_DIR/frontend" run coverage \
-  || warn "frontend coverage generation failed (continuing)"
-tee "$COV_DIR/index.html" >/dev/null <<HTML
+# Only regenerate on first install; on updates the coverage dirs are stale but
+# running the full test suite on every webhook deploy is too expensive.
+if ! $UPDATE_ONLY; then
+  info "Generating coverage reports"
+  COV_DIR="$APP_DIR/backend/static/coverage"
+  sudo -u "$APP_USER" mkdir -p "$COV_DIR"
+  sudo -u "$APP_USER" sh -c "cd '$APP_DIR' && '$VENV/bin/python' -m pytest --cov=backend --cov-report=html:backend/static/coverage/backend -q" \
+    || warn "backend coverage generation failed (continuing)"
+  $NPM --prefix "$APP_DIR/frontend" run coverage \
+    || warn "frontend coverage generation failed (continuing)"
+  tee "$COV_DIR/index.html" >/dev/null <<HTML
 <!doctype html><meta charset="utf-8"><title>Coverage</title>
 <style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.6}a{color:#1e66f5}</style>
 <h1>Test coverage</h1>
@@ -241,7 +247,8 @@ tee "$COV_DIR/index.html" >/dev/null <<HTML
   <li><a href="./frontend/index.html">Frontend (vitest)</a></li>
 </ul>
 HTML
-ok "Coverage reports → /coverage"
+  ok "Coverage reports → /coverage"
+fi
 
 # ── 7. Environment file ────────────────────────────────────────────────────────
 if [[ ! -f "$ENV_FILE" ]]; then
