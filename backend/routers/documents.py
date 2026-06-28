@@ -205,13 +205,16 @@ def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> di
     max_tokens = min(8000 + n_docs * 4000, 32000)
 
     try:
-        resp = client.messages.create(
+        # Use streaming — required by the SDK when max_tokens is large enough that
+        # the request might take > 10 minutes (common with multiple PDF documents).
+        with client.messages.stream(
             model=_MODEL,
             max_tokens=max_tokens,
             thinking={"type": "adaptive"},
             output_config={"effort": "medium"},
             messages=[{"role": "user", "content": content}],
-        )
+        ) as stream:
+            resp = stream.get_final_message()
     except anthropic.APIStatusError as e:
         raise HTTPException(status_code=502, detail=f"Claude API error: {e.message}")
     except Exception as e:
