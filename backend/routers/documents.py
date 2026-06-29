@@ -824,12 +824,14 @@ def _compute_diff(existing, item: dict) -> dict:
     new_d = item.get("details") or {}
     # Detail fields where the existing value is trusted over re-imports:
     # location is often manually curated; description is LLM-generated prose.
-    # These fields, once set from a verified source (flight check, prior import),
-    # should not be overwritten by a booking confirmation that may only show
-    # overall journey times rather than individual segment times.
+    # origin/destination are defining identifiers for transport legs — if already
+    # set they must not be overwritten by a connection booking that shows the
+    # overall route rather than individual segment origins/destinations.
+    # Times are protected by the prompt rule ("only explicit times") rather than
+    # here — keeping them in _KEEP_EXISTING causes all diffs to be empty when
+    # the booking confirmation doesn't show individual segment times.
     _KEEP_EXISTING = {"description", "location", "start_location", "end_location",
-                      "origin", "destination", "depart_time", "arrive_time",
-                      "depart_tz", "arrive_tz"}
+                      "origin", "destination"}
 
     for k, nv in new_d.items():
         if nv in (None, "", []):
