@@ -14,7 +14,7 @@ const PASSENGER_DETAIL_FIELDS = [
   { key: 'baggage', label: 'Baggage' },
 ]
 
-function PassengerRow({ p, border }) {
+function PassengerRow({ p, border, seatmapUrl }) {
   const details = PASSENGER_DETAIL_FIELDS.filter(f => p[f.key])
   return (
     <div
@@ -30,7 +30,12 @@ function PassengerRow({ p, border }) {
             <span key={f.key} className="mr-3">
               <span className="uppercase tracking-wide" style={{ fontSize: '0.65rem' }}>{f.label}</span>
               {' '}
-              <span style={{ color: 'var(--text)' }}>{p[f.key]}</span>
+              {f.key === 'seat' && seatmapUrl
+                ? <a href={seatmapUrl} target="_blank" rel="noreferrer"
+                     style={{ color: 'var(--accent)' }} className="hover:underline">
+                    {p[f.key]}
+                  </a>
+                : <span style={{ color: 'var(--text)' }}>{p[f.key]}</span>}
             </span>
           ))}
         </div>
@@ -39,7 +44,7 @@ function PassengerRow({ p, border }) {
   )
 }
 
-export default function PassengersTable({ passengers, label = 'Passengers' }) {
+export default function PassengersTable({ passengers, label = 'Passengers', seatmapUrl }) {
   if (!passengers) return null
 
   // Legacy string — display as plain Row
@@ -72,7 +77,7 @@ export default function PassengersTable({ passengers, label = 'Passengers' }) {
       </span>
       <div>
         {passengers.map((p, i) => (
-          <PassengerRow key={i} p={p} border={i > 0} />
+          <PassengerRow key={i} p={p} border={i > 0} seatmapUrl={seatmapUrl} />
         ))}
       </div>
     </div>

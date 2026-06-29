@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { checkFlight, updateItem } from '../api.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { aggregateBaggage } from '../baggage.js'
+import { seatguruUrl } from '../seatguru.js'
 import { airportName, airportLabel } from '../airportNames.js'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
@@ -331,7 +332,10 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             {(d.layover || d.connects_to) && (
               <Row label="Layover" value={[d.layover, d.connects_to && `→ ${d.connects_to}`].filter(Boolean).join(' ')} />
             )}
-            <PassengersTable passengers={d.passengers} label="Passengers" />
+            {(() => {
+              const smUrl = seatguruUrl(d.flight_number, d.depart_time)
+              return <PassengersTable passengers={d.passengers} label="Passengers" seatmapUrl={smUrl} />
+            })()}
             {!Array.isArray(d.passengers) && <Row label="Loyalty" value={d.loyalty_info} />}
             <Row label="Distance"      value={d.distance} />
             <Row label="Notes"         value={item.notes} />
@@ -393,6 +397,20 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
                   <span>{item.cost}</span>
                 </div>
               )}
+              {/* Seatmap link when no seats assigned */}
+              {(() => {
+                const pax = d.passengers
+                const hasSeats = Array.isArray(pax) && pax.some(p => p.seat)
+                const smUrl = seatguruUrl(d.flight_number, d.depart_time)
+                if (hasSeats || !smUrl) return null
+                return (
+                  <a href={smUrl} target="_blank" rel="noreferrer"
+                     style={{ color: 'var(--accent)', fontSize: '0.8rem' }}
+                     className="block text-center pt-1 hover:underline">
+                    🪑 View seatmap / select seats
+                  </a>
+                )
+              })()}
             </div>
           )}
 
