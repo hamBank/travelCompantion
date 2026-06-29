@@ -1162,8 +1162,13 @@ def wash_lookup(item_id: int, session: Session = Depends(get_session),
 
     d = item.details or {}
 
-    # Resolve coordinates: item details → stop → geocode
+    # Resolve coordinates — most-specific source first:
+    # 1. Explicit lat/lng on the item (most accurate)
+    # 2. Geocode the hotel's street address (much better than stop coords)
+    # 3. Stop lat/lng as a city-level fallback
+    # 4. Geocode from hotel name as last resort
     lat = lng = None
+
     for lk, gk in (("lat", "lng"), ("latitude", "longitude")):
         if d.get(lk) and d.get(gk):
             try:
@@ -1171,6 +1176,11 @@ def wash_lookup(item_id: int, session: Session = Depends(get_session),
                 break
             except (ValueError, TypeError):
                 pass
+
+    if lat is None and d.get("location"):
+        coords = _nominatim_geocode(d["location"])
+        if coords:
+            lat, lng = coords
 
     if lat is None:
         stop = session.get(Stop, item.stop_id)
@@ -1180,15 +1190,17 @@ def wash_lookup(item_id: int, session: Session = Depends(get_session),
             except (ValueError, TypeError):
                 pass
 
+    if lat is None and item.name:
+        coords = _nominatim_geocode(item.name)
+        if coords:
+            lat, lng = coords
+
     if lat is None:
-        location_str = d.get("location") or item.name
-        if not location_str:
-            raise HTTPException(status_code=422,
-                                detail="No location data found — add an address to the accommodation first")
-        coords = _nominatim_geocode(location_str)
-        if not coords:
-            raise HTTPException(status_code=422,
-                                detail=f"Could not locate '{location_str}' — check the address")
+        raise HTTPException(
+            status_code=422,
+            detail="Could not determine the accommodation's location — "
+                   "use Auto-fill to add an address, or set coordinates manually"
+        )
         lat, lng = coords
 
     # Fetch nearby laundromats
