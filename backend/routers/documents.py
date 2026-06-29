@@ -791,6 +791,8 @@ def _compute_diff(existing, item: dict) -> dict:
             continue
         if k in _PASSENGER_FIELDS:
             merged = _merge_field(ov, nv) if ov else nv
+            if _val_eq(ov, merged):
+                continue  # merge added nothing new — don't flag as changed
             before[k] = ov
             after[k] = merged
         else:
