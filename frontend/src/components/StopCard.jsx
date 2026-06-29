@@ -241,6 +241,8 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
   const [items, setItems] = useState(stop.items)
+  const [quickAdd, setQuickAdd] = useState(false)
+  const canEdit = useCanEdit()
 
   function handleItemSaved(updated) {
     setItems(prev => prev.map(i => i.id === updated.id ? updated : i))
@@ -248,6 +250,11 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
 
   function handleItemDeleted(id) {
     setItems(prev => prev.filter(i => i.id !== id))
+  }
+
+  function handleItemAdded(newItem) {
+    setItems(prev => [...prev, newItem])
+    setQuickAdd(false)
   }
 
   const hideCompleted = useHideCompleted()
@@ -444,6 +451,16 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             <p style={{ color: 'var(--text-faint)' }} className="text-xs">No details recorded.</p>
           )}
 
+          {canEdit && (
+            <button
+              onClick={e => { e.stopPropagation(); setQuickAdd(true) }}
+              style={{ color: 'var(--text-faint)', border: '1px dashed var(--border)' }}
+              className="w-full py-1.5 rounded-lg text-xs hover:opacity-70 transition-opacity"
+            >
+              + Add item
+            </button>
+          )}
+
           {checkoutAccom && (
             <div
               style={{
@@ -460,6 +477,15 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             </div>
           )}
         </div>
+      )}
+
+      {quickAdd && (
+        <ItemEditModal
+          item={{ stop_id: stop.id, kind: 'activity', name: '', status: 'pending', details: {} }}
+          isNew
+          onSave={handleItemAdded}
+          onClose={() => setQuickAdd(false)}
+        />
       )}
     </div>
   )

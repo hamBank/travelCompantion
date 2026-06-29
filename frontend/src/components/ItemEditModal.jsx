@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem } from '../api.js'
+import { createItem, updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem } from '../api.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 import { fmtDay } from '../dates.js'
@@ -1380,7 +1380,7 @@ function FoodForm({ core, details, setCore, setDetails }) {
   )
 }
 
-export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
+export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew = false }) {
   const [core, setCore] = useState({
     kind: item.kind ?? 'activity',
     name: item.name ?? '',
@@ -1399,8 +1399,8 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
   const [targetStop, setTargetStop] = useState(item.stop_id)
 
   useEffect(() => {
-    getItemStops(item.id).then(setStops).catch(() => {})
-  }, [item.id])
+    if (!isNew && item.id) getItemStops(item.id).then(setStops).catch(() => {})
+  }, [item.id, isNew])
 
   async function handleDelete() {
     if (deleting) return
@@ -1484,10 +1484,15 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
         }
       }
 
-      let updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
-      if (targetStop && targetStop !== item.stop_id) {
-        setSavingMsg('Moving…')
-        updated = await moveItem(item.id, targetStop)
+      let updated
+      if (isNew) {
+        updated = await createItem(item.stop_id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
+      } else {
+        updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
+        if (targetStop && targetStop !== item.stop_id) {
+          setSavingMsg('Moving…')
+          updated = await moveItem(item.id, targetStop)
+        }
       }
       onSave(updated)
     } catch (e) {
@@ -1632,7 +1637,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
               />
             </div>
           </div>
-          {stops.length > 1 && (
+          {!isNew && stops.length > 1 && (
             <div style={{ borderTop: '1px solid var(--border)' }} className="mt-4 pt-4">
               <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Move to stop</p>
               <select
@@ -1656,7 +1661,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
         </div>
 
         <div style={{ borderTop: '1px solid var(--border)' }} className="flex items-center gap-3 px-5 py-4">
-          {confirmingDelete ? (
+          {!isNew && confirmingDelete ? (
             <>
               <span style={{ color: 'var(--text)' }} className="text-sm flex-1">Delete this item?</span>
               <button
@@ -1678,7 +1683,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
             </>
           ) : (
             <>
-              {onDeleted && (
+              {!isNew && onDeleted && (
                 <button
                   onClick={() => setConfirmingDelete(true)}
                   style={{ color: 'var(--error)', border: '1px solid color-mix(in srgb, var(--error) 35%, transparent)' }}
