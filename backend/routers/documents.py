@@ -180,7 +180,11 @@ Rules (apply per item):
 - `confidence` is "high", "medium", or "low" for that item.
 - `match_reason` is one short sentence explaining the stop choice (or why none matched).
 
-Respond with ONLY a JSON object, no markdown fences, no commentary:
+IMPORTANT OUTPUT FORMAT: your entire response must be valid JSON only — no preamble, \
+no commentary, no reasoning text before or after the JSON. Start your response with {{ and \
+end with }}. Any text outside the JSON object will cause a parse failure.
+
+Output format:
 {{
   "items": [
     {{
@@ -241,8 +245,13 @@ def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> di
         raise HTTPException(status_code=422, detail="The parser declined to process this document.")
 
     text = next((b.text for b in resp.content if b.type == "text"), "").strip()
-    # Tolerate stray code fences just in case.
+    # Tolerate stray code fences.
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+    # If Claude prefixed with reasoning prose, find the JSON object.
+    if not text.startswith("{"):
+        start = text.find("{")
+        if start != -1:
+            text = text[start:]
     try:
         return json.loads(text)
     except json.JSONDecodeError:
