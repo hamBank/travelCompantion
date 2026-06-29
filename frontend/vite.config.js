@@ -43,7 +43,7 @@ export default defineConfig({
         importScripts: ['sw-update.js'],
         // The SPA navigation fallback serves index.html for every navigation; exclude
         // /coverage so its server-rendered reports aren't hijacked into the app.
-        navigateFallbackDenylist: [/^\/coverage/],
+        navigateFallbackDenylist: [/^\/coverage/, /^\/metrics/],
         // Cache all built assets forever (they're content-hashed)
         globPatterns: ['**/*.{js,css,html,woff2}'],
         runtimeCaching: [
