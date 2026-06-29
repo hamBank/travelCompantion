@@ -98,52 +98,53 @@ _PIECES_RE   = re.compile(r'(\d+)\s*(?:bag|piece|item|pc)s?', re.I)   # "2 bags"
 
 
 def _parse_baggage(s) -> tuple:
-    """Parse a baggage string → (hold_bags: int, kg_per_bag: float|None, carry_on: bool).
+    """Parse a baggage string → (hold_bags, kg, bag_count_known, carry_on).
 
-    Handles: "23kg", "2 x 23kg", "2 bags", "1 piece 23kg", "40kg international…",
-             "carry-on", "cabin bag".  Returns (0, None, False) for empty/None input.
+    bag_count_known=True  → explicit piece count (2PC, 2 bags, 2×23kg)
+    bag_count_known=False → weight-only allowance (40K, 23kg) — no bag limit implied
     """
     if not s:
-        return 0, None, False
+        return 0, None, False, False
     s = str(s).strip()
     carry_on = bool(_CARRY_ON_RE.search(s))
 
-    # "2 x 23kg" / "2 × 23kg"
     m = _MULTI_RE.search(s)
     if m:
-        return int(m.group(1)), float(m.group(2)), carry_on
+        return int(m.group(1)), float(m.group(2)), True, carry_on
 
-    # "N bags/pieces" possibly followed by a weight
     m = _PIECES_RE.match(s)
     if m:
         bags = int(m.group(1))
         w = _WEIGHT_RE.search(s)
-        return bags, float(w.group(1)) if w else None, carry_on
+        return bags, float(w.group(1)) if w else None, True, carry_on
 
-    # Weight alone (may have trailing qualifier text): "23kg", "40kg international…"
+    # Weight alone — no bag count known
     m = _WEIGHT_RE.search(s)
     if m:
-        return 1, float(m.group(1)), carry_on
+        return 0, float(m.group(1)), False, carry_on
 
-    # Pure carry-on (no weight, no count)
     if carry_on:
-        return 0, None, True
+        return 0, None, False, True
 
-    return 0, None, False
+    return 0, None, False, False
 
 
 def _aggregate_baggage(passengers) -> tuple:
     """Aggregate per-passenger baggage → (hold_summary: str|None, carry_on: bool).
 
-    Carry-on is reported separately and never added to hold totals.
+    Explicit counts: "N bags (Xkg) checked"
+    Weight-only:     "Xkg checked"
+    Mixed:           "N bags (Xkg) + Ykg checked"
     """
     if not isinstance(passengers, list):
         return None, False
 
-    total_bags = 0
-    total_kg   = 0.0
-    has_kg     = False
-    carry_on   = False
+    counted_bags = 0
+    counted_kg   = 0.0
+    has_counted_kg = False
+    weight_only_kg = 0.0
+    has_weight_only = False
+    carry_on = False
 
     for p in passengers:
         if not isinstance(p, dict):
@@ -151,22 +152,31 @@ def _aggregate_baggage(passengers) -> tuple:
         bag = p.get("baggage") or ""
         if not bag:
             continue
-        bags, kg_each, co = _parse_baggage(bag)
+        bags, kg, known, co = _parse_baggage(bag)
         if co:
             carry_on = True
-        if bags > 0:
-            total_bags += bags
-            if kg_each is not None:
-                total_kg += bags * kg_each
-                has_kg = True
+        if known and bags > 0:
+            counted_bags += bags
+            if kg is not None:
+                counted_kg += bags * kg
+                has_counted_kg = True
+        elif not known and kg is not None:
+            weight_only_kg += kg
+            has_weight_only = True
 
-    if total_bags == 0:
+    if counted_bags == 0 and not has_weight_only:
         return None, carry_on
 
-    label = f"{total_bags} bag{'s' if total_bags != 1 else ''}"
-    if has_kg:
-        label += f" ({total_kg:.0f}kg)"
-    return label, carry_on
+    parts = []
+    if counted_bags > 0:
+        label = f"{counted_bags} bag{'s' if counted_bags != 1 else ''}"
+        if has_counted_kg:
+            label += f" ({counted_kg:.0f}kg)"
+        parts.append(label)
+    if has_weight_only:
+        parts.append(f"{weight_only_kg:.0f}kg")
+
+    return " + ".join(parts) + " checked", carry_on
 
 
 def build_trip_pdf(session: Session, trip_id: int) -> bytes:
@@ -322,7 +332,14 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
 
         # Segments: depart  →  arrive  |  cabin / class / aircraft / baggage totals
         detail = []
-        pax_array = fd.get("passengers") if isinstance(fd.get("passengers"), list) else None
+        raw_pax = fd.get("passengers")
+        # Normalise: single-dict passenger → list; list stays as-is; anything else → None
+        if isinstance(raw_pax, list):
+            pax_array = raw_pax
+        elif isinstance(raw_pax, dict):
+            pax_array = [raw_pax]
+        else:
+            pax_array = None
         for lbl, val in [("Cabin", fd.get("fare_class")), ("Aircraft", fd.get("aircraft"))]:
             if val:
                 detail.append(Paragraph(f"<b>{lbl}:</b> {escape(str(val))}", fc_detail))
@@ -349,28 +366,36 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         ]))
         inner.append(seg)
 
-        # Passengers — structured array or legacy string
-        if pax_array or fd.get("passengers") or fd.get("loyalty_info"):
+        # Passengers — one line per person, formatted cleanly
+        pax_has_loyalty = pax_array and any(p.get("loyalty") for p in pax_array)
+        if pax_array or fd.get("loyalty_info"):
             inner.append(HRFlowable(width="100%", thickness=0.5, color=RULE, spaceBefore=5, spaceAfter=5))
             pax_paras = []
             if pax_array:
                 for p in pax_array:
-                    name = escape(p.get("name") or "")
-                    parts = []
-                    if p.get("ticket"):  parts.append(f"Tkt {escape(str(p['ticket']))}")
-                    if p.get("loyalty"): parts.append(escape(str(p["loyalty"])))
-                    if p.get("ff_tier"): parts.append(escape(str(p["ff_tier"])))
-                    if p.get("seat"):    parts.append(f"Seat {escape(str(p['seat']))}")
-                    if p.get("meal"):    parts.append(escape(str(p["meal"])))
-                    line = f"<b>{name}</b>" + (f"  —  {',  '.join(parts)}" if parts else "")
+                    name = escape(p.get("name") or "Unknown")
+                    details_parts = []
+                    if p.get("ticket"):
+                        details_parts.append(f"Ticket: {escape(str(p['ticket']))}")
+                    if p.get("seat"):
+                        details_parts.append(f"Seat: {escape(str(p['seat']))}")
+                    if p.get("loyalty"):
+                        ff = escape(str(p["loyalty"]))
+                        if p.get("ff_tier"):
+                            ff += f" ({escape(str(p['ff_tier']))})"
+                        details_parts.append(f"FF: {ff}")
+                    if p.get("meal"):
+                        details_parts.append(f"Meal: {escape(str(p['meal']))}")
+                    if p.get("baggage"):
+                        details_parts.append(f"Bag: {escape(str(p['baggage']))}")
+                    line = f"<b>{name}</b>"
+                    if details_parts:
+                        line += f"  —  {',  '.join(details_parts)}"
                     pax_paras.append(Paragraph(line, fc_detail))
-            else:
-                if fd.get("passengers"):
-                    pax_paras.append(Paragraph(
-                        f"<b>Passengers:</b> {escape(str(fd['passengers']))}", fc_detail))
-                if fd.get("loyalty_info"):
-                    pax_paras.append(Paragraph(
-                        f"<b>Frequent flyer:</b> {escape(str(fd['loyalty_info']))}", fc_detail))
+            # Only show legacy loyalty_info when passengers don't already include it
+            if fd.get("loyalty_info") and not pax_has_loyalty:
+                pax_paras.append(Paragraph(
+                    f"<b>Frequent flyer:</b> {escape(str(fd['loyalty_info']))}", fc_detail))
             if pax_paras:
                 inner.append(Table([[pax_paras]], colWidths=[USABLE - 16], style=TableStyle([
                     ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
