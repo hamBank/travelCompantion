@@ -1,6 +1,7 @@
 import { useState, createContext, useContext } from 'react'
 import { updateStopStatus, updateItemStatus } from '../api.js'
 import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
+import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
 import { useCanEdit } from '../roles.js'
 import ItemRow from './ItemRow.jsx'
@@ -602,7 +603,9 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
   const d = item.details ?? {}
   const route = [d.origin, d.destination].filter(Boolean).map(airportName).join(' → ') || item.name || 'Flight'
   const depTerm = [d.origin_terminal && `T${d.origin_terminal}`, d.origin_gate && `Gate ${d.origin_gate}`].filter(Boolean).join(' ')
-  const meta = [d.fare_class, depTerm, d.seats && `Seat ${d.seats}`].filter(Boolean).join(' · ')
+  const checkinAt = calcCheckinTime(d.depart_time, parseCheckinWindow(d.checkin_window))
+  const checkinLabel = checkinAt ? `Check-in ${fmtDayTime(checkinAt)}` : null
+  const meta = [d.fare_class, depTerm, d.seats && `Seat ${d.seats}`, checkinLabel].filter(Boolean).join(' · ')
 
   return (
     <>

@@ -335,30 +335,29 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             {!Array.isArray(d.passengers) && <Row label="Loyalty" value={d.loyalty_info} />}
             <Row label="Distance"      value={d.distance} />
             <Row label="Notes"         value={item.notes} />
-            {(() => {
-              const hours = parseCheckinWindow(d.checkin_window)
-              const openAt = calcCheckinTime(d.depart_time, hours)
-              if (!openAt) return null
-              const label = `Check-in opens ${fmtDateTime(openAt)}`
-              return (
-                <Row label="Online check-in">
-                  {d.checkin_url
-                    ? <a href={d.checkin_url} target="_blank" rel="noreferrer"
-                         style={{ color: 'var(--accent)' }} className="hover:underline break-all">
-                        {label}
-                      </a>
-                    : label}
-                </Row>
-              )
-            })()}
           </div>
 
-          {(d.booking_ref || item.link || item.cost || d.booking_airline || d.booking_phone) && (
+          {(d.booking_ref || item.link || item.cost || d.booking_airline || d.booking_phone || d.checkin_window) && (
             <div
               style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
               className="p-3 mt-4 space-y-1.5"
             >
               <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2 font-medium">Booking</p>
+              {(() => {
+                const { parseCheckinWindow: pcw, calcCheckinTime: cct } = { parseCheckinWindow, calcCheckinTime }
+                const openAt = cct(d.depart_time, pcw(d.checkin_window))
+                if (!openAt) return null
+                const label = `Online check-in opens ${fmtDateTime(openAt)}`
+                return (
+                  <div className="flex justify-between gap-4 text-sm">
+                    <span style={{ color: 'var(--text-faint)' }}>Check-in</span>
+                    {d.checkin_url
+                      ? <a href={d.checkin_url} target="_blank" rel="noreferrer"
+                           style={{ color: 'var(--accent)' }} className="hover:underline break-all text-right">{label}</a>
+                      : <span className="text-right">{label}</span>}
+                  </div>
+                )
+              })()}
               {d.booking_ref && (
                 <div className="flex justify-between gap-4 text-sm">
                   <span style={{ color: 'var(--text-faint)' }}>Ref</span>
