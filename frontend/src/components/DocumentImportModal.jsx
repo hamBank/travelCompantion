@@ -1,20 +1,31 @@
 import { useState } from 'react'
 import { parseDocument } from '../api.js'
 
-// Pick a document, parse it, and hand the result off to the pending-review UI.
-// The parsed item is persisted server-side as a PendingChange; review/apply
-// happens in PendingReview, not here.
 export default function DocumentImportModal({ tripId, onClose, onParsed }) {
-  const [stage, setStage] = useState('pick') // pick | parsing
-  const [error, setError] = useState(null)
+  const [stage, setStage]     = useState('pick')   // pick | parsing
+  const [pending, setPending] = useState([])        // selected but not yet submitted
+  const [error, setError]     = useState(null)
 
-  async function handleFile(e) {
-    const file = e.target.files?.[0]
+  function handleSelect(e) {
+    const chosen = Array.from(e.target.files || [])
     e.target.value = ''
-    if (!file) return
+    if (!chosen.length) return
+    setPending(prev => {
+      const existing = new Set(prev.map(f => f.name + f.size))
+      return [...prev, ...chosen.filter(f => !existing.has(f.name + f.size))]
+    })
+    setError(null)
+  }
+
+  function removeFile(idx) {
+    setPending(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  async function submit() {
+    if (!pending.length) return
     setError(null); setStage('parsing')
     try {
-      const result = await parseDocument(tripId, file)
+      const result = await parseDocument(tripId, pending)
       onParsed?.(result)
     } catch (err) {
       setError(err.message)
@@ -43,21 +54,60 @@ export default function DocumentImportModal({ tripId, onClose, onParsed }) {
         {stage === 'pick' && (
           <>
             <p style={{ color: 'var(--text-faint)' }} className="text-xs mb-4">
-              Upload a booking email (.eml), ticket PDF, or text file. It'll be read, classified,
-              matched to a stop, and added to your pending imports to review before it's saved.
+              Upload booking emails (.eml), ticket PDFs, or text files. Multiple files are processed
+              together — useful when each passenger has a separate e-ticket.
             </p>
+
             <label
               style={{ color: 'var(--accent)', border: '1px dashed color-mix(in srgb, var(--accent) 40%, transparent)', background: 'color-mix(in srgb, var(--accent) 6%, transparent)' }}
-              className="block text-center text-sm px-4 py-6 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+              className="block text-center text-sm px-4 py-5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity mb-3"
             >
-              Choose a document…
-              <input type="file" accept=".eml,.pdf,.txt,.md,.html,.htm,message/rfc822,application/pdf,text/plain" onChange={handleFile} className="hidden" />
+              {pending.length ? 'Add more files…' : 'Choose files…'}
+              <input
+                type="file"
+                multiple
+                accept=".eml,.pdf,.txt,.md,.html,.htm,message/rfc822,application/pdf,text/plain"
+                onChange={handleSelect}
+                className="hidden"
+              />
             </label>
+
+            {pending.length > 0 && (
+              <div className="space-y-1.5 mb-4">
+                {pending.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    <span className="flex-1 truncate">{f.name}</span>
+                    <span style={{ color: 'var(--text-faint)' }}>
+                      {f.size < 1024 ? `${f.size}B` : f.size < 1048576 ? `${(f.size/1024).toFixed(0)}KB` : `${(f.size/1048576).toFixed(1)}MB`}
+                    </span>
+                    <button
+                      onClick={() => removeFile(i)}
+                      style={{ color: 'var(--error)' }}
+                      className="hover:opacity-70 shrink-0"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {pending.length > 0 && (
+              <button
+                onClick={submit}
+                style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+                className="w-full py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                Process {pending.length} file{pending.length !== 1 ? 's' : ''}
+              </button>
+            )}
           </>
         )}
 
         {stage === 'parsing' && (
-          <p style={{ color: 'var(--text-muted)' }} className="text-sm text-center py-8">Reading & extracting…</p>
+          <p style={{ color: 'var(--text-muted)' }} className="text-sm text-center py-8">
+            Reading & extracting{pending.length > 1 ? ` ${pending.length} files` : ''}…
+          </p>
         )}
       </div>
     </div>

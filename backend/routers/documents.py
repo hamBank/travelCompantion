@@ -914,9 +914,9 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         raw_items = [parsed] if parsed.get("kind") else []
 
     created = []
-    # Track items seen in this batch to prevent duplicate pending rows when
-    # multiple PDFs in the same email describe the same booking.
-    _seen_keys: set = set()
+    # dedup key → index in `created` so we can merge per-passenger data from
+    # a second document covering the same booking (different passenger e-ticket).
+    _seen_key_idx: dict = {}
 
     def _item_key(kind, details, payload):
         """Stable dedup key for an extracted item."""
@@ -1038,11 +1038,27 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         if existing and diff is not None and not diff.get("after") and not diff.get("before"):
             continue
 
-        # Skip duplicates from the same multi-PDF email.
+        # Deduplicate same-booking items: merge per-passenger data rather than
+        # dropping the second document outright.
         ikey = _item_key(kind, details, item)
-        if ikey in _seen_keys:
+        if ikey in _seen_key_idx:
+            # Merge passengers from this document into the already-created PC.
+            prior_idx = _seen_key_idx[ikey]
+            if prior_idx < len(created):
+                prior_pc = created[prior_idx]
+                prior_d = (prior_pc.payload or {}).get("details") or {}
+                new_pax = details.get("passengers")
+                if isinstance(new_pax, list) and isinstance(prior_d.get("passengers"), list):
+                    merged_pax = _merge_passengers_array(prior_d["passengers"], new_pax)
+                    if merged_pax != prior_d["passengers"]:
+                        prior_d["passengers"] = merged_pax
+                        prior_pc.payload["details"] = prior_d
+                        from sqlalchemy.orm.attributes import flag_modified as _fm
+                        _fm(prior_pc, "payload")
+                        session.add(prior_pc)
+                        session.commit()
             continue
-        _seen_keys.add(ikey)
+        _seen_key_idx[ikey] = len(created)
 
         pc = create_pending_from_parse(
             session, user_email, effective_trip_id, item, suggested_stop,
@@ -1055,10 +1071,46 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
     return created
 
 
+def _merge_document_sources(file_tuples: list) -> tuple:
+    """Combine text and PDFs from multiple (filename, content_type, bytes) tuples.
+
+    Returns (combined_text: str | None, pdf_b64s: list[str]).
+    Text sections are joined with a '--- DOCUMENT ---' separator so Claude
+    sees each document's content clearly delineated.
+    """
+    texts: list = []
+    pdf_b64s: list = []
+    for name, ctype, raw in file_tuples:
+        name = (name or "").lower()
+        ctype = (ctype or "").lower()
+        if name.endswith(".pdf") or "pdf" in ctype:
+            pdf_b64s.append(base64.standard_b64encode(raw).decode())
+        elif name.endswith(".eml") or ctype in ("message/rfc822",):
+            t = _text_from_eml(raw)
+            if t and t.strip():
+                texts.append(t.strip())
+            pdf_b64s.extend(
+                base64.standard_b64encode(data).decode()
+                for fn, ct, data in _attachments_from_eml(raw)
+                if fn.lower().endswith(".pdf") or "pdf" in (ct or "")
+            )
+        else:
+            text = raw.decode("utf-8", "replace")
+            if "<html" in text.lower() or name.endswith((".html", ".htm")):
+                text = _strip_html(text)
+            if text and text.strip():
+                texts.append(text.strip())
+
+    combined = "\n\n--- DOCUMENT ---\n\n".join(texts) if texts else None
+    if combined:
+        combined = combined[:_MAX_TEXT_CHARS]
+    return combined, pdf_b64s
+
+
 @router.post("/trips/{trip_id}/parse-document")
 async def parse_document(
     trip_id: int,
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     session: Session = Depends(get_session),
     user: dict = Depends(get_current_user),
 ):
@@ -1066,33 +1118,19 @@ async def parse_document(
     if not _ANTHROPIC_KEY:
         raise HTTPException(status_code=503, detail="Document parsing not configured (set ANTHROPIC_API_KEY)")
 
-    raw = await file.read()
-    if not raw:
-        raise HTTPException(status_code=400, detail="Empty file")
+    file_tuples = []
+    for file in files:
+        raw = await file.read()
+        if raw:
+            file_tuples.append((file.filename, file.content_type, raw))
 
-    name = (file.filename or "").lower()
-    ctype = (file.content_type or "").lower()
-    pdf_b64s = []
-    doc_text = None
+    if not file_tuples:
+        raise HTTPException(status_code=400, detail="No files provided or all files are empty")
 
-    if name.endswith(".pdf") or "pdf" in ctype:
-        pdf_b64s = [base64.standard_b64encode(raw).decode()]
-    elif name.endswith(".eml") or ctype in ("message/rfc822",):
-        doc_text = _text_from_eml(raw)
-        pdf_b64s = [
-            base64.standard_b64encode(data).decode()
-            for fn, ct, data in _attachments_from_eml(raw)
-            if fn.lower().endswith(".pdf") or "pdf" in (ct or "")
-        ]
-    else:
-        text = raw.decode("utf-8", "replace")
-        doc_text = _strip_html(text) if ("<html" in text.lower() or name.endswith((".html", ".htm"))) else text
+    doc_text, pdf_b64s = _merge_document_sources(file_tuples)
 
-    if doc_text is not None:
-        doc_text = doc_text.strip()
-        if not doc_text:
-            raise HTTPException(status_code=400, detail="No readable text found in that document")
-        doc_text = doc_text[:_MAX_TEXT_CHARS]
+    if not doc_text and not pdf_b64s:
+        raise HTTPException(status_code=400, detail="No readable content found in the uploaded files")
 
     stops = session.exec(
         select(Stop).where(Stop.trip_id == trip_id).order_by(Stop.sort_order)
