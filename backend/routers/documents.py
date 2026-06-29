@@ -552,15 +552,24 @@ def _norm_terminal(s: str) -> str:
 
     The FlightDetailModal display already prepends 'T', so storing the bare
     designator avoids 'TTerminal 2B' and keeps diffs clean.
+
+    Rejects values that are IATA airport codes (3-letter alpha like 'CDG', 'SIN')
+    — Claude sometimes puts the destination airport code in the terminal field.
     """
     if not s:
         return s
     s = str(s).strip()
+    # Reject plain 3-letter airport codes (e.g. "CDG", "HEL", "SIN")
+    if re.match(r'^[A-Z]{3}$', s.upper()):
+        from ..pdf_export import _airport_map
+        if s.upper() in _airport_map():
+            return ""   # not a terminal designator
     # "Terminal 2B", "terminal 2b" → "2B"
-    cleaned = re.sub(r'^[Tt]erminal\s+', '', s).strip()
-    if cleaned:
-        return cleaned.upper()
-    # "T2B", "t1" → "2B", "1"  (only strip single T followed by alphanumeric)
+    no_prefix = re.sub(r'^[Tt]erminal\s+', '', s).strip()
+    if no_prefix != s.strip():          # the prefix was actually removed
+        return no_prefix.upper() if no_prefix else ""
+
+    # "T2B", "t1" → "2B", "1"  (single T followed by alphanumeric designator)
     m = re.match(r'^[Tt]([A-Z0-9].*)$', s, re.IGNORECASE)
     if m:
         return m.group(1).upper()

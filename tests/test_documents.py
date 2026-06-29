@@ -1,7 +1,7 @@
 """Tests for the document-parse → pending-change builder (no Claude calls)."""
 from sqlmodel import select
 
-from backend.routers.documents import build_pending_changes, _match_existing, _compute_diff, _normalize_tz
+from backend.routers.documents import build_pending_changes, _match_existing, _compute_diff, _normalize_tz, _norm_terminal
 from backend.models import Stop, ItineraryItem
 
 
@@ -218,3 +218,23 @@ def test_match_existing_requires_identifier(client, session):
     })
     # No flight_number in the incoming details → no match
     assert _match_existing(session, trip["id"], "flight", {"depart_time": "2026-07-24T21:35"}) is None
+
+
+def test_norm_terminal_strips_prefix():
+    assert _norm_terminal("Terminal 2B") == "2B"
+    assert _norm_terminal("terminal 1") == "1"
+    assert _norm_terminal("T2B") == "2B"
+    assert _norm_terminal("2B") == "2B"
+
+
+def test_norm_terminal_rejects_iata_codes():
+    # Claude sometimes puts the destination airport code in the terminal field
+    assert _norm_terminal("CDG") == ""
+    assert _norm_terminal("HEL") == ""
+    assert _norm_terminal("SIN") == ""
+
+
+def test_norm_terminal_keeps_valid_designators():
+    # Short non-IATA values that look like terminal letters
+    assert _norm_terminal("F") != ""   # could be a terminal letter
+    assert _norm_terminal("2E") != ""  # Paris CDG Terminal 2E
