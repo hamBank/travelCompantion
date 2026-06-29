@@ -112,7 +112,9 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
         ? await getTripTimeline(tripId, { sync: Date.now() })  // cache-bust query param for silent refreshes
         : await getTripTimeline(tripId)
       if (silent) console.log('[DataSync] Timeline fetched, stops:', tl.stops?.length)
+      console.log('[Load] Calling setTimeline with', tl.stops?.length, 'stops')
       setTimeline(tl)
+      console.log('[Load] setTimeline called')
       // Legacy accommodation backfill — editors only (timeline also lazy-migrates).
       if (canEdit(tl.role)) { try { await backfillAccommodations(tripId) } catch (_) {} }
       try { const w = await getDateWarnings(tripId); setWarnings(w.warnings ?? []) } catch (_) {}
@@ -125,6 +127,7 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
     finally { if (!silent) setLoading(false) }
   }
 
+  console.log('[Render] loading:', loading, 'error:', error, 'stops:', timeline?.stops?.length)
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading timeline…</p>
   if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
   if (!timeline?.stops?.length) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">No stops yet.</p>
