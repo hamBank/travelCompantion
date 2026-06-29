@@ -1028,11 +1028,11 @@ def _places_nearby_laundry(lat: float, lng: float, radius: int = 1000) -> list:
 
 
 def _places_detail(place_id: str) -> dict:
-    """Fetch Place Details for opening hours."""
+    """Fetch Place Details for opening hours and reviews."""
     url = f"{_PLACES_BASE}/details/json"
     params = {
         "place_id": place_id,
-        "fields": "opening_hours,formatted_address",
+        "fields": "opening_hours,formatted_address,reviews",
         "key": _PLACES_KEY,
     }
     try:
@@ -1055,6 +1055,92 @@ def _nominatim_geocode(q: str) -> tuple | None:
     except Exception:
         pass
     return None
+
+
+def _apply_claude_enhancements(entries: list, raw_enhancements: list) -> list:
+    """Apply Claude's extracted fields to the entries list in-place.
+
+    raw_enhancements is the parsed JSON array Claude returned, each element:
+    {index, cash_card, detergent_included, open_24hrs, key_notes, warnings}
+    """
+    for enh in raw_enhancements:
+        idx = enh.get("index", -1)
+        if not isinstance(idx, int) or not (0 <= idx < len(entries)):
+            continue
+        e = entries[idx]
+        e["cash_card"]          = enh.get("cash_card") or None
+        e["detergent_included"] = enh.get("detergent_included")
+        # Never downgrade a confirmed open-24hrs flag
+        if enh.get("open_24hrs") and not e.get("open_24hrs"):
+            e["open_24hrs"] = True
+        e["key_notes"] = enh.get("key_notes") or ""
+        e["warnings"]  = enh.get("warnings")  or ""
+        e.pop("_reviews", None)   # remove internal field before storing
+
+    # Ensure _reviews is stripped from any entries not covered by enhancements
+    for e in entries:
+        e.pop("_reviews", None)
+
+    return entries
+
+
+def _claude_enhance_washing(entries: list, city: str = "") -> list:
+    """Call Claude Haiku to fill cash/card, detergent, key_notes, warnings
+    from Place reviews + general knowledge of the location.
+
+    Skips silently if ANTHROPIC_API_KEY is unset or on any error.
+    """
+    _key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not _key or not entries:
+        _apply_claude_enhancements(entries, [])
+        return entries
+
+    place_summaries = []
+    for i, e in enumerate(entries):
+        reviews = e.get("_reviews") or "No reviews available"
+        place_summaries.append(
+            f"[{i}] {e['name']}\n"
+            f"Address: {e['address']}\n"
+            f"Hours: {e.get('hours') or 'Unknown'}\n"
+            f"Currently 24hr: {e.get('open_24hrs', False)}\n"
+            f"Reviews: {reviews}"
+        )
+
+    prompt = (
+        f"You are a travel assistant helping a tourist find laundromats"
+        f"{' in ' + city if city else ''}. "
+        "For each laundromat below, analyse the reviews and your knowledge to fill in:\n"
+        "- cash_card: 'Cash only', 'Card only', 'Both', or null if genuinely unknown\n"
+        "- detergent_included: true if detergent/soap is available on-site (sold or free); "
+        "false if BYOS (bring your own soap); null if unknown\n"
+        "- open_24hrs: true/false — upgrade to true if reviews or hours confirm it\n"
+        "- key_notes: 1-2 short practical notes for a traveller "
+        "(machine counts, self-service vs attended, waiting time etc). Empty string if nothing useful.\n"
+        "- warnings: any practical warning (e.g. 'Cash only — nearest ATM 200m', "
+        "'Very busy Sunday mornings'). Empty string if none.\n\n"
+        "Return ONLY a JSON array — no commentary. One object per laundromat in the same order:\n"
+        '[{"index":0,"cash_card":"...","detergent_included":true,"open_24hrs":false,'
+        '"key_notes":"...","warnings":"..."},...]\n\n'
+        "Laundromats:\n" + "\n\n".join(place_summaries)
+    )
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=_key)
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = next((b.text for b in resp.content if b.type == "text"), "").strip()
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+        raw = json.loads(text)
+        _apply_claude_enhancements(entries, raw)
+    except Exception as exc:
+        print(f"[wash-lookup] Claude enhancement skipped: {exc}")
+        _apply_claude_enhancements(entries, [])
+
+    return entries
 
 
 @router.post("/items/{item_id}/wash-lookup", include_in_schema=False, response_model=ItemRead)
@@ -1117,6 +1203,7 @@ def wash_lookup(item_id: int, session: Session = Depends(get_session),
         pid    = p.get("place_id")
         hours  = None
         open24 = False
+        reviews_text = None
         if pid:
             det = _places_detail(pid)
             oh  = det.get("opening_hours", {})
@@ -1126,8 +1213,13 @@ def wash_lookup(item_id: int, session: Session = Depends(get_session),
                 if period.get("open", {}).get("time") == "0000" and "close" not in period:
                     open24 = True
                     break
+            raw_reviews = det.get("reviews", [])
+            if raw_reviews:
+                reviews_text = " | ".join(
+                    f"\"{r.get('text', '')}\"" for r in raw_reviews[:5] if r.get("text")
+                )
 
-        entries.append(_make_wash_entry(
+        entry = _make_wash_entry(
             name         = p.get("name", ""),
             address      = p.get("vicinity", ""),
             rating       = p.get("rating"),
@@ -1136,10 +1228,18 @@ def wash_lookup(item_id: int, session: Session = Depends(get_session),
             hours        = hours,
             open_24hrs   = open24,
             place_id     = pid,
-        ))
+        )
+        if reviews_text:
+            entry["_reviews"] = reviews_text   # temporary — stripped before storage
+        entries.append(entry)
 
     entries.sort(key=lambda e: e.get("distance_m") or 9999)
     entries = _mark_top_picks(entries)
+
+    # Enhance with Claude — fills cash/card, detergent, key_notes, warnings from reviews
+    stop = session.get(Stop, item.stop_id)
+    city = (stop.location if stop else "") or ""
+    entries = _claude_enhance_washing(entries, city=city)
 
     details           = dict(d)
     details["washing"] = entries
