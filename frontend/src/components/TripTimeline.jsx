@@ -34,6 +34,8 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   useEffect(() => {
     if (!tripId) return
 
+    console.log('[DataSync] Poller started for trip', tripId)
+
     function doRefresh() { pendingRefresh.current = false; load(true) }
 
     // When edit modal closes, flush any queued refresh
@@ -45,13 +47,31 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
       try {
         const r = await fetch('/health', { cache: 'no-store' })
         const { data_version } = await r.json()
-        if (!data_version) return
-        if (dataVersionRef.current === 0) { dataVersionRef.current = data_version; return }
-        if (data_version === dataVersionRef.current) return
+        if (!data_version) {
+          console.log('[DataSync] /health returned no data_version')
+          return
+        }
+        if (dataVersionRef.current === 0) {
+          console.log('[DataSync] Initial check, version:', data_version)
+          dataVersionRef.current = data_version
+          return
+        }
+        if (data_version === dataVersionRef.current) {
+          console.log('[DataSync] No change, version:', data_version)
+          return
+        }
+        console.log('[DataSync] Version changed', dataVersionRef.current, '→', data_version)
         dataVersionRef.current = data_version
-        if (isEditing()) { pendingRefresh.current = true }
-        else doRefresh()
-      } catch { /* offline — ignore */ }
+        if (isEditing()) {
+          console.log('[DataSync] Editing, queuing refresh')
+          pendingRefresh.current = true
+        } else {
+          console.log('[DataSync] Triggering refresh')
+          doRefresh()
+        }
+      } catch (e) {
+        console.log('[DataSync] Error:', e.message)
+      }
     }, 30_000)
 
     return () => { clearInterval(interval); unsub() }
@@ -87,14 +107,19 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   async function load(silent = false) {
     if (!silent) setLoading(true)
     try {
+      if (silent) console.log('[DataSync] Fetching fresh timeline')
       const tl = await getTripTimeline(tripId)
+      if (silent) console.log('[DataSync] Timeline fetched, stops:', tl.stops?.length)
       setTimeline(tl)
       // Legacy accommodation backfill — editors only (timeline also lazy-migrates).
       if (canEdit(tl.role)) { try { await backfillAccommodations(tripId) } catch (_) {} }
       try { const w = await getDateWarnings(tripId); setWarnings(w.warnings ?? []) } catch (_) {}
       try { const p = await getPending(tripId); setPendingCount(p.length) } catch (_) {}
     }
-    catch (e) { if (!silent) setError(e.message) }
+    catch (e) {
+      console.log('[DataSync] Error:', e.message)
+      if (!silent) setError(e.message)
+    }
     finally { if (!silent) setLoading(false) }
   }
 
