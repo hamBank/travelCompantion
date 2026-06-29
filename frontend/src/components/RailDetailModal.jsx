@@ -267,9 +267,8 @@ function RailCheckPanel({ item, onItemUpdate }) {
     return (
       <div className="flex items-center gap-2">
         <span style={{ color: 'var(--text-faint)' }} className="text-xs">
-          Train {result?.train_number} not found · DB network only
+          Not found in DB / Swiss networks — regional operators (MOBIGO, SNCF TER…) not covered
         </span>
-        <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70">↺</button>
       </div>
     )
   }
@@ -387,7 +386,9 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <RailCheckPanel item={item} onItemUpdate={onItemUpdate} />
+            {!/mobigo/i.test(d.operator || '') && (
+              <RailCheckPanel item={item} onItemUpdate={onItemUpdate} />
+            )}
             <button
               onClick={onClose}
               style={{ color: 'var(--text-faint)' }}
