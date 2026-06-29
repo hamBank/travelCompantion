@@ -515,12 +515,48 @@ function CyclingBody({ item }) {
   )
 }
 
+function HireBody({ item }) {
+  const d = item.details ?? {}
+  const VEHICLE_ICON = { car: '🚗', bike: '🚲', scooter: '🛵', van: '🚐', motorcycle: '🏍' }
+  const icon = VEHICLE_ICON[d.vehicle_type?.toLowerCase()] ?? '🚗'
+  return (
+    <div className="space-y-0">
+      {d.vehicle_type && <Row label="Vehicle">{icon} <span className="capitalize">{d.vehicle_type}</span></Row>}
+      {d.provider && <Row label="Provider">{d.provider}</Row>}
+      {d.pickup_location && (
+        <Row label="Pick-up">
+          <a href={mapsUrl(d.pickup_location)} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="hover:underline">{d.pickup_location}</a>
+        </Row>
+      )}
+      {d.pickup_time && <Row label="Pick-up time">{fmtDateTime(d.pickup_time)}</Row>}
+      {d.dropoff_location && (
+        <Row label="Drop-off">
+          <a href={mapsUrl(d.dropoff_location)} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="hover:underline">{d.dropoff_location}</a>
+        </Row>
+      )}
+      {d.dropoff_time && <Row label="Drop-off time">{fmtDateTime(d.dropoff_time)}</Row>}
+      {d.booking_ref && <Row label="Booking ref">{d.booking_ref}</Row>}
+      {item.link && (
+        <Row label="Link">
+          <a href={item.link} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="hover:underline break-all">{item.link}</a>
+        </Row>
+      )}
+      {item.cost && <Row label="Cost"><CostDisplay item={item} /></Row>}
+      {d.description && <Row label="Notes">{d.description}</Row>}
+    </div>
+  )
+}
+
 const KIND_COLOR = {
   activity:      'var(--kind-activity)',
   restaurant:    'var(--kind-restaurant)',
   note:          'var(--kind-note)',
   accommodation: 'var(--kind-accommodation)',
   cycling:       'var(--kind-cycling)',
+  hire:          'var(--kind-hire)',
 }
 
 export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
@@ -576,6 +612,7 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
           {item.kind === 'restaurant'    && <RestaurantBody item={item} />}
           {item.kind === 'note'          && <NoteBody item={item} />}
           {item.kind === 'cycling'       && <CyclingBody item={item} />}
+          {item.kind === 'hire'          && <HireBody item={item} />}
           {/* Notes apply to every kind — shown only when filled (note items show it as their body). */}
           {item.kind !== 'note' && item.notes && <Row label="Notes">{item.notes}</Row>}
         </div>

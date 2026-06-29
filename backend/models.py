@@ -26,6 +26,7 @@ class ItemKind(str, Enum):
     food = "food"
     purchase = "purchase"
     show = "show"
+    hire = "hire"
 
 
 class ItemStatus(str, Enum):

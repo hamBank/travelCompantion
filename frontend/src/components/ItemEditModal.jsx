@@ -628,6 +628,45 @@ function ShowForm({ itemId, core, details, setCore, setDetails }) {
   )
 }
 
+const HIRE_VEHICLE_TYPES = ['car', 'bike', 'scooter', 'van', 'motorcycle']
+
+function HireForm({ core, details, setCore, setDetails }) {
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  return (
+    <div className="space-y-3">
+      <Field label="Name / description" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Bike hire — Lyon" />
+      <div className="flex flex-col gap-0.5">
+        <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Vehicle type</label>
+        <div className="flex flex-wrap gap-2">
+          {HIRE_VEHICLE_TYPES.map(vt => (
+            <button
+              key={vt} type="button"
+              onClick={() => setD('vehicle_type', vt)}
+              style={{
+                color: d('vehicle_type') === vt ? 'var(--kind-hire)' : 'var(--text-faint)',
+                border: `1px solid ${d('vehicle_type') === vt ? 'var(--kind-hire)' : 'var(--border)'}`,
+                background: d('vehicle_type') === vt ? 'color-mix(in srgb, var(--kind-hire) 12%, transparent)' : 'transparent',
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors"
+            >{vt}</button>
+          ))}
+        </div>
+      </div>
+      <Field label="Provider" value={d('provider')} onChange={v => setD('provider', v)} placeholder="Vélo'v, Enterprise, Hertz…" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Pick-up" type="datetime-local" value={d('pickup_time')} onChange={v => setD('pickup_time', v)} />
+        <Field label="Drop-off" type="datetime-local" value={d('dropoff_time')} onChange={v => setD('dropoff_time', v)} />
+      </div>
+      <Field label="Pick-up location" value={d('pickup_location')} onChange={v => setD('pickup_location', v)} placeholder="Station / depot address" />
+      <Field label="Drop-off location" value={d('dropoff_location')} onChange={v => setD('dropoff_location', v)} placeholder="Leave blank if same as pick-up" />
+      <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="ABC123" />
+      <Field label="Booking URL" value={core.link} onChange={v => setCore(c => ({ ...c, link: v }))} placeholder="https://…" />
+      <Field label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
+    </div>
+  )
+}
+
 function GenericForm({ core, details, setCore, setDetails }) {
   const important = !!details?.important
   return (
@@ -1573,6 +1612,8 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted }) {
             <PurchaseForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'food' ? (
             <FoodForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'hire' ? (
+            <HireForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : (
             <GenericForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           )}

@@ -64,6 +64,8 @@ _DETAIL_HINTS = {
     "note": "description",
     "walk": "start_location, end_location, distance, description",
     "cycling": "start_location, end_location, distance, description",
+    "hire": "vehicle_type (car | bike | scooter | van | motorcycle), provider, pickup_location, "
+            "dropoff_location, pickup_time, dropoff_time, booking_ref, contact_phone, description",
 }
 
 
