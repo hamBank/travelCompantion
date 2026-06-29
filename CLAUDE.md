@@ -29,11 +29,18 @@ git add backend/static/
 git commit --amend --no-edit
 
 # 4. Push
-git push origin main          # or --force-with-lease for amended commits on main
+git push origin main --force-with-lease
 ```
 
-Never build before committing — __BUILD_SHA__ will be one commit behind and the
-SHA health-poller will reload the page in an infinite loop.
+**NEVER** skip steps 2–3 when `frontend/src/` files changed — the old compiled bundle
+will be served and the SHA health-poller will loop or show stale features.
+
+A pre-push git hook enforces this automatically. Install it once per clone:
+```bash
+bash scripts/install-hooks.sh
+```
+The hook aborts the push with a clear error if `frontend/src/` changed but
+`backend/static/` was not rebuilt in the same set of commits.
 
 ## Repository
 - Remote: https://github.com/hamBank/travelCompantion.git
