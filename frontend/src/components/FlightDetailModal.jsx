@@ -407,7 +407,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
                   <a href={smUrl} target="_blank" rel="noreferrer"
                      style={{ color: 'var(--accent)', fontSize: '0.8rem' }}
                      className="block text-center pt-1 hover:underline">
-                    🪑 View seatmap / select seats
+                    🪑 View seatmap on AeroLOPA
                   </a>
                 )
               })()}

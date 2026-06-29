@@ -1,31 +1,33 @@
 /**
- * SeatGuru deep-link builder for flight seatmaps.
+ * Seatmap deep-link builder — uses AeroLOPA (aerolopa.com).
  *
- * SeatGuru URL format:
- *   https://www.seatguru.com/findseatmap/findseatmap.php?airline=QR&flight=40&date=2026-08-19
+ * SeatGuru was shut down by TripAdvisor in October 2025.
+ * AeroLOPA is the leading replacement with the most comprehensive,
+ * up-to-date aircraft seat maps.
+ *
+ * AeroLOPA URL: https://aerolopa.com/{AIRLINE_IATA}
+ * e.g. QR → https://aerolopa.com/QR  (Qatar Airways cabin map)
+ *      AY → https://aerolopa.com/AY  (Finnair)
+ *
+ * Note: unlike the old SeatGuru, no service currently supports
+ * deep-linking directly to a specific flight number + date.
  */
 
-const SEATGURU_BASE = 'https://www.seatguru.com/findseatmap/findseatmap.php'
+const AEROLOPA_BASE = 'https://aerolopa.com'
 
 /**
- * Build a SeatGuru URL for the given flight.
+ * Build an AeroLOPA URL for the airline operating the given flight.
  *
  * @param {string|null} flightNumber  e.g. "QR 40", "AY132", "AZ 1620"
- * @param {string|null} departTime    ISO datetime "YYYY-MM-DDTHH:MM" or date only
- * @returns {string|null}             Full SeatGuru URL, or null if inputs are insufficient
+ * @param {string|null} _departTime   Unused — kept for API compatibility
+ * @returns {string|null}             AeroLOPA airline URL, or null if inputs are insufficient
  */
-export function seatguruUrl(flightNumber, departTime) {
+export function seatguruUrl(flightNumber, _departTime) {
   if (!flightNumber) return null
 
-  const m = String(flightNumber).replace(/\s/g, '').match(/^([A-Z]{2,3})(\d+)/i)
+  const m = String(flightNumber).replace(/\s/g, '').match(/^([A-Z]{2,3})\d+/i)
   if (!m) return null
 
   const airline = m[1].toUpperCase()
-  const flight  = m[2]
-  const date    = departTime ? String(departTime).slice(0, 10) : null
-
-  const params = new URLSearchParams({ airline, flight })
-  if (date) params.set('date', date)
-
-  return `${SEATGURU_BASE}?${params}`
+  return `${AEROLOPA_BASE}/${airline}`
 }
