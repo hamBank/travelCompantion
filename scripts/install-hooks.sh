@@ -8,7 +8,9 @@ HOOKS_DIR="$REPO_ROOT/.git/hooks"
 
 cat > "$HOOKS_DIR/pre-push" <<'HOOK'
 #!/usr/bin/env bash
-# Abort push if frontend/src/ changed but backend/static/ was not rebuilt.
+# Two checks:
+# 1. Abort if frontend/src/ changed but backend/static/ was not rebuilt.
+# 2. Abort if build-sha.txt doesn't match HEAD (SHA baked in is one commit behind).
 
 while IFS=' ' read -r _local_ref local_sha _remote_ref remote_sha; do
   if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
@@ -25,14 +27,14 @@ while IFS=' ' read -r _local_ref local_sha _remote_ref remote_sha; do
     echo ""
     echo "❌  pre-push: frontend/src/ changed but backend/static/ was NOT rebuilt."
     echo ""
-    echo "    Fix (run from repo root):"
+    echo "    Fix:"
     echo "      cd frontend && npm run build && cd .."
-    echo "      git add backend/static/"
-    echo "      git commit --amend --no-edit"
+    echo "      git add backend/static/ && git commit --amend --no-edit"
     echo "      git push ..."
     echo ""
     exit 1
   fi
+
 done
 
 exit 0

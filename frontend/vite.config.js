@@ -5,7 +5,13 @@ import { execSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 
 let BUILD_SHA = 'dev'
-try { BUILD_SHA = execSync('git rev-parse --short HEAD').toString().trim() } catch {}
+try {
+  // Use the SHA of the last commit touching this frontend's source so the value
+  // is stable across amends that only add backend/static/ files. Path is relative
+  // to cwd (frontend/), which is where vite.config.js executes from.
+  BUILD_SHA = execSync('git log -1 --format=%h -- src').toString().trim()
+  if (!BUILD_SHA) BUILD_SHA = execSync('git rev-parse --short HEAD').toString().trim()
+} catch {}
 
 // Writes build-sha.txt into the output dir so /health can return the frontend
 // build SHA rather than git HEAD — preventing backend-only commits from
