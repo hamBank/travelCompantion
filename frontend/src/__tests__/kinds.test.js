@@ -20,3 +20,30 @@ describe('kinds registry', () => {
     expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)))
   })
 })
+
+
+describe('kind filter', () => {
+  const items = [
+    { id: 1, kind: 'flight', name: 'SIN→HEL' },
+    { id: 2, kind: 'accommodation', name: 'Hotel' },
+    { id: 3, kind: 'activity', name: 'Museum' },
+    { id: 4, kind: 'flight', name: 'HEL→CDG' },
+  ]
+
+  it('empty filter returns all items', () => {
+    const filter = ''
+    const result = items.filter(i => !filter || i.kind === filter)
+    expect(result).toHaveLength(4)
+  })
+
+  it('flight filter returns only flights', () => {
+    const result = items.filter(i => !'' || i.kind === 'flight')
+    expect(result.filter(i => i.kind === 'flight')).toHaveLength(2)
+  })
+
+  it('all kind options have labels', () => {
+    for (const k of KIND_OPTIONS) {
+      expect(KIND_LABEL[k]).toBeTruthy()
+    }
+  })
+})

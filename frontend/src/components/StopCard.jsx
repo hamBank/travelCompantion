@@ -1,6 +1,6 @@
 import { useState, createContext, useContext } from 'react'
 import { updateStopStatus, updateItemStatus } from '../api.js'
-import { useHideCompleted, useShowInbound } from '../settings.js'
+import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
 import { useCanEdit } from '../roles.js'
 import ItemRow from './ItemRow.jsx'
@@ -257,8 +257,10 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   }
 
   const hideCompleted = useHideCompleted()
+  const kindFilter    = useKindFilter()
   const visibleItems = items
     .filter(i => i.status !== 'done' || !hideCompleted)
+    .filter(i => !kindFilter || i.kind === kindFilter)
 
   const sortKey = item => {
     const d = item.details || {}

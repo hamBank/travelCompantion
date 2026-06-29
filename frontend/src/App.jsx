@@ -11,7 +11,8 @@ import PendingReview from './components/PendingReview.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf, getPending } from './api.js'
 import { canEdit, canManage } from './roles.js'
-import { applyFontScale } from './settings.js'
+import { applyFontScale, KindFilterContext } from './settings.js'
+import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
 import ItemEditModal from './components/ItemEditModal.jsx'
 
 // Apply saved font scale before first render
@@ -55,6 +56,7 @@ function AppShell({ user, onLogout }) {
   const [pendingCount, setPendingCount] = useState(0)
   const [tripStops, setTripStops] = useState([])
   const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [kindFilter, setKindFilter] = useState('')
   const online = useOnline()
 
   function refreshPending() {
@@ -80,8 +82,8 @@ function AppShell({ user, onLogout }) {
 
   const [userChoseList, setUserChoseList] = useState(false)
 
-  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setStats(null); setTripStops([]) }
-  function goBack() { setSelectedTrip(null); setEditing(false); setStats(null); setUserChoseList(true); setTripStops([]) }
+  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setStats(null); setTripStops([]); setKindFilter('') }
+  function goBack() { setSelectedTrip(null); setEditing(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter('') }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
@@ -147,6 +149,7 @@ function AppShell({ user, onLogout }) {
         />
       )}
 
+      <KindFilterContext.Provider value={kindFilter}>
       <main className="w-full px-4 sm:px-8 lg:px-16 py-6">
         {selectedTrip
           ? editing
@@ -158,6 +161,7 @@ function AppShell({ user, onLogout }) {
           : <TripList onOpen={openTrip} skipAutoOpen={userChoseList} />
         }
       </main>
+      </KindFilterContext.Provider>
 
       <footer className="w-full px-4 sm:px-8 lg:px-16 pb-8 pt-4 flex flex-col items-center gap-4">
         <div className="flex items-center gap-3 flex-wrap justify-center">
@@ -211,6 +215,25 @@ function AppShell({ user, onLogout }) {
             >
               📥 Imports ({pendingCount})
             </button>
+          )}
+          {selectedTrip && !editing && (
+            <select
+              value={kindFilter}
+              onChange={e => setKindFilter(e.target.value)}
+              style={{
+                background: kindFilter ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'transparent',
+                color: kindFilter ? 'var(--accent)' : 'var(--text-muted)',
+                border: `1px solid ${kindFilter ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'var(--border)'}`,
+              }}
+              className="px-2 py-1.5 rounded-lg text-xs font-medium outline-none cursor-pointer"
+            >
+              <option value="">All items</option>
+              {KIND_OPTIONS.map(k => (
+                <option key={k} value={k} style={{ background: 'var(--modal-bg)', color: 'var(--text)' }}>
+                  {KIND_LABEL[k]}
+                </option>
+              ))}
+            </select>
           )}
           <button
             onClick={() => setShowSettings(true)}

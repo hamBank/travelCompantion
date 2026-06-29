@@ -76,6 +76,16 @@ export function setFontScale(px) {
   listeners.forEach(l => l())
 }
 
+// ── Kind filter (session-only view filter, not persisted) ────────────────────
+import { createContext, useContext } from 'react'
+
+export const KindFilterContext = createContext('')
+
+/** Returns the active kind filter string, or '' for "all". */
+export function useKindFilter() {
+  return useContext(KindFilterContext)
+}
+
 export function applyFontScale() {
   const px = getFontScale()
   document.documentElement.style.fontSize = `${px}px`
