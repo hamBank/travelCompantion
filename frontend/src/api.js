@@ -7,6 +7,7 @@ async function req(path, opts = {}) {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
+    cache: 'no-store',
     ...opts,
   })
   if (r.status === 204) return null
