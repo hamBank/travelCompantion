@@ -112,6 +112,13 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
         ? await getTripTimeline(tripId, { sync: Date.now() })  // cache-bust query param for silent refreshes
         : await getTripTimeline(tripId)
       if (silent) console.log('[DataSync] Timeline fetched, stops:', tl.stops?.length)
+      if (silent) {
+        // Debug: log all costs in fetched data
+        const costs = tl.stops?.flatMap(s =>
+          s.items?.map(i => ({ kind: i.kind, cost: i.cost, name: i.name }))
+        ) ?? []
+        console.log('[Load] Costs in fetched data:', costs)
+      }
       console.log('[Load] Calling setTimeline with', tl.stops?.length, 'stops')
       setTimeline(tl)
       console.log('[Load] setTimeline called')
