@@ -628,6 +628,20 @@ def _match_existing(session, trip_id, kind, details, all_stop_ids=None,
                 if norm(d.get(key)) == num and (not dd or _datepart(d.get("depart_time")) == dd):
                     return it
 
+            # Fallback: match on numeric portion only so '17756' matches 'TER 17756'.
+            # Rail operators often prefix numbers with service codes (TER, IC, MOBIGO)
+            # that may or may not be present across different booking sources.
+            import re as _re
+            num_digits = _re.sub(r'[^0-9]', '', num)
+            if num_digits and len(num_digits) >= 4:   # avoid matching short ambiguous numbers
+                for it in items:
+                    if it.kind != kind:
+                        continue
+                    d = it.details or {}
+                    it_digits = _re.sub(r'[^0-9]', '', norm(d.get(key) or ''))
+                    if it_digits == num_digits and (not dd or _datepart(d.get("depart_time")) == dd):
+                        return it
+
         # Fallback: match on origin + destination (+ date when available).
         # Only used when the document didn't contain a flight number.
         orig = norm(details.get("origin"))
