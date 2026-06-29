@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { updateItem } from '../api.js'
+import { registerModal, unregisterModal } from '../modalNav.js'
 import { aggregateBaggage } from '../baggage.js'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
@@ -349,16 +350,19 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
   }
 
   useEffect(() => {
+    registerModal(item.id, onClose)
+    return () => unregisterModal()
+  }, [item.id, onClose])
+
+  useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') { onClose(); return }
-      if (e.key === 'j' || e.key === 'k') {
-        if (!isNavModal) onClose()
+      if (e.key === 'j' || e.key === 'k')
         window.dispatchEvent(new CustomEvent('modalNav', { detail: { itemId: item.id, direction: e.key === 'j' ? 'next' : 'prev' } }))
-      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, item.id, isNavModal])
+  }, [onClose, item.id])
 
   const route = [d.origin, d.destination].filter(Boolean).join(' → ')
   const trainLabel = [d.train_number, d.operator].filter(Boolean).join(' · ')

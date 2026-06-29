@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { checkFlight, updateItem } from '../api.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
+import { registerModal, unregisterModal } from '../modalNav.js'
 import { aggregateBaggage } from '../baggage.js'
 import { seatguruUrl } from '../seatguru.js'
 import { airportName, airportLabel } from '../airportNames.js'
@@ -224,16 +225,19 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
   }
 
   useEffect(() => {
+    registerModal(item.id, onClose)
+    return () => unregisterModal()
+  }, [item.id, onClose])
+
+  useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') { onClose(); return }
-      if (e.key === 'j' || e.key === 'k') {
-        if (!isNavModal) onClose()
+      if (e.key === 'j' || e.key === 'k')
         window.dispatchEvent(new CustomEvent('modalNav', { detail: { itemId: item.id, direction: e.key === 'j' ? 'next' : 'prev' } }))
-      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, item.id, isNavModal])
+  }, [onClose, item.id])
 
   const route = [d.origin, d.destination].filter(Boolean).map(airportName).join(' → ')
   const flightLabel = [d.flight_number, d.airline].filter(Boolean).join(' · ')

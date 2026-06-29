@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, createContext, useContext } from 'react'
+import { useState, createContext, useContext } from 'react'
 import { updateStopStatus, updateItemStatus } from '../api.js'
 import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
@@ -242,7 +242,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
   const [items, setItems] = useState(stop.items)
-  const [navItem, setNavItem] = useState(null)
   const canEdit = useCanEdit()
 
   function handleItemSaved(updated) {
@@ -258,8 +257,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     onItemAdded?.(newItem)
   }
 
-  // Keep a ref to the latest sorted timeline so the modalNav handler is always current
-  const navTimelineRef = useRef([])
 
   const hideCompleted = useHideCompleted()
   const kindFilter    = useKindFilter()
@@ -300,22 +297,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const foodItems = visibleItems.filter(i => i.kind === 'food')
   const purchaseItems = visibleItems.filter(i => i.kind === 'purchase')
 
-  // Always expose the current timeline so the modalNav handler can navigate it
-  navTimelineRef.current = timeline
-
-  // j/k keyboard navigation — handled once at the stop level
-  useEffect(() => {
-    function handleModalNav(e) {
-      const { itemId, direction } = e.detail
-      const sorted = navTimelineRef.current
-      const idx = sorted.findIndex(i => i.id === itemId)
-      if (idx === -1) return
-      const target = direction === 'next' ? sorted[idx + 1] : sorted[idx - 1]
-      setNavItem(target ?? null)
-    }
-    window.addEventListener('modalNav', handleModalNav)
-    return () => window.removeEventListener('modalNav', handleModalNav)
-  }, [])
   const checkoutAccom = items.find(i => i.kind === 'accommodation' && i.details?.checkout)
 
   const flag = countryFlag(stop.country)
@@ -385,16 +366,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
         {foodItems.map(item => <OffsetRow key={item.id}><FoodCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
         {purchaseItems.map(item => <OffsetRow key={item.id}><PurchaseCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
       </div>
-      {navItem && (() => {
-        const close = () => setNavItem(null)
-        const save  = updated => { handleItemSaved(updated); setNavItem(updated) }
-        if (navItem.kind === 'flight')
-          return <FlightDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
-        if (navItem.kind === 'rail')
-          return <RailDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
-        return <ItemDetailModal key={navItem.id} item={navItem} onClose={close}
-                 onEdit={() => {}} onDeleted={id => { handleItemDeleted(id); setNavItem(null) }} isNavModal />
-      })()}
     </>
     )
   }
@@ -516,16 +487,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
 
     </div>
 
-    {navItem && (() => {
-      const close = () => setNavItem(null)
-      const save  = updated => { handleItemSaved(updated); setNavItem(updated) }
-      if (navItem.kind === 'flight')
-        return <FlightDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
-      if (navItem.kind === 'rail')
-        return <RailDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
-      return <ItemDetailModal key={navItem.id} item={navItem} onClose={close}
-               onEdit={() => {}} onDeleted={id => { handleItemDeleted(id); setNavItem(null) }} isNavModal />
-    })()}
     </>
   )
 }

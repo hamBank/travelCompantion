@@ -1,11 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending } from '../api.js'
 import StopCard, { computeCrossStopLayover, itemDateKey } from './StopCard.jsx'
+import FlightDetailModal from './FlightDetailModal.jsx'
+import RailDetailModal from './RailDetailModal.jsx'
+import ItemDetailModal from './ItemDetailModal.jsx'
 import DocumentImportModal from './DocumentImportModal.jsx'
 import PendingReview from './PendingReview.jsx'
 import { RoleContext, canEdit } from '../roles.js'
 import { useShowInbound, useHideStopFrames } from '../settings.js'
 import { fmtDay } from '../dates.js'
+import { getCurrentModal } from '../modalNav.js'
 
 export default function TripTimeline({ tripId, onStats, onStops }) {
   const [timeline, setTimeline] = useState(null)
@@ -16,6 +20,8 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   const [pendingCount, setPendingCount] = useState(0)
   const [warnings, setWarnings] = useState([])
   const [dismissed, setDismissed] = useState(false)
+  const [navItem, setNavItem] = useState(null)
+  const allItemsRef = useRef([])
   const showInbound = useShowInbound()
   const hideStopFrames = useHideStopFrames()
 
@@ -49,6 +55,20 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading timeline…</p>
   if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
   if (!timeline?.stops?.length) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">No stops yet.</p>
+
+  // Build global sorted item list for cross-stop j/k navigation
+  const allItems = timeline.stops.flatMap(s =>
+    s.items.filter(i => i.kind !== 'food' && i.kind !== 'purchase')
+  ).sort((a, b) => {
+    const t = i => {
+      const d = i.details || {}
+      if (i.kind === 'flight' || i.kind === 'rail') return d.depart_time || ''
+      if (i.kind === 'accommodation') return d.checkin || i.scheduled_at || ''
+      return i.scheduled_at || ''
+    }
+    return t(a).localeCompare(t(b))
+  })
+  allItemsRef.current = allItems
 
   // Inbound transport: for each stop, the flight/rail (filed on a *different* stop)
   // whose arrival date matches this stop's arrival date — i.e. how you got here.
@@ -113,7 +133,24 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
 
   const editable = canEdit(timeline.role)
 
+  // Global j/k handler — cross-stop, boundary-safe
+  useEffect(() => {
+    function handleModalNav(e) {
+      const { itemId, direction } = e.detail
+      const items = allItemsRef.current
+      const idx = items.findIndex(i => i.id === itemId)
+      if (idx === -1) return
+      const target = direction === 'next' ? items[idx + 1] : items[idx - 1]
+      if (!target) return   // at boundary — do nothing, modal stays open
+      getCurrentModal()?.closeFn()   // close whichever modal is currently registered
+      setNavItem(target)
+    }
+    window.addEventListener('modalNav', handleModalNav)
+    return () => window.removeEventListener('modalNav', handleModalNav)
+  }, [])
+
   return (
+    <>
     <RoleContext.Provider value={timeline.role ?? 'owner'}>
       <div>
         {editable && warnings.length > 0 && !dismissed && (
@@ -189,5 +226,16 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
         )}
       </div>
     </RoleContext.Provider>
+
+    {navItem && (() => {
+      const close = () => setNavItem(null)
+      const save  = updated => setNavItem(updated)
+      if (navItem.kind === 'flight')
+        return <FlightDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
+      if (navItem.kind === 'rail')
+        return <RailDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
+      return <ItemDetailModal key={navItem.id} item={navItem} onClose={close} onEdit={() => {}} isNavModal />
+    })()}
+    </>
   )
 }

@@ -6,6 +6,7 @@ import ItemHistoryModal from './ItemHistoryModal.jsx'
 import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
 import { relevantDayIndices, filterHoursByDays } from '../washHours.js'
+import { registerModal, unregisterModal } from '../modalNav.js'
 import { fmtDayTime } from '../dates.js'
 
 const fmtDateTime = fmtDayTime
@@ -633,16 +634,19 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNa
   const [showHistory, setShowHistory] = useState(false)
 
   useEffect(() => {
+    registerModal(item.id, onClose)
+    return () => unregisterModal()
+  }, [item.id, onClose])
+
+  useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') { onClose(); return }
-      if (e.key === 'j' || e.key === 'k') {
-        if (!isNavModal) onClose()
+      if (e.key === 'j' || e.key === 'k')
         window.dispatchEvent(new CustomEvent('modalNav', { detail: { itemId: item.id, direction: e.key === 'j' ? 'next' : 'prev' } }))
-      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, item.id, isNavModal])
+  }, [onClose, item.id])
 
   const kindColor = KIND_COLOR[item.kind] ?? 'var(--text-faint)'
 
