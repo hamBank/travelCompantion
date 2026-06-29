@@ -40,6 +40,12 @@ claude_cost = Counter(
     "Estimated Claude API spend in USD (Sonnet 4.6 rates)",
 )
 
+claude_cost_per_request = Histogram(
+    "travelcomp_claude_cost_per_request_dollars",
+    "Estimated USD cost of a single Claude parse request (Sonnet 4.6 rates)",
+    buckets=[0.002, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 1.00],
+)
+
 # ── Pending changes ───────────────────────────────────────────────────────────
 
 pending_created = Counter(
@@ -82,3 +88,4 @@ def record_claude_usage(usage, elapsed_s: float, status: str = "success"):
 
     cost = inp * _PRICE_INPUT + out * _PRICE_OUTPUT + cr * _PRICE_CACHE_READ + cw * _PRICE_CACHE_WRITE
     claude_cost.inc(cost)
+    claude_cost_per_request.observe(cost)
