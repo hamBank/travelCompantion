@@ -17,6 +17,10 @@ describe('parseBaggage', () => {
   // Airline shorthand: K instead of kg
   it('parses "40K" (airline shorthand)', () => expect(parseBaggage('40K')).toMatchObject({ holdBags: 1, holdKg: 40, carryOn: false }))
   it('parses "2 x 23K"', () => expect(parseBaggage('2 x 23K')).toMatchObject({ holdBags: 2, holdKg: 23 }))
+  // IATA piece concept: PC
+  it('parses "2PC" (IATA piece concept)', () => expect(parseBaggage('2PC')).toMatchObject({ holdBags: 2, holdKg: null }))
+  it('parses "2PC 32kg"', () => expect(parseBaggage('2PC 32kg')).toMatchObject({ holdBags: 2, holdKg: 32 }))
+  it('parses "2PC 32K"', () => expect(parseBaggage('2PC 32K')).toMatchObject({ holdBags: 2, holdKg: 32 }))
 })
 
 describe('aggregateBaggage', () => {

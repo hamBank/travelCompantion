@@ -30,6 +30,18 @@ class TestParseBaggage:
         bags, kg, carry = _parse_baggage("2 × 23kg")
         assert bags == 2 and kg == 23.0 and carry is False
 
+    def test_iata_pc_no_weight(self):
+        bags, kg, carry = _parse_baggage("2PC")
+        assert bags == 2 and kg is None and carry is False
+
+    def test_iata_pc_with_kg(self):
+        bags, kg, carry = _parse_baggage("2PC 32kg")
+        assert bags == 2 and kg == 32.0 and carry is False
+
+    def test_iata_pc_with_K(self):
+        bags, kg, carry = _parse_baggage("2PC 32K")
+        assert bags == 2 and kg == 32.0 and carry is False
+
     def test_bags_no_weight(self):
         bags, kg, carry = _parse_baggage("2 bags")
         assert bags == 2 and kg is None and carry is False
