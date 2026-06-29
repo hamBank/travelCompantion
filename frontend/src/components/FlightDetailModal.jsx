@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { checkFlight, updateItem } from '../api.js'
+import { aggregateBaggage } from '../baggage.js'
 import { airportName, airportLabel } from '../airportNames.js'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
@@ -317,6 +318,11 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             {!Array.isArray(d.passengers) && <Row label="Seats"   value={d.seats} />}
             {!Array.isArray(d.passengers) && <Row label="Baggage" value={d.baggage} />}
             {!Array.isArray(d.passengers) && <Row label="Meal"    value={d.meal} />}
+            {/* Unified baggage summary for structured passenger arrays */}
+            {Array.isArray(d.passengers) && (() => {
+              const summary = aggregateBaggage(d.passengers)
+              return summary ? <Row label="Baggage" value={summary} /> : null
+            })()}
             <Row label="Entertainment" value={d.entertainment} />
             <Row label="Lounge"        value={d.lounge} />
             <Row label="Check-in"      value={d.checkin} />

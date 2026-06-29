@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { updateItem } from '../api.js'
+import { aggregateBaggage } from '../baggage.js'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
 import PassengersTable from './PassengersTable.jsx'
@@ -447,6 +448,10 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
             <Row label="Coach"      value={d.coach} />
             {!Array.isArray(d.passengers) && <Row label="Seats" value={d.seats} />}
             {!Array.isArray(d.passengers) && <Row label="Meal"  value={d.meal} />}
+            {Array.isArray(d.passengers) && (() => {
+              const summary = aggregateBaggage(d.passengers)
+              return summary ? <Row label="Baggage" value={summary} /> : null
+            })()}
             <PassengersTable passengers={d.passengers} label="Passengers" />
             {!Array.isArray(d.passengers) && <Row label="Loyalty" value={d.loyalty_info} />}
             <Row label="Notes"      value={item.notes} />
