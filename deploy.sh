@@ -172,8 +172,9 @@ fi
 # The service file only references filesystem paths (VENV, APP_DIR, ENV_FILE)
 # which are already set; systemd doesn't validate them at enable time.
 #
-# write_unit FILE CONTENT — only writes when content differs, to avoid noise.
 # write_unit FILE CONTENT — writes only when content differs; returns 0 if written, 1 if unchanged.
+# IMPORTANT: call as  write_unit ... || true  for bare calls under set -euo pipefail,
+# or inside  if write_unit ...; then  when the return value drives further action.
 write_unit() {
   local file="$1" content="$2"
   if [[ -f "$file" ]] && [[ "$(cat "$file")" == "$content" ]]; then
@@ -211,7 +212,7 @@ ProtectSystem=strict
 ReadWritePaths=$APP_DIR /var/log/travelcomp
 
 [Install]
-WantedBy=multi-user.target"
+WantedBy=multi-user.target" || true
 
 write_unit "/etc/systemd/system/${SERVICE_NAME}-update.service" "[Unit]
 Description=Travel Companion auto-update (triggered by webhook)
@@ -224,7 +225,7 @@ TimeoutStartSec=0
 ExecStart=/bin/bash $APP_DIR/deploy.sh --update
 ExecStartPost=/bin/rm -f $APP_DIR/.deploy-trigger
 StandardOutput=append:/var/log/travelcomp-deploy.log
-StandardError=append:/var/log/travelcomp-deploy.log"
+StandardError=append:/var/log/travelcomp-deploy.log" || true
 
 write_unit "/etc/systemd/system/${SERVICE_NAME}-update.path" "[Unit]
 Description=Watch for Travel Companion deploy trigger file
@@ -234,7 +235,7 @@ PathExists=$APP_DIR/.deploy-trigger
 Unit=${SERVICE_NAME}-update.service
 
 [Install]
-WantedBy=multi-user.target"
+WantedBy=multi-user.target" || true
 
 # Only enable/start on first install. On updates the units are already active,
 # and calling systemctl from within the running update service itself causes
