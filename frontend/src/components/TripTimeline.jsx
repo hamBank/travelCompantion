@@ -107,8 +107,10 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   async function load(silent = false) {
     if (!silent) setLoading(true)
     try {
-      if (silent) console.log('[DataSync] Fetching fresh timeline')
-      const tl = await getTripTimeline(tripId)
+      if (silent) console.log('[DataSync] Fetching fresh timeline at', new Date().toISOString())
+      const tl = silent
+        ? await getTripTimeline(tripId, { sync: Date.now() })  // cache-bust query param for silent refreshes
+        : await getTripTimeline(tripId)
       if (silent) console.log('[DataSync] Timeline fetched, stops:', tl.stops?.length)
       setTimeline(tl)
       // Legacy accommodation backfill — editors only (timeline also lazy-migrates).

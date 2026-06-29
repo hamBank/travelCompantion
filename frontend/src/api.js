@@ -33,7 +33,11 @@ export const deleteTrip = (id) => req(`/trips/${id}`, { method: 'DELETE' })
 export const updateTrip = (id, data) =>
   req(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 
-export const getTripTimeline = (id) => req(`/trips/${id}/timeline`)
+export const getTripTimeline = (id, opts = {}) => {
+  const params = new URLSearchParams(opts)
+  const qs = params.toString() ? '?' + params.toString() : ''
+  return req(`/trips/${id}/timeline${qs}`)
+}
 export const getDateWarnings = (id) => req(`/trips/${id}/date-warnings`)
 
 // ── Pending changes (review-before-apply imports) ────────────────────────────
