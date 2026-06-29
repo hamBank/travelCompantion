@@ -267,7 +267,7 @@ function RailCheckPanel({ item, onItemUpdate }) {
     return (
       <div className="flex items-center gap-2">
         <span style={{ color: 'var(--text-faint)' }} className="text-xs">
-          Not found in DB / Swiss networks — regional operators (MOBIGO, SNCF TER…) not covered
+          Not found in DB / Swiss networks — some regional operators (e.g. MOBIGO) are not covered
         </span>
       </div>
     )
