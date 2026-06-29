@@ -275,6 +275,19 @@ class IngestedEmailRead(SQLModel):
     body_text: str = ""   # extracted plain-text body; empty if file unavailable
 
 
+class ProcessedDocument(SQLModel, table=True):
+    """Hash-based cache of already-imported documents.
+
+    Keyed on SHA256(trip_id + sorted file bytes) so re-uploading the same
+    file for the same trip skips the Claude API call entirely.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cache_key: str = Field(index=True)          # hex SHA256
+    trip_id: Optional[int] = None
+    item_count: int = 0
+    processed_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class UserImportToken(SQLModel, table=True):
     """Per-user secret embedded in their forwarding address (import+<token>@…)."""
     user_email: str = Field(primary_key=True)   # lowercased

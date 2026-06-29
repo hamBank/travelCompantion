@@ -34,6 +34,37 @@ from ..pdf_export import _airport_map
 
 router = APIRouter()
 
+# ── Document cache helpers ─────────────────────────────────────────────────────
+
+def _doc_cache_key(trip_id: int, raw_files: list) -> str:
+    """Stable SHA256 key for a set of file bytes + trip.
+
+    Files are sorted before hashing so upload order doesn't matter.
+    """
+    import hashlib
+    h = hashlib.sha256()
+    h.update(str(trip_id).encode())
+    for chunk in sorted(raw_files):
+        h.update(chunk)
+    return h.hexdigest()
+
+
+def _check_doc_cache(session, cache_key: str):
+    """Return cached result dict or None if not seen before."""
+    from ..models import ProcessedDocument
+    from sqlmodel import select as _sel
+    row = session.exec(_sel(ProcessedDocument).where(ProcessedDocument.cache_key == cache_key)).first()
+    if not row:
+        return None
+    return {"item_count": row.item_count, "trip_id": row.trip_id, "processed_at": row.processed_at}
+
+
+def _record_doc_cache(session, cache_key: str, trip_id, item_count: int):
+    """Persist a cache entry so the same document isn't re-processed."""
+    from ..models import ProcessedDocument
+    session.add(ProcessedDocument(cache_key=cache_key, trip_id=trip_id, item_count=item_count))
+    session.commit()
+
 _ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 _MODEL = "claude-sonnet-4-6"
 _MAX_TEXT_CHARS = 60_000  # bound token usage on huge HTML emails
@@ -1158,6 +1189,21 @@ async def parse_document(
     if not file_tuples:
         raise HTTPException(status_code=400, detail="No files provided or all files are empty")
 
+    # Check whether we've already processed these exact bytes for this trip.
+    raw_bytes = [raw for _, _, raw in file_tuples]
+    cache_key  = _doc_cache_key(trip_id, raw_bytes)
+    cached     = _check_doc_cache(session, cache_key)
+    if cached:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"This document has already been imported "
+                f"(processed {cached['processed_at'].strftime('%d %b %Y %H:%M')} UTC, "
+                f"{cached['item_count']} item(s) created). "
+                f"No API call made."
+            ),
+        )
+
     doc_text, pdf_b64s = _merge_document_sources(file_tuples)
 
     if not doc_text and not pdf_b64s:
@@ -1175,11 +1221,13 @@ async def parse_document(
     pcs = build_pending_changes(session, user["email"], trip_id, stops, parsed)
     if not pcs:
         if raw_item_count > 0:
+            _record_doc_cache(session, cache_key, trip_id=trip_id, item_count=0)
             raise HTTPException(
                 status_code=422,
                 detail=f"Already up to date — {raw_item_count} item(s) found but all are already recorded with no new information.",
             )
         raise HTTPException(status_code=422, detail="No itinerary items found in that document")
+    _record_doc_cache(session, cache_key, trip_id=trip_id, item_count=len(pcs))
     from ..metrics import pending_created as _pc_metric
     for pc in pcs:
         _pc_metric.labels(op=pc.op, kind=str(pc.kind).split(".")[-1]).inc()
