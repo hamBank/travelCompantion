@@ -68,7 +68,7 @@ def test_ingest_resolves_user_and_creates_email_pending(client, session, ingest_
     assert pc.source == "email"
     assert pc.trip_id is None              # user picks the trip at review
     assert pc.created_by == "dev@local"
-    assert pc.payload["details"]["flight_number"] == "AY132"
+    assert pc.payload["details"]["flight_number"] == "AY 132"  # normalised
 
     em = session.exec(select(IngestedEmail)).all()[0]
     assert em.status == "parsed" and em.item_count == 1
