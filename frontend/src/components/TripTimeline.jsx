@@ -10,6 +10,7 @@ import { RoleContext, canEdit } from '../roles.js'
 import { useShowInbound, useHideStopFrames } from '../settings.js'
 import { fmtDay } from '../dates.js'
 import { getCurrentModal } from '../modalNav.js'
+import { isEditing, onEditChange } from '../editState.js'
 
 export default function TripTimeline({ tripId, onStats, onStops }) {
   const [timeline, setTimeline] = useState(null)
@@ -21,11 +22,40 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   const [warnings, setWarnings] = useState([])
   const [dismissed, setDismissed] = useState(false)
   const [navItem, setNavItem] = useState(null)
-  const allItemsRef = useRef([])
+  const allItemsRef    = useRef([])
+  const dataVersionRef = useRef(0)      // last known data_version from /health
+  const pendingRefresh = useRef(false)  // queued while edit modal is open
   const showInbound = useShowInbound()
   const hideStopFrames = useHideStopFrames()
 
   useEffect(() => { load() }, [tripId])
+
+  // Data-sync poller — silently refreshes trip data when the DB changes on another device
+  useEffect(() => {
+    if (!tripId) return
+
+    function doRefresh() { pendingRefresh.current = false; load(true) }
+
+    // When edit modal closes, flush any queued refresh
+    const unsub = onEditChange(editing => {
+      if (!editing && pendingRefresh.current) doRefresh()
+    })
+
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch('/health', { cache: 'no-store' })
+        const { data_version } = await r.json()
+        if (!data_version) return
+        if (dataVersionRef.current === 0) { dataVersionRef.current = data_version; return }
+        if (data_version === dataVersionRef.current) return
+        dataVersionRef.current = data_version
+        if (isEditing()) { pendingRefresh.current = true }
+        else doRefresh()
+      } catch { /* offline — ignore */ }
+    }, 30_000)
+
+    return () => { clearInterval(interval); unsub() }
+  }, [tripId])
 
   // Global j/k handler — must be at top level, before any conditional returns
   useEffect(() => {
@@ -54,8 +84,8 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
     }
   }, [timeline, onStats, onStops])
 
-  async function load() {
-    setLoading(true)
+  async function load(silent = false) {
+    if (!silent) setLoading(true)
     try {
       const tl = await getTripTimeline(tripId)
       setTimeline(tl)
@@ -64,8 +94,8 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
       try { const w = await getDateWarnings(tripId); setWarnings(w.warnings ?? []) } catch (_) {}
       try { const p = await getPending(tripId); setPendingCount(p.length) } catch (_) {}
     }
-    catch (e) { setError(e.message) }
-    finally { setLoading(false) }
+    catch (e) { if (!silent) setError(e.message) }
+    finally { if (!silent) setLoading(false) }
   }
 
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading timeline…</p>

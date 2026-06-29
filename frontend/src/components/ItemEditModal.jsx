@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createItem, updateItem, enrichItem, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem } from '../api.js'
+import { setEditing } from '../editState.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 import { fmtDay } from '../dates.js'
@@ -1429,6 +1430,9 @@ function FoodForm({ core, details, setCore, setDetails }) {
 }
 
 export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew = false, stops: stopsProp }) {
+  // Block data-sync refreshes while this modal is open
+  useEffect(() => { setEditing(true); return () => setEditing(false) }, [])
+
   const [core, setCore] = useState({
     kind: item.kind ?? 'activity',
     name: item.name ?? '',
