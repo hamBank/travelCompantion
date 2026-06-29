@@ -266,10 +266,18 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     if (item.kind === 'flight' || item.kind === 'rail')
       return toUtcMs(d.depart_time, d.depart_tz) ?? Infinity
     if (item.kind === 'accommodation') {
-      // Sort by the earliest relevant time: bag drop (if set) beats check-in
-      const checkin  = toUtcMs(d.checkin  || item.scheduled_at, null) ?? Infinity
-      const bag_drop = toUtcMs(d.bag_drop, null) ?? Infinity
-      return Math.min(bag_drop, checkin)
+      const checkin = toUtcMs(d.checkin || item.scheduled_at, null) ?? Infinity
+      if (!d.bag_drop) return checkin
+      // Project bag-drop time-of-day onto the check-in date so a bag drop on
+      // a prior day (e.g. Sat drop → Sun check-in) still sorts within the
+      // check-in day's timeline rather than before all same-day items.
+      const checkinDate = (d.checkin || item.scheduled_at || '').slice(0, 10)
+      const bagTime     = String(d.bag_drop).slice(11)   // "HH:MM…"
+      if (checkinDate && bagTime) {
+        const projected = toUtcMs(`${checkinDate}T${bagTime}`, null) ?? Infinity
+        return Math.min(projected, checkin)
+      }
+      return Math.min(toUtcMs(d.bag_drop, null) ?? Infinity, checkin)
     }
     return toUtcMs(item.scheduled_at, null) ?? Infinity
   }
