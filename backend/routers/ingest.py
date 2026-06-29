@@ -87,6 +87,7 @@ def parse_ingested(session: Session, ingested: IngestedEmail, raw: bytes, attach
     # Load all of the user's stops so Claude can match to the right trip.
     stops = _stops_for_user(session, ingested.resolved_user_email)
 
+    from ..metrics import email_ingested as _email_metric, pending_created as _pc_metric
     try:
         kinds = [k.value for k in ItemKind]
         parsed = _call_claude(_build_prompt(stops, kinds), pdf_b64s, doc_text)
@@ -97,11 +98,15 @@ def parse_ingested(session: Session, ingested: IngestedEmail, raw: bytes, attach
         ingested.status = "parsed"
         ingested.item_count = len(pcs)
         session.add(ingested); session.commit()
+        _email_metric.labels(status="parsed").inc()
+        for pc in pcs:
+            _pc_metric.labels(op=pc.op, kind=str(pc.kind).split(".")[-1]).inc()
         return pcs
     except Exception as e:  # never let a parse failure lose the email
         ingested.status = "error"
         ingested.parse_error = str(e)[:500]
         session.add(ingested); session.commit()
+        _email_metric.labels(status="error").inc()
         return []
 
 
@@ -154,6 +159,9 @@ async def ingest_email(request: Request, session: Session = Depends(get_session)
     if resolved:
         pcs = parse_ingested(session, ingested, raw, attachments)
         items = len(pcs)
+    else:
+        from ..metrics import email_ingested as _em
+        _em.labels(status="skipped").inc()
 
     # Always 202 to the pipe; details are for logs/debugging only.
     return _json(202, {"id": ingested.id, "resolved": bool(resolved), "items": items})

@@ -1,4 +1,4 @@
-import os, hmac, hashlib, json
+import os, hmac, hashlib, json, logging, logging.handlers
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
@@ -8,12 +8,56 @@ from .database import create_db_and_tables
 from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me
 from .routers.auth_router import router as auth_router
 
-# Paths that never require authentication (static assets + public endpoints).
-# Service-worker scripts and their importScripts deps (workbox-*, sw-update) must
-# be reachable without a token or the SW can't install/update.
-# /ingest/ is authenticated by its own shared secret (the local mail pipe can't
-# hold a user JWT) and is never proxied by Apache — localhost-only in production.
-_PUBLIC_PREFIXES = ("/auth/", "/health", "/currency/", "/assets/", "/sw.", "/sw-update", "/workbox-", "/registerSW.", "/manifest.", "/coverage", "/ingest/")
+# ── Structured logging ────────────────────────────────────────────────────────
+
+_LOG_DIR  = os.getenv("LOG_DIR", "/var/log/travelcomp")
+_LOG_FILE = os.path.join(_LOG_DIR, "app.log")
+
+
+class _JSONFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        from datetime import datetime, timezone
+        d: dict = {
+            "ts":      datetime.now(timezone.utc).isoformat(),
+            "level":   record.levelname,
+            "logger":  record.name,
+            "msg":     record.getMessage(),
+        }
+        if record.exc_info:
+            d["exc"] = self.formatException(record.exc_info)
+        for key in ("path", "method", "status_code", "duration_ms"):
+            if hasattr(record, key):
+                d[key] = getattr(record, key)
+        return json.dumps(d)
+
+
+def _setup_logging() -> None:
+    try:
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        handler: logging.Handler = logging.handlers.RotatingFileHandler(
+            _LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=7, encoding="utf-8",
+        )
+    except (PermissionError, OSError):
+        handler = logging.StreamHandler()   # fallback for local dev
+
+    handler.setFormatter(_JSONFormatter())
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    # Avoid double-adding during hot-reload
+    if not any(isinstance(h, (logging.handlers.RotatingFileHandler, logging.StreamHandler)
+                             and type(h) is type(handler)) for h in root.handlers):
+        root.addHandler(handler)
+
+
+_setup_logging()
+logger = logging.getLogger(__name__)
+
+# ── Public path lists ─────────────────────────────────────────────────────────
+# /metrics is unauthenticated — Prometheus scrapers don't carry user JWTs.
+# Metrics contain only aggregate counts/durations; no PII.
+_PUBLIC_PREFIXES = ("/auth/", "/health", "/metrics", "/currency/", "/assets/",
+                    "/sw.", "/sw-update", "/workbox-", "/registerSW.", "/manifest.",
+                    "/coverage", "/ingest/")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
                     "/favicon.ico", "/icon-192.png", "/icon-512.png",
                     "/apple-touch-icon.png", "/deploy"}
@@ -29,6 +73,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Travel Companion API", version="0.1.0", lifespan=lifespan)
+
+# ── Prometheus HTTP metrics ───────────────────────────────────────────────────
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    Instrumentator(
+        should_group_status_codes=True,
+        excluded_handlers=["/metrics", "/health", r"^/assets/.*"],
+    ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+except ImportError:
+    logger.warning("prometheus-fastapi-instrumentator not installed — /metrics unavailable")
 
 app.include_router(auth_router)
 app.include_router(trips.router, prefix="/trips", tags=["trips"])

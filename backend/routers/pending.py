@@ -186,6 +186,8 @@ def apply_pending(
                         before=history_before, source=pc.source)
     session.commit()
 
+    from ..metrics import pending_decided
+    pending_decided.labels(decision="applied").inc()
     return item
 
 
@@ -202,6 +204,8 @@ def discard_pending(
         pc.decided_by = user["email"].lower()
         session.add(pc)
         session.commit()
+        from ..metrics import pending_decided
+        pending_decided.labels(decision="discarded").inc()
 
 
 def create_pending_from_parse(

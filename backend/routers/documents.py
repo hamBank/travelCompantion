@@ -204,6 +204,9 @@ def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> di
     n_docs = len([c for c in content if c.get("type") == "document"])
     max_tokens = min(8000 + n_docs * 4000, 32000)
 
+    import time
+    from ..metrics import record_claude_usage
+    _t0 = time.monotonic()
     try:
         # Use streaming — required by the SDK when max_tokens is large enough that
         # the request might take > 10 minutes (common with multiple PDF documents).
@@ -213,9 +216,12 @@ def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> di
             messages=[{"role": "user", "content": content}],
         ) as stream:
             resp = stream.get_final_message()
+        record_claude_usage(getattr(resp, "usage", None), time.monotonic() - _t0)
     except anthropic.APIStatusError as e:
+        record_claude_usage(None, time.monotonic() - _t0, status="error")
         raise HTTPException(status_code=502, detail=f"Claude API error: {e.message}")
     except Exception as e:
+        record_claude_usage(None, time.monotonic() - _t0, status="error")
         raise HTTPException(status_code=502, detail=f"Claude request failed: {e}")
 
     if resp.stop_reason == "refusal":
@@ -1042,6 +1048,9 @@ async def parse_document(
     pcs = build_pending_changes(session, user["email"], trip_id, stops, parsed)
     if not pcs:
         raise HTTPException(status_code=422, detail="No itinerary items found in that document")
+    from ..metrics import pending_created as _pc_metric
+    for pc in pcs:
+        _pc_metric.labels(op=pc.op, kind=str(pc.kind).split(".")[-1]).inc()
 
     return {
         "count": len(pcs),

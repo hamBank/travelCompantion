@@ -140,6 +140,14 @@ if [[ ! -d "$VENV" ]]; then
   sudo -u "$APP_USER" python3 -m venv "$VENV"
 fi
 
+# ── Log directory ─────────────────────────────────────────────────────────────
+LOG_DIR="/var/log/travelcomp"
+if [[ ! -d "$LOG_DIR" ]]; then
+  mkdir -p "$LOG_DIR"
+  chown "$APP_USER:$APP_USER" "$LOG_DIR"
+  ok "Created $LOG_DIR"
+fi
+
 info "Installing Python dependencies"
 PIP_CACHE="$APP_DIR/.pip-cache"
 mkdir -p "$PIP_CACHE" && chown "$APP_USER:$APP_USER" "$PIP_CACHE"
@@ -193,12 +201,14 @@ EnvironmentFile=$ENV_FILE
 ExecStart=$VENV/bin/uvicorn backend.main:app --host 127.0.0.1 --port $BIND_PORT
 Restart=always
 RestartSec=5
+StandardOutput=append:/var/log/travelcomp/uvicorn.log
+StandardError=append:/var/log/travelcomp/uvicorn.log
 
 # Harden the service
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=$APP_DIR
+ReadWritePaths=$APP_DIR /var/log/travelcomp
 
 [Install]
 WantedBy=multi-user.target"
