@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from .database import create_db_and_tables
 from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me
 from .routers.auth_router import router as auth_router
+from . import metrics as _metrics  # registers all travelcomp_* counters at startup
 
 # ── Structured logging ────────────────────────────────────────────────────────
 
