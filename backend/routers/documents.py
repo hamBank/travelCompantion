@@ -147,11 +147,16 @@ CONNECTION BOOKING RULES (critical — apply carefully):
 Singapore → Paris), these are CONNECTING flights. Extract SEPARATE items — one per flight number — \
 each with its own correct origin and destination for that leg (e.g. AY132: SIN→HEL, AY1571: HEL→CDG).
 - NEVER set the destination of the first leg to the final destination of the connection.
+- Even if you cannot find the departure/arrival times for each individual segment, STILL extract \
+separate items — use the flight number, origin, destination, seats and baggage you CAN identify. \
+Omit times rather than guessing them. A partial update record with just seats/baggage is valuable.
 - Seat info formatted as "SIN-HEL: 3H 3D / HEL-CDG: 2C 2A" means per-segment assignments: \
 for the SIN→HEL leg passenger seats are 3H and 3D; for the HEL→CDG leg they are 2C and 2A. \
 Assign each seat to the correct passenger on the correct leg.
 - Overall journey baggage (e.g. "4 x checked bag") for a connection means each passenger gets \
-half the total per leg (or the per-passenger allowance shown). Apply it to each flight segment's passengers.
+the per-passenger allowance on EACH leg. Apply it to all flight segment's passengers.
+- The stop point of a connection (e.g. HEL) is the origin of the second leg AND the destination \
+of the first leg — use your knowledge of the route to infer these if not stated explicitly.
 
 The trip has these stops (match each item to the most likely one by location AND date):
 {json.dumps(stop_lines, indent=2)}
