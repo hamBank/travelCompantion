@@ -316,6 +316,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             if (item.kind === 'note')          return <NoteCard {...props} />
             if (item.kind === 'activity')      return <ActivityCard {...props} />
             if (item.kind === 'show')          return <ShowCard {...props} />
+            if (item.kind === 'hire')          return <HireCard {...props} />
             return <ItemRow {...props} />
           }
           return (
@@ -404,6 +405,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               if (item.kind === 'note')          return <NoteCard {...props} />
               if (item.kind === 'activity')      return <ActivityCard {...props} />
               if (item.kind === 'show')          return <ShowCard {...props} />
+              if (item.kind === 'hire')          return <HireCard {...props} />
               return <ItemRow {...props} />
             }
             return (
@@ -1091,6 +1093,65 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
                   {d.surface_type   && <span className="capitalize">{d.surface_type}</span>}
                 </div>
               )}
+            </div>
+          </div>
+        </button>
+        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
+      </div>
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
+        />
+      )}
+    </>
+  )
+}
+
+const HIRE_ICON = { car: '🚗', bike: '🚲', scooter: '🛵', van: '🚐', motorcycle: '🏍' }
+
+function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
+  const [item, setItem] = useState(initial)
+  const [showDetail, setShowDetail] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
+  const d = item.details ?? {}
+  const icon = HIRE_ICON[(d.vehicle_type || '').toLowerCase()] ?? '🚗'
+  const timeStr = item.scheduled_at ? fmtDayTime(item.scheduled_at) : (d.pickup_time ? fmtDayTime(d.pickup_time) : null)
+
+  return (
+    <>
+      <div className="relative group">
+        <button
+          onClick={() => setShowDetail(true)}
+          className="w-full text-left hover:opacity-80 transition-opacity"
+          style={{
+            background: 'color-mix(in srgb, var(--kind-hire) 6%, var(--surface-2))',
+            border: '1px solid color-mix(in srgb, var(--kind-hire) 35%, transparent)',
+            borderRadius: '0.5rem',
+            padding: '0.75rem',
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            <CardIcon item={item} icon={icon} color="var(--kind-hire)" setItem={setItem} onItemSaved={onItemSaved} />
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="font-medium text-sm truncate">{item.name}</div>
+              {(d.provider || d.vehicle_type) && (
+                <div style={{ color: 'var(--text-muted)' }} className="text-xs capitalize">
+                  {[d.vehicle_type, d.provider].filter(Boolean).join(' · ')}
+                </div>
+              )}
+              {d.pickup_location && (
+                <div style={{ color: 'var(--text-faint)' }} className="text-xs truncate">
+                  {[d.pickup_location, d.dropoff_location && d.dropoff_location !== d.pickup_location && d.dropoff_location].filter(Boolean).join(' → ')}
+                </div>
+              )}
+              <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                {!hideTime && timeStr && <span style={{ color: 'var(--text-muted)' }}>{timeStr}</span>}
+                {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
+              </div>
             </div>
           </div>
         </button>
