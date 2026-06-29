@@ -30,6 +30,11 @@ class TestParseBaggage:
         bags, kg, known, carry = _parse_baggage("2 × 23kg")
         assert bags == 2 and kg == 23.0 and known is True
 
+    def test_quantity_prefix_with_words_in_between(self):
+        # "2 x Checked bag (max. 32kg)" — Finnair/ITA format
+        bags, kg, known, carry = _parse_baggage("2 x Checked bag (max. 32kg)")
+        assert bags == 2 and kg == 32.0 and known is True and carry is False
+
     def test_iata_pc_no_weight(self):
         bags, kg, known, carry = _parse_baggage("2PC")
         assert bags == 2 and kg is None and known is True and carry is False

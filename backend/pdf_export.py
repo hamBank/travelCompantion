@@ -91,10 +91,11 @@ def _labelize(key):
 
 # ── Baggage parsing ────────────────────────────────────────────────────────────
 
-_CARRY_ON_RE = re.compile(r'carry.?on|cabin bag|hand luggage|personal item', re.I)
-_WEIGHT_RE   = re.compile(r'(\d+(?:\.\d+)?)\s*k(?:g\b)?', re.I)   # "23kg" or "23K"
-_MULTI_RE    = re.compile(r'(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*k(?:g\b)?', re.I)
-_PIECES_RE   = re.compile(r'(\d+)\s*(?:bag|piece|item|pc)s?', re.I)   # "2 bags" / "2PC"
+_CARRY_ON_RE  = re.compile(r'carry.?on|cabin bag|hand luggage|personal item', re.I)
+_WEIGHT_RE    = re.compile(r'(\d+(?:\.\d+)?)\s*k(?:g\b)?', re.I)        # "23kg" or "23K"
+_MULTI_RE     = re.compile(r'(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*k(?:g\b)?', re.I)
+_QUANTITY_RE  = re.compile(r'^(\d+)\s*[x×]', re.I)                       # "2 x anything"
+_PIECES_RE    = re.compile(r'^(\d+)\s*(?:bag|piece|item|pc)s?', re.I)    # "2 bags" / "2PC"
 
 
 def _parse_baggage(s) -> tuple:
@@ -111,6 +112,13 @@ def _parse_baggage(s) -> tuple:
     m = _MULTI_RE.search(s)
     if m:
         return int(m.group(1)), float(m.group(2)), True, carry_on
+
+    # "2 x Checked bag (max. 32kg)" — quantity prefix with words between count and weight
+    m = _QUANTITY_RE.match(s)
+    if m:
+        bags = int(m.group(1))
+        w = _WEIGHT_RE.search(s)
+        return bags, float(w.group(1)) if w else None, True, carry_on
 
     m = _PIECES_RE.match(s)
     if m:
