@@ -705,9 +705,18 @@ _PASSENGER_FIELDS = {"passengers", "participants"}
 
 
 def _norm_name(s: str) -> str:
-    """Strip person title and normalise for matching (case-insensitive, collapsed spaces)."""
+    """Normalise a passenger name for matching: strip title, reduce to first + last.
+
+    Middle names are dropped so 'Nicole Tracy Wuth' and 'Nicole Wuth' match,
+    preventing duplicate passenger entries across imports that use different
+    name forms from the same booking.
+    """
     s = re.sub(r'^(?:Mr|Mrs|Ms|Dr|Miss|Mx|Master)\.?\s+', '', str(s).strip(), flags=re.IGNORECASE)
-    return re.sub(r'\s+', ' ', s).lower().strip()
+    s = re.sub(r'\s+', ' ', s).lower().strip()
+    parts = s.split()
+    if len(parts) > 2:
+        return parts[0] + ' ' + parts[-1]   # first + last only
+    return s
 
 
 def _merge_passengers_array(existing: list, new: list) -> list:
