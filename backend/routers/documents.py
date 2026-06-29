@@ -1102,8 +1102,14 @@ async def parse_document(
     parsed = _call_claude(_build_prompt(stops, kinds), pdf_b64s, doc_text)
 
     # Persist each extracted item as a pending change (with update-matching).
+    raw_item_count = len(parsed.get("items", [])) if isinstance(parsed.get("items"), list) else 0
     pcs = build_pending_changes(session, user["email"], trip_id, stops, parsed)
     if not pcs:
+        if raw_item_count > 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Already up to date — {raw_item_count} item(s) found but all are already recorded with no new information.",
+            )
         raise HTTPException(status_code=422, detail="No itinerary items found in that document")
     from ..metrics import pending_created as _pc_metric
     for pc in pcs:
