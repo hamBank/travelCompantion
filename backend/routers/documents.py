@@ -963,6 +963,10 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
         # If matched but the item lands on a different stop, keep the existing stop.
         suggested_stop = (existing.stop_id if existing else None) or matched
 
+        # Skip when matched but nothing has changed — the record is already up to date.
+        if existing and diff is not None and not diff.get("after") and not diff.get("before"):
+            continue
+
         # Skip duplicates from the same multi-PDF email.
         ikey = _item_key(kind, details, item)
         if ikey in _seen_keys:
