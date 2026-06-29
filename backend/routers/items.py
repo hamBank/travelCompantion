@@ -963,3 +963,189 @@ def download_gpx(item_id: int, session: Session = Depends(get_session), user: di
         raise HTTPException(status_code=404, detail="No GPX file uploaded")
     return FileResponse(fp, media_type='application/gpx+xml',
                         filename=details.get('original_gpx_name', 'route.gpx'))
+
+
+# ── Laundry facility lookup ────────────────────────────────────────────────────
+
+def _make_wash_entry(name: str, address: str, *, rating=None, review_count=None,
+                     distance_m=None, hours=None, open_24hrs=False,
+                     place_id=None) -> dict:
+    """Build a single washing-facilities dict with all required fields."""
+    return {
+        "name":               name,
+        "address":            address,
+        "rating":             rating,
+        "review_count":       review_count,
+        "distance_m":         distance_m,
+        "hours":              hours,
+        "open_24hrs":         open_24hrs,
+        "top_pick":           False,
+        "cash_card":          None,   # unknown — user fills in
+        "detergent_included": None,   # unknown — user fills in
+        "key_notes":          "",
+        "warnings":           "",
+        "place_id":           place_id,
+    }
+
+
+def _mark_top_picks(entries: list, threshold_m: int = 500) -> list:
+    """Mark the best laundromat as top_pick.
+
+    Prefers the highest-rated option within `threshold_m` metres.
+    Falls back to the closest option if none are rated.
+    """
+    for e in entries:
+        e["top_pick"] = False
+
+    candidates = [e for e in entries if (e.get("distance_m") or 9999) <= threshold_m]
+    if not candidates:
+        candidates = entries
+
+    rated = [e for e in candidates if e.get("rating") is not None]
+    winner = max(rated, key=lambda e: e["rating"]) if rated else (
+             min(candidates, key=lambda e: e.get("distance_m") or 9999) if candidates else None)
+    if winner:
+        winner["top_pick"] = True
+    return entries
+
+
+def _places_nearby_laundry(lat: float, lng: float, radius: int = 1000) -> list:
+    """Call Google Places nearbysearch for laundromats. Returns raw results list."""
+    url = f"{_PLACES_BASE}/nearbysearch/json"
+    params = {
+        "location": f"{lat},{lng}",
+        "radius": radius,
+        "keyword": "laundromat laundry coin laundry",
+        "key": _PLACES_KEY,
+    }
+    try:
+        with httpx.Client(timeout=10) as client:
+            r = client.get(url, params=params)
+            r.raise_for_status()
+            return r.json().get("results", [])
+    except Exception:
+        return []
+
+
+def _places_detail(place_id: str) -> dict:
+    """Fetch Place Details for opening hours."""
+    url = f"{_PLACES_BASE}/details/json"
+    params = {
+        "place_id": place_id,
+        "fields": "opening_hours,formatted_address",
+        "key": _PLACES_KEY,
+    }
+    try:
+        with httpx.Client(timeout=8) as client:
+            r = client.get(url, params=params)
+            r.raise_for_status()
+            return r.json().get("result", {})
+    except Exception:
+        return {}
+
+
+def _nominatim_geocode(q: str) -> tuple | None:
+    """Return (lat, lng) for a query string via Nominatim, or None."""
+    try:
+        with httpx.Client(timeout=8, headers=_NOMINATIM_HEADERS) as client:
+            r = client.get(_NOMINATIM, params={"q": q, "format": "json", "limit": 1})
+            results = r.json()
+        if results:
+            return float(results[0]["lat"]), float(results[0]["lon"])
+    except Exception:
+        pass
+    return None
+
+
+@router.post("/items/{item_id}/wash-lookup", include_in_schema=False, response_model=ItemRead)
+def wash_lookup(item_id: int, session: Session = Depends(get_session),
+                user: dict = Depends(get_current_user)):
+    """Find nearby laundry facilities for an accommodation item and store them.
+
+    Not exposed in the public API schema — called from the edit modal.
+    Results are stored in details.washing and the updated item is returned.
+    """
+    require_item_role(session, user, item_id, TripRole.editor)
+    if not _PLACES_KEY:
+        raise HTTPException(status_code=503,
+                            detail="Laundry lookup requires GOOGLE_PLACES_API_KEY")
+
+    item = session.get(ItineraryItem, item_id)
+    if not item or item.kind != "accommodation":
+        raise HTTPException(status_code=400, detail="Item must be an accommodation")
+
+    d = item.details or {}
+
+    # Resolve coordinates: item details → stop → geocode
+    lat = lng = None
+    for lk, gk in (("lat", "lng"), ("latitude", "longitude")):
+        if d.get(lk) and d.get(gk):
+            try:
+                lat, lng = float(d[lk]), float(d[gk])
+                break
+            except (ValueError, TypeError):
+                pass
+
+    if lat is None:
+        stop = session.get(Stop, item.stop_id)
+        if stop and stop.lat and stop.lng:
+            try:
+                lat, lng = float(stop.lat), float(stop.lng)
+            except (ValueError, TypeError):
+                pass
+
+    if lat is None:
+        location_str = d.get("location") or item.name
+        if not location_str:
+            raise HTTPException(status_code=422,
+                                detail="No location data found — add an address to the accommodation first")
+        coords = _nominatim_geocode(location_str)
+        if not coords:
+            raise HTTPException(status_code=422,
+                                detail=f"Could not locate '{location_str}' — check the address")
+        lat, lng = coords
+
+    # Fetch nearby laundromats
+    places = _places_nearby_laundry(lat, lng)
+    entries = []
+    for p in places[:8]:
+        p_lat = p["geometry"]["location"]["lat"]
+        p_lng = p["geometry"]["location"]["lng"]
+        dist  = round(_haversine(lat, lng, p_lat, p_lng))
+
+        # Fetch opening hours from Place Details
+        pid    = p.get("place_id")
+        hours  = None
+        open24 = False
+        if pid:
+            det = _places_detail(pid)
+            oh  = det.get("opening_hours", {})
+            wt  = oh.get("weekday_text", [])
+            hours = "; ".join(wt) if wt else None
+            for period in oh.get("periods", []):
+                if period.get("open", {}).get("time") == "0000" and "close" not in period:
+                    open24 = True
+                    break
+
+        entries.append(_make_wash_entry(
+            name         = p.get("name", ""),
+            address      = p.get("vicinity", ""),
+            rating       = p.get("rating"),
+            review_count = p.get("user_ratings_total"),
+            distance_m   = dist,
+            hours        = hours,
+            open_24hrs   = open24,
+            place_id     = pid,
+        ))
+
+    entries.sort(key=lambda e: e.get("distance_m") or 9999)
+    entries = _mark_top_picks(entries)
+
+    details           = dict(d)
+    details["washing"] = entries
+    item.details       = details
+    flag_modified(item, "details")
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item

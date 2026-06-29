@@ -125,7 +125,66 @@ function AccommodationBody({ item }) {
           )}
         </div>
       )}
+
+      {/* Laundry */}
+      {(d.hotel_laundry || (Array.isArray(d.washing) && d.washing.length > 0)) && (
+        <div className="mt-4">
+          <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-1 font-medium">
+            Laundry
+          </p>
+          {d.hotel_laundry && (
+            <div style={{ color: 'var(--success)' }} className="text-xs mb-1">✓ Hotel offers laundry service</div>
+          )}
+          {Array.isArray(d.washing) && d.washing.map((e, i) => <WashingEntry key={i} e={e} />)}
+        </div>
+      )}
     </>
+  )
+}
+
+function WashingEntry({ e }) {
+  const chips = [
+    e.open_24hrs && '24hr',
+    e.cash_card,
+    e.detergent_included === true && 'Detergent ✓',
+    e.detergent_included === false && 'No detergent',
+  ].filter(Boolean)
+  return (
+    <div className="py-2" style={{ borderTop: '1px solid var(--border)' }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        {e.top_pick && (
+          <span style={{ background: 'var(--success)', color: '#fff', fontSize: '0.65rem' }}
+                className="px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide shrink-0">
+            Top pick
+          </span>
+        )}
+        <span className="font-medium text-sm">{e.name}</span>
+        {e.rating != null && (
+          <span style={{ color: 'var(--warning)' }} className="text-xs">★ {e.rating.toFixed(1)}
+            {e.review_count != null && <span style={{ color: 'var(--text-faint)' }}> ({e.review_count})</span>}
+          </span>
+        )}
+        {e.distance_m != null && (
+          <span style={{ color: 'var(--text-faint)' }} className="text-xs ml-auto shrink-0">
+            {e.distance_m < 1000 ? `${e.distance_m}m` : `${(e.distance_m/1000).toFixed(1)}km`}
+          </span>
+        )}
+      </div>
+      {e.address && <div style={{ color: 'var(--text-faint)' }} className="text-xs mt-0.5">{e.address}</div>}
+      {e.hours && <div style={{ color: 'var(--text-muted)' }} className="text-xs mt-0.5">{e.hours}</div>}
+      {chips.length > 0 && (
+        <div className="flex gap-1 flex-wrap mt-1">
+          {chips.map((c, i) => (
+            <span key={i} style={{ background: 'var(--surface)', border: '1px solid var(--border)', fontSize: '0.65rem' }}
+                  className="px-1.5 py-0.5 rounded" style={{ color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: '0.65rem' }}>
+              {c}
+            </span>
+          ))}
+        </div>
+      )}
+      {e.key_notes && <div style={{ color: 'var(--text-muted)' }} className="text-xs mt-0.5 italic">{e.key_notes}</div>}
+      {e.warnings && <div style={{ color: 'var(--error)' }} className="text-xs mt-0.5">⚠ {e.warnings}</div>}
+    </div>
   )
 }
 

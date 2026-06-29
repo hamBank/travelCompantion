@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { createItem, updateItem, enrichItem, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem } from '../api.js'
+import { createItem, updateItem, enrichItem, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem } from '../api.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 import { fmtDay } from '../dates.js'
@@ -269,6 +269,8 @@ function AutoFillButton({ enriching, enrichMsg, onClick }) {
 function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
   const [enriching, setEnriching] = useState(false)
   const [enrichMsg, setEnrichMsg] = useState(null)
+  const [washing, setWashing] = useState(false)
+  const [washMsg, setWashMsg] = useState(null)
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
 
@@ -315,6 +317,46 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
       </SectionBox>
       <TextArea label="Description" value={d('description')} onChange={v => setD('description', v)} placeholder="Breakfast included, rooftop terrace…" />
       <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
+
+      <SectionBox label="Laundry">
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={!!details.hotel_laundry}
+            onChange={e => setD('hotel_laundry', e.target.checked || undefined)}
+            className="rounded"
+          />
+          <span style={{ color: 'var(--text-muted)' }} className="text-sm">Hotel offers laundry service</span>
+        </label>
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            disabled={washing || !itemId}
+            onClick={async () => {
+              setWashing(true); setWashMsg(null)
+              try {
+                const updated = await washLookup(itemId)
+                const count = (updated.details?.washing ?? []).length
+                setD('washing', updated.details?.washing ?? [])
+                setWashMsg({ text: `${count} laundromat${count !== 1 ? 's' : ''} found nearby`, color: 'var(--success)' })
+              } catch (e) {
+                setWashMsg({ text: e.message, color: 'var(--error)' })
+              } finally { setWashing(false) }
+            }}
+            style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
+            className="px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity text-left"
+          >
+            {washing ? '🔍 Searching…' : '🔍 Find nearby laundromats'}
+          </button>
+          {washMsg && <span className="text-xs" style={{ color: washMsg.color }}>{washMsg.text}</span>}
+          {Array.isArray(details.washing) && details.washing.length > 0 && (
+            <span style={{ color: 'var(--text-faint)' }} className="text-xs">
+              {details.washing.length} laundromat{details.washing.length !== 1 ? 's' : ''} stored
+              {details.washing.filter(w => w.top_pick).map(w => ` · Top pick: ${w.name}`)[0] ?? ''}
+            </span>
+          )}
+        </div>
+      </SectionBox>
     </div>
   )
 }
