@@ -258,8 +258,12 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     const d = item.details || {}
     if (item.kind === 'flight' || item.kind === 'rail')
       return toUtcMs(d.depart_time, d.depart_tz) ?? Infinity
-    if (item.kind === 'accommodation')
-      return toUtcMs(d.checkin || item.scheduled_at, null) ?? Infinity
+    if (item.kind === 'accommodation') {
+      // Sort by the earliest relevant time: bag drop (if set) beats check-in
+      const checkin  = toUtcMs(d.checkin  || item.scheduled_at, null) ?? Infinity
+      const bag_drop = toUtcMs(d.bag_drop, null) ?? Infinity
+      return Math.min(bag_drop, checkin)
+    }
     return toUtcMs(item.scheduled_at, null) ?? Infinity
   }
   // Important notes are pinned to the very top of the stop; everything else flows
