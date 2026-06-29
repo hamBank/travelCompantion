@@ -332,6 +332,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
 
   if (hideFrame) {
     return (
+      <>
       <div className="space-y-2">
         {inbound && <OffsetRow><InboundBanner inbound={inbound} onUpdate={onUpdate} /></OffsetRow>}
         {inboundConnection && <OffsetRow><LayoverBadge {...inboundConnection} /></OffsetRow>}
@@ -384,6 +385,17 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
         {foodItems.map(item => <OffsetRow key={item.id}><FoodCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
         {purchaseItems.map(item => <OffsetRow key={item.id}><PurchaseCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
       </div>
+      {navItem && (() => {
+        const close = () => setNavItem(null)
+        const save  = updated => { handleItemSaved(updated); setNavItem(updated) }
+        if (navItem.kind === 'flight')
+          return <FlightDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
+        if (navItem.kind === 'rail')
+          return <RailDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
+        return <ItemDetailModal key={navItem.id} item={navItem} onClose={close}
+                 onEdit={() => {}} onDeleted={id => { handleItemDeleted(id); setNavItem(null) }} isNavModal />
+      })()}
+    </>
     )
   }
 
