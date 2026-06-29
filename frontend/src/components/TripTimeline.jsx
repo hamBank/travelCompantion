@@ -27,6 +27,22 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
 
   useEffect(() => { load() }, [tripId])
 
+  // Global j/k handler — must be at top level, before any conditional returns
+  useEffect(() => {
+    function handleModalNav(e) {
+      const { itemId, direction } = e.detail
+      const items = allItemsRef.current
+      const idx = items.findIndex(i => i.id === itemId)
+      if (idx === -1) return
+      const target = direction === 'next' ? items[idx + 1] : items[idx - 1]
+      if (!target) return   // at boundary — modal stays open
+      getCurrentModal()?.closeFn()
+      setNavItem(target)
+    }
+    window.addEventListener('modalNav', handleModalNav)
+    return () => window.removeEventListener('modalNav', handleModalNav)
+  }, [])
+
   // Surface stop counts to the header (shown in the minimal title bar).
   useEffect(() => {
     if (timeline?.stops) {
@@ -132,22 +148,6 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   }
 
   const editable = canEdit(timeline.role)
-
-  // Global j/k handler — cross-stop, boundary-safe
-  useEffect(() => {
-    function handleModalNav(e) {
-      const { itemId, direction } = e.detail
-      const items = allItemsRef.current
-      const idx = items.findIndex(i => i.id === itemId)
-      if (idx === -1) return
-      const target = direction === 'next' ? items[idx + 1] : items[idx - 1]
-      if (!target) return   // at boundary — do nothing, modal stays open
-      getCurrentModal()?.closeFn()   // close whichever modal is currently registered
-      setNavItem(target)
-    }
-    window.addEventListener('modalNav', handleModalNav)
-    return () => window.removeEventListener('modalNav', handleModalNav)
-  }, [])
 
   return (
     <>
