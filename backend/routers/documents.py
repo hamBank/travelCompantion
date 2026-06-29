@@ -930,12 +930,32 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
     _seen_key_idx: dict = {}
 
     def _item_key(kind, details, payload):
-        """Stable dedup key for an extracted item."""
+        """Stable dedup key for an extracted item.
+
+        For flight/rail: always includes the flight/train number so that two
+        legs on the same booking (sharing a booking_ref) are NOT collapsed —
+        only truly duplicate extractions of the *same* leg are deduplicated.
+        """
         d = details or {}
         ref = re.sub(r'[\s\-]', '', str(d.get("booking_ref") or "")).upper()
-        if ref:
+
+        if kind in ("flight", "rail"):
+            num_key = "flight_number" if kind == "flight" else "train_number"
+            num = re.sub(r'[\s]', '', str(d.get(num_key) or "")).upper()
+            date = _datepart(d.get("depart_time") or "")
+            # Primary: flight/train number + date (ignores booking_ref intentionally)
+            if num and date:
+                return (kind, num, date)
+            if num:
+                return (kind, num, ref)
+            # No flight number known — fall back to ref + date
+            if ref and date:
+                return (kind, ref, date)
+
+        elif ref:
             return (kind, ref)
-        # Fall back to kind + primary date + route/name
+
+        # Generic fallback: kind + primary date + route/name
         date = _datepart(d.get("depart_time") or d.get("checkin") or
                          d.get("reservation_time") or payload.get("scheduled_at") or "")
         route = (str(d.get("origin") or d.get("start_location") or "") + "→" +

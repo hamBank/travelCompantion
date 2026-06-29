@@ -94,3 +94,27 @@ def test_two_passengers_same_flight_merged(client, session):
     names = {p["name"] for p in merged_pax}
     assert "Mr Antony Wuth" in names
     assert "Mrs Nicole Wuth" in names
+
+
+def test_same_booking_ref_different_legs_not_deduped(client, session):
+    """Multiple flights sharing one booking_ref (multi-leg itinerary) must not be collapsed."""
+    trip, stop, stops = _trip(client, session)
+
+    # QR40 and QR900 share booking ref FVLYWE — should produce 2 separate creates
+    parsed = {"items": [
+        {"kind": "flight", "name": "Paris → Doha",
+         "matched_stop_id": stop["id"], "confidence": "high", "match_reason": "",
+         "details": {"flight_number": "QR 40", "depart_time": "2026-08-19T16:25",
+                     "origin": "CDG", "destination": "DOH", "booking_ref": "FVLYWE",
+                     "passengers": [{"name": "Mrs Nicole Wuth", "seat": "12E"}]}},
+        {"kind": "flight", "name": "Doha → Perth",
+         "matched_stop_id": stop["id"], "confidence": "high", "match_reason": "",
+         "details": {"flight_number": "QR 900", "depart_time": "2026-08-20T02:30",
+                     "origin": "DOH", "destination": "PER", "booking_ref": "FVLYWE",
+                     "passengers": [{"name": "Mrs Nicole Wuth", "seat": "03E"}]}},
+    ]}
+    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    assert len(pcs) == 2, f"Expected 2 pending changes, got {len(pcs)}"
+    flight_numbers = {(pc.payload or {}).get("details", {}).get("flight_number") for pc in pcs}
+    assert "QR 40" in flight_numbers
+    assert "QR 900" in flight_numbers
