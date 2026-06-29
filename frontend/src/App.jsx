@@ -12,6 +12,7 @@ import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf, getPending } from './api.js'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale } from './settings.js'
+import ItemEditModal from './components/ItemEditModal.jsx'
 
 // Apply saved font scale before first render
 applyFontScale()
@@ -52,6 +53,8 @@ function AppShell({ user, onLogout }) {
   const [exporting, setExporting] = useState(false)
   const [showImports, setShowImports] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
+  const [tripStops, setTripStops] = useState([])
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
   const online = useOnline()
 
   function refreshPending() {
@@ -77,8 +80,8 @@ function AppShell({ user, onLogout }) {
 
   const [userChoseList, setUserChoseList] = useState(false)
 
-  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setStats(null) }
-  function goBack() { setSelectedTrip(null); setEditing(false); setStats(null); setUserChoseList(true) }
+  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setStats(null); setTripStops([]) }
+  function goBack() { setSelectedTrip(null); setEditing(false); setStats(null); setUserChoseList(true); setTripStops([]) }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
@@ -151,13 +154,22 @@ function AppShell({ user, onLogout }) {
                 trip={selectedTrip}
                 onTripRenamed={name => setSelectedTrip(t => ({ ...t, name }))}
               />
-            : <TripTimeline tripId={selectedTrip.id} onStats={setStats} />
+            : <TripTimeline tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops} />
           : <TripList onOpen={openTrip} skipAutoOpen={userChoseList} />
         }
       </main>
 
       <footer className="w-full px-4 sm:px-8 lg:px-16 pb-8 pt-4 flex flex-col items-center gap-4">
         <div className="flex items-center gap-3 flex-wrap justify-center">
+          {selectedTrip && !editing && online && canEdit(selectedTrip.role) && tripStops.length > 0 && (
+            <button
+              onClick={() => setShowQuickAdd(true)}
+              style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              + Add item
+            </button>
+          )}
           {selectedTrip && online && canEdit(selectedTrip.role) && (
             <button
               onClick={() => setEditing(e => !e)}
@@ -220,6 +232,16 @@ function AppShell({ user, onLogout }) {
           <span title="Loaded client build">build {typeof __BUILD_SHA__ !== 'undefined' ? __BUILD_SHA__ : 'dev'}</span>
         </div>
       </footer>
+
+      {showQuickAdd && (
+        <ItemEditModal
+          item={{ stop_id: tripStops[0]?.id, kind: 'activity', name: '', status: 'pending', details: {} }}
+          isNew
+          stops={tripStops}
+          onSave={() => setShowQuickAdd(false)}
+          onClose={() => setShowQuickAdd(false)}
+        />
+      )}
     </div>
   )
 }

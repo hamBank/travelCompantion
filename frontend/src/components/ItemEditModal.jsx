@@ -1380,7 +1380,7 @@ function FoodForm({ core, details, setCore, setDetails }) {
   )
 }
 
-export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew = false }) {
+export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew = false, stops: stopsProp }) {
   const [core, setCore] = useState({
     kind: item.kind ?? 'activity',
     name: item.name ?? '',
@@ -1396,7 +1396,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [stops, setStops] = useState([])
-  const [targetStop, setTargetStop] = useState(item.stop_id)
+  const [targetStop, setTargetStop] = useState(item.stop_id ?? (stopsProp?.[0]?.id ?? null))
 
   useEffect(() => {
     if (!isNew && item.id) getItemStops(item.id).then(setStops).catch(() => {})
@@ -1486,7 +1486,9 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
 
       let updated
       if (isNew) {
-        updated = await createItem(item.stop_id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
+        const stopId = targetStop ?? item.stop_id
+        if (!stopId) { setError('Choose a stop first'); setSaving(false); return }
+        updated = await createItem(stopId, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
       } else {
         updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
         if (targetStop && targetStop !== item.stop_id) {
@@ -1555,6 +1557,25 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border)', maxHeight: '90vh' }}
         className="w-full max-w-lg rounded-2xl flex flex-col overflow-hidden"
       >
+        {/* Stop picker — shown when creating from the global add button */}
+        {isNew && stopsProp && stopsProp.length > 0 && (
+          <div style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }} className="px-5 py-2 flex items-center gap-2">
+            <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0">Add to</span>
+            <select
+              value={targetStop ?? ''}
+              onChange={e => setTargetStop(Number(e.target.value))}
+              style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+              className="flex-1 rounded-lg px-2 py-1 text-xs outline-none focus:border-[var(--accent)]"
+            >
+              {stopsProp.map(s => (
+                <option key={s.id} value={s.id} style={{ background: 'var(--modal-bg)', color: 'var(--text)' }}>
+                  {s.location}{s.arrive ? ` · ${fmtDay(s.arrive)}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Header */}
         <div style={{ borderBottom: '1px solid var(--border)' }} className="flex items-center gap-3 px-5 py-4">
           <select

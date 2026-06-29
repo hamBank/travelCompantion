@@ -7,7 +7,7 @@ import { RoleContext, canEdit } from '../roles.js'
 import { useShowInbound, useHideStopFrames } from '../settings.js'
 import { fmtDay } from '../dates.js'
 
-export default function TripTimeline({ tripId, onStats }) {
+export default function TripTimeline({ tripId, onStats, onStops }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -28,8 +28,9 @@ export default function TripTimeline({ tripId, onStats }) {
         total: timeline.stops.length,
         completed: timeline.stops.filter(s => s.status === 'completed').length,
       })
+      onStops?.(timeline.stops)
     }
-  }, [timeline, onStats])
+  }, [timeline, onStats, onStops])
 
   async function load() {
     setLoading(true)
