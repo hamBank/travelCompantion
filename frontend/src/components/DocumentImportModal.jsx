@@ -4,6 +4,7 @@ import { parseDocument } from '../api.js'
 export default function DocumentImportModal({ tripId, onClose, onParsed }) {
   const [stage, setStage]     = useState('pick')   // pick | parsing
   const [pending, setPending] = useState([])        // selected but not yet submitted
+  const [force, setForce]     = useState(false)
   const [error, setError]     = useState(null)
 
   function handleSelect(e) {
@@ -25,7 +26,7 @@ export default function DocumentImportModal({ tripId, onClose, onParsed }) {
     if (!pending.length) return
     setError(null); setStage('parsing')
     try {
-      const result = await parseDocument(tripId, pending)
+      const result = await parseDocument(tripId, pending, { force })
       onParsed?.(result)
     } catch (err) {
       setError(err.message)
@@ -93,13 +94,26 @@ export default function DocumentImportModal({ tripId, onClose, onParsed }) {
             )}
 
             {pending.length > 0 && (
-              <button
-                onClick={submit}
-                style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
-                className="w-full py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
-              >
-                Process {pending.length} file{pending.length !== 1 ? 's' : ''}
-              </button>
+              <div className="space-y-2">
+                <button
+                  onClick={submit}
+                  style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+                  className="w-full py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+                >
+                  Process {pending.length} file{pending.length !== 1 ? 's' : ''}
+                </button>
+                <label className="flex items-center gap-2 cursor-pointer select-none justify-center">
+                  <input
+                    type="checkbox"
+                    checked={force}
+                    onChange={e => setForce(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span style={{ color: 'var(--text-faint)' }} className="text-xs">
+                    Re-process even if already imported
+                  </span>
+                </label>
+              </div>
             )}
           </>
         )}

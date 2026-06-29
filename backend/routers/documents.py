@@ -1173,6 +1173,7 @@ def _merge_document_sources(file_tuples: list) -> tuple:
 async def parse_document(
     trip_id: int,
     files: list[UploadFile] = File(...),
+    force: bool = False,
     session: Session = Depends(get_session),
     user: dict = Depends(get_current_user),
 ):
@@ -1192,7 +1193,7 @@ async def parse_document(
     # Check whether we've already processed these exact bytes for this trip.
     raw_bytes = [raw for _, _, raw in file_tuples]
     cache_key  = _doc_cache_key(trip_id, raw_bytes)
-    cached     = _check_doc_cache(session, cache_key)
+    cached     = None if force else _check_doc_cache(session, cache_key)
     if cached:
         raise HTTPException(
             status_code=422,

@@ -135,15 +135,16 @@ export async function uploadGpx(id, file) {
   return body
 }
 
-export async function parseDocument(tripId, files) {
+export async function parseDocument(tripId, files, { force = false } = {}) {
   const token = getToken()
   const form = new FormData()
   const fileList = Array.isArray(files) ? files : [files]
   for (const f of fileList) form.append('files', f)
-  const r = await fetch(`/trips/${tripId}/parse-document`, {
-    method: 'POST',
+  const url = `/trips/${tripId}/parse-document` + (force ? '?force=true' : '')
+  const r = await fetch(url, {
+    method:  'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
+    body:    form,
   })
   const text = await r.text()
   let body
