@@ -8,10 +8,10 @@
  */
 
 const CARRY_ON_RE  = /carry.?on|cabin bag|hand luggage|personal item/i
-const MULTI_RE     = /(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*kg/i   // "2 x 23kg"
-const QUANTITY_RE  = /^(\d+)\s*[x×]/i                           // "2x anything"
-const PIECES_RE    = /^(\d+)\s*(?:bag|piece|item)s?/i           // "2 bags"
-const WEIGHT_RE    = /(\d+(?:\.\d+)?)\s*kg/i
+const MULTI_RE     = /(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*k(?:g\b)?/i   // "2 x 23kg" or "2 x 23K"
+const QUANTITY_RE  = /^(\d+)\s*[x×]/i                                   // "2x anything"
+const PIECES_RE    = /^(\d+)\s*(?:bag|piece|item)s?/i                   // "2 bags"
+const WEIGHT_RE    = /(\d+(?:\.\d+)?)\s*k(?:g\b)?/i                     // "23kg" or "23K"
 
 /**
  * Parse a single baggage string.

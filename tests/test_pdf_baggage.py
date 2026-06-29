@@ -14,6 +14,14 @@ class TestParseBaggage:
         bags, kg, carry = _parse_baggage("23 kg")
         assert bags == 1 and kg == 23.0 and carry is False
 
+    def test_airline_K_shorthand(self):
+        bags, kg, carry = _parse_baggage("40K")
+        assert bags == 1 and kg == 40.0 and carry is False
+
+    def test_multiplied_bags_K(self):
+        bags, kg, carry = _parse_baggage("2 x 23K")
+        assert bags == 2 and kg == 23.0 and carry is False
+
     def test_multiplied_bags_kg(self):
         bags, kg, carry = _parse_baggage("2 x 23kg")
         assert bags == 2 and kg == 23.0 and carry is False

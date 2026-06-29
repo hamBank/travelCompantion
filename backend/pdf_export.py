@@ -92,8 +92,8 @@ def _labelize(key):
 # ── Baggage parsing ────────────────────────────────────────────────────────────
 
 _CARRY_ON_RE = re.compile(r'carry.?on|cabin bag|hand luggage|personal item', re.I)
-_WEIGHT_RE   = re.compile(r'(\d+(?:\.\d+)?)\s*kg', re.I)
-_MULTI_RE    = re.compile(r'(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*kg', re.I)
+_WEIGHT_RE   = re.compile(r'(\d+(?:\.\d+)?)\s*k(?:g\b)?', re.I)   # "23kg" or "23K"
+_MULTI_RE    = re.compile(r'(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*k(?:g\b)?', re.I)
 _PIECES_RE   = re.compile(r'(\d+)\s*(?:bag|piece|item)s?', re.I)
 
 

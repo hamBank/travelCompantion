@@ -14,6 +14,9 @@ describe('parseBaggage', () => {
   it('handles empty string', () => expect(parseBaggage('')).toMatchObject({ holdBags: 0, holdKg: null, carryOn: false }))
   it('handles null', () => expect(parseBaggage(null)).toMatchObject({ holdBags: 0, holdKg: null, carryOn: false }))
   it('parses "2x checked bag max 32kg"', () => expect(parseBaggage('2x checked bag max 32kg')).toMatchObject({ holdBags: 2, holdKg: 32 }))
+  // Airline shorthand: K instead of kg
+  it('parses "40K" (airline shorthand)', () => expect(parseBaggage('40K')).toMatchObject({ holdBags: 1, holdKg: 40, carryOn: false }))
+  it('parses "2 x 23K"', () => expect(parseBaggage('2 x 23K')).toMatchObject({ holdBags: 2, holdKg: 23 }))
 })
 
 describe('aggregateBaggage', () => {
