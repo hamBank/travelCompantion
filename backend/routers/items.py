@@ -1208,7 +1208,7 @@ def wash_lookup(item_id: int, session: Session = Depends(get_session),
             det = _places_detail(pid)
             oh  = det.get("opening_hours", {})
             wt  = oh.get("weekday_text", [])
-            hours = "; ".join(wt) if wt else None
+            hours = wt if wt else None   # array — filtered at display time to stay days
             for period in oh.get("periods", []):
                 if period.get("open", {}).get("time") == "0000" and "close" not in period:
                     open24 = True

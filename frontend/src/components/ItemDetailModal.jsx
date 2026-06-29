@@ -5,6 +5,7 @@ import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
 import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
+import { relevantDayIndices, filterHoursByDays } from '../washHours.js'
 import { fmtDayTime } from '../dates.js'
 
 const fmtDateTime = fmtDayTime
@@ -135,14 +136,17 @@ function AccommodationBody({ item }) {
           {d.hotel_laundry && (
             <div style={{ color: 'var(--success)' }} className="text-xs mb-1">✓ Hotel offers laundry service</div>
           )}
-          {Array.isArray(d.washing) && d.washing.map((e, i) => <WashingEntry key={i} e={e} />)}
+          {Array.isArray(d.washing) && (() => {
+            const rdays = relevantDayIndices(d.checkin || item.scheduled_at, d.checkout)
+            return d.washing.map((e, i) => <WashingEntry key={i} e={e} relevantDays={rdays} />)
+          })()}
         </div>
       )}
     </>
   )
 }
 
-function WashingEntry({ e }) {
+function WashingEntry({ e, relevantDays }) {
   const chips = [
     e.open_24hrs && '24hr',
     e.cash_card,
@@ -171,7 +175,14 @@ function WashingEntry({ e }) {
         )}
       </div>
       {e.address && <div style={{ color: 'var(--text-faint)' }} className="text-xs mt-0.5">{e.address}</div>}
-      {e.hours && <div style={{ color: 'var(--text-muted)' }} className="text-xs mt-0.5">{e.hours}</div>}
+      {(() => {
+        const filtered = filterHoursByDays(e.hours, relevantDays)
+        if (!filtered) return null
+        const lines = Array.isArray(filtered) ? filtered : [filtered]
+        return lines.map((line, i) => (
+          <div key={i} style={{ color: 'var(--text-muted)' }} className="text-xs mt-0.5">{line}</div>
+        ))
+      })()}
       {chips.length > 0 && (
         <div className="flex gap-1 flex-wrap mt-1">
           {chips.map((c, i) => (
