@@ -760,19 +760,30 @@ def _match_existing(session, trip_id, kind, details, all_stop_ids=None,
 _PASSENGER_FIELDS = {"passengers", "participants"}
 
 
-def _norm_name(s: str) -> str:
-    """Normalise a passenger name for matching: strip title, reduce to first + last.
+_TITLE_RE = re.compile(r'\b(?:Mr|Mrs|Ms|Dr|Miss|Mx|Master)\.?\b', re.IGNORECASE)
 
-    Middle names are dropped so 'Nicole Tracy Wuth' and 'Nicole Wuth' match,
-    preventing duplicate passenger entries across imports that use different
-    name forms from the same booking.
+
+def _norm_name(s: str) -> str:
+    """Normalise a passenger name for matching.
+
+    Handles both 'Firstname Lastname' and surname-first 'Lastname Firstname Title'
+    formats by:
+      1. Stripping titles anywhere in the string
+      2. Reducing to exactly two tokens (dropping middle names)
+      3. Sorting the two tokens so order doesn't affect the match key
+
+    'Mr Antony Wuth', 'Wuth Antony Mr', 'Antony Wuth' all produce 'antony wuth'.
     """
-    s = re.sub(r'^(?:Mr|Mrs|Ms|Dr|Miss|Mx|Master)\.?\s+', '', str(s).strip(), flags=re.IGNORECASE)
+    s = _TITLE_RE.sub('', str(s).strip())
     s = re.sub(r'\s+', ' ', s).lower().strip()
-    parts = s.split()
-    if len(parts) > 2:
-        return parts[0] + ' ' + parts[-1]   # first + last only
-    return s
+    parts = [p for p in s.split() if p]
+    if not parts:
+        return s
+    if len(parts) == 1:
+        return parts[0]
+    # Reduce to first + last, then sort so name order doesn't matter
+    first, last = parts[0], parts[-1]
+    return ' '.join(sorted([first, last]))
 
 
 def _merge_passengers_array(existing: list, new: list) -> list:

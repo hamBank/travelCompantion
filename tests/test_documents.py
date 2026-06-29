@@ -238,3 +238,24 @@ def test_norm_terminal_keeps_valid_designators():
     # Short non-IATA values that look like terminal letters
     assert _norm_terminal("F") != ""   # could be a terminal letter
     assert _norm_terminal("2E") != ""  # Paris CDG Terminal 2E
+
+
+# ── _norm_name ─────────────────────────────────────────────────────────────────
+from backend.routers.documents import _norm_name
+
+def test_norm_name_strips_leading_title():
+    assert _norm_name("Mr Antony Wuth") == _norm_name("Antony Wuth")
+
+def test_norm_name_strips_trailing_title():
+    # Surname-first booking format: "Wuth Antony Mr"
+    assert _norm_name("Wuth Antony Mr") == _norm_name("Mr Antony Wuth")
+
+def test_norm_name_surname_first_matches_given_first():
+    assert _norm_name("Wuth Antony Mr") == _norm_name("Mr Antony Wuth")
+    assert _norm_name("Wuth Nicole Mrs") == _norm_name("Mrs Nicole Wuth")
+
+def test_norm_name_middle_name_ignored():
+    assert _norm_name("Mr Antony John Wuth") == _norm_name("Mr Antony Wuth")
+
+def test_norm_name_case_insensitive():
+    assert _norm_name("WUTH ANTONY MR") == _norm_name("mr antony wuth")
