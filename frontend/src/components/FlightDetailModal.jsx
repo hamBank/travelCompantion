@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { checkFlight, updateItem } from '../api.js'
+import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { aggregateBaggage } from '../baggage.js'
 import { airportName, airportLabel } from '../airportNames.js'
 import DetailActions from './DetailActions.jsx'
@@ -334,6 +335,22 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             {!Array.isArray(d.passengers) && <Row label="Loyalty" value={d.loyalty_info} />}
             <Row label="Distance"      value={d.distance} />
             <Row label="Notes"         value={item.notes} />
+            {(() => {
+              const hours = parseCheckinWindow(d.checkin_window)
+              const openAt = calcCheckinTime(d.depart_time, hours)
+              if (!openAt) return null
+              const label = `Check-in opens ${fmtDateTime(openAt)}`
+              return (
+                <Row label="Online check-in">
+                  {d.checkin_url
+                    ? <a href={d.checkin_url} target="_blank" rel="noreferrer"
+                         style={{ color: 'var(--accent)' }} className="hover:underline break-all">
+                        {label}
+                      </a>
+                    : label}
+                </Row>
+              )
+            })()}
           </div>
 
           {(d.booking_ref || item.link || item.cost || d.booking_airline || d.booking_phone) && (

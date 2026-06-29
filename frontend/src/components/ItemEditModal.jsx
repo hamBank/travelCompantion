@@ -568,6 +568,12 @@ function FlightForm({ core, details, setCore, setDetails }) {
           <Field label="Phone" value={d('booking_phone')} onChange={v => setD('booking_phone', v)} placeholder="+61 2 9691 3636" />
         </div>
       </SectionBox>
+      <SectionBox label="Online check-in">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Window before departure" value={d('checkin_window')} onChange={v => setD('checkin_window', v)} placeholder="48h" />
+          <Field label="Check-in URL" value={d('checkin_url')} onChange={v => setD('checkin_url', v)} placeholder="https://…" />
+        </div>
+      </SectionBox>
       <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="…" />
     </div>
   )
