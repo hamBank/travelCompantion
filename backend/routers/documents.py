@@ -777,7 +777,7 @@ def _compute_diff(existing, item: dict) -> dict:
     new_d = item.get("details") or {}
     # Detail fields where the existing value is trusted over re-imports:
     # location is often manually curated; description is LLM-generated prose.
-    _KEEP_EXISTING = {"description", "location"}
+    _KEEP_EXISTING = {"description", "location", "start_location", "end_location"}
 
     for k, nv in new_d.items():
         if nv in (None, "", []):
