@@ -142,6 +142,17 @@ segment or booking:
 - If the document truly describes only one thing, return a single-element list.
 Do NOT merge two flights into one item, and do NOT invent items that aren't in the document.
 
+CONNECTION BOOKING RULES (critical — apply carefully):
+- When a booking lists multiple flight numbers for one route (e.g. "AY132, AY1571" for \
+Singapore → Paris), these are CONNECTING flights. Extract SEPARATE items — one per flight number — \
+each with its own correct origin and destination for that leg (e.g. AY132: SIN→HEL, AY1571: HEL→CDG).
+- NEVER set the destination of the first leg to the final destination of the connection.
+- Seat info formatted as "SIN-HEL: 3H 3D / HEL-CDG: 2C 2A" means per-segment assignments: \
+for the SIN→HEL leg passenger seats are 3H and 3D; for the HEL→CDG leg they are 2C and 2A. \
+Assign each seat to the correct passenger on the correct leg.
+- Overall journey baggage (e.g. "4 x checked bag") for a connection means each passenger gets \
+half the total per leg (or the per-passenger allowance shown). Apply it to each flight segment's passengers.
+
 The trip has these stops (match each item to the most likely one by location AND date):
 {json.dumps(stop_lines, indent=2)}
 
@@ -799,7 +810,11 @@ def _compute_diff(existing, item: dict) -> dict:
     new_d = item.get("details") or {}
     # Detail fields where the existing value is trusted over re-imports:
     # location is often manually curated; description is LLM-generated prose.
-    _KEEP_EXISTING = {"description", "location", "start_location", "end_location"}
+    # origin/destination are defining identifiers for transport legs — if already
+    # set they should not be overwritten by a connection booking that shows the
+    # overall SIN→CDG route rather than the individual SIN→HEL/HEL→CDG legs.
+    _KEEP_EXISTING = {"description", "location", "start_location", "end_location",
+                      "origin", "destination"}
 
     for k, nv in new_d.items():
         if nv in (None, "", []):
