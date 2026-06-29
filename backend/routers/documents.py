@@ -775,10 +775,16 @@ def _compute_diff(existing, item: dict) -> dict:
     before, after = {}, {}
     old_d = existing.details or {}
     new_d = item.get("details") or {}
+    # Detail fields where the existing value is trusted over re-imports:
+    # location is often manually curated; description is LLM-generated prose.
+    _KEEP_EXISTING = {"description", "location"}
+
     for k, nv in new_d.items():
         if nv in (None, "", []):
             continue
         ov = old_d.get(k)
+        if k in _KEEP_EXISTING and ov:
+            continue
         # Normalise both sides so formatting differences don't generate noise.
         norm = _NORMALIZERS.get(k)
         ov_cmp = norm(ov) if (norm and ov) else ov
