@@ -629,14 +629,20 @@ const KIND_COLOR = {
   hire:          'var(--kind-hire)',
 }
 
-export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
+export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNavModal = false }) {
   const [showHistory, setShowHistory] = useState(false)
 
   useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose() }
+    function onKey(e) {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'j' || e.key === 'k') {
+        if (!isNavModal) onClose()
+        window.dispatchEvent(new CustomEvent('modalNav', { detail: { itemId: item.id, direction: e.key === 'j' ? 'next' : 'prev' } }))
+      }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, item.id, isNavModal])
 
   const kindColor = KIND_COLOR[item.kind] ?? 'var(--text-faint)'
 

@@ -338,7 +338,7 @@ function RailCheckPanel({ item, onItemUpdate }) {
   )
 }
 
-export default function RailDetailModal({ item: initialItem, onClose, onSave, onEdit, onDeleted }) {
+export default function RailDetailModal({ item: initialItem, onClose, onSave, onEdit, onDeleted, isNavModal = false }) {
   const [item, setItem] = useState(initialItem)
   const [showHistory, setShowHistory] = useState(false)
   const d = item.details ?? {}
@@ -349,10 +349,16 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
   }
 
   useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose() }
+    function onKey(e) {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'j' || e.key === 'k') {
+        if (!isNavModal) onClose()
+        window.dispatchEvent(new CustomEvent('modalNav', { detail: { itemId: item.id, direction: e.key === 'j' ? 'next' : 'prev' } }))
+      }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, item.id, isNavModal])
 
   const route = [d.origin, d.destination].filter(Boolean).join(' → ')
   const trainLabel = [d.train_number, d.operator].filter(Boolean).join(' · ')
