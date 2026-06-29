@@ -335,7 +335,7 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
             onClick={async () => {
               setWashing(true); setWashMsg(null)
               try {
-                const updated = await washLookup(itemId)
+                const updated = await washLookup(itemId, details.location || '')
                 const count = (updated.details?.washing ?? []).length
                 setD('washing', updated.details?.washing ?? [])
                 setWashMsg({ text: `${count} laundromat${count !== 1 ? 's' : ''} found nearby`, color: 'var(--success)' })

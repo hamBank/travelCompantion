@@ -1144,7 +1144,7 @@ def _claude_enhance_washing(entries: list, city: str = "") -> list:
 
 
 @router.post("/items/{item_id}/wash-lookup", include_in_schema=False, response_model=ItemRead)
-def wash_lookup(item_id: int, session: Session = Depends(get_session),
+def wash_lookup(item_id: int, address: str = "", session: Session = Depends(get_session),
                 user: dict = Depends(get_current_user)):
     """Find nearby laundry facilities for an accommodation item and store them.
 
@@ -1163,13 +1163,21 @@ def wash_lookup(item_id: int, session: Session = Depends(get_session),
     d = item.details or {}
 
     # Resolve coordinates — most-specific source first:
+    # 0. address query param (caller passes the unsaved form value)
     # 1. Explicit lat/lng on the item (most accurate)
-    # 2. Geocode the hotel's street address (much better than stop coords)
+    # 2. Geocode the hotel's street address from DB
     # 3. Stop lat/lng as a city-level fallback
     # 4. Geocode from hotel name as last resort
     lat = lng = None
 
+    if address.strip():
+        coords = _nominatim_geocode(address.strip())
+        if coords:
+            lat, lng = coords
+
     for lk, gk in (("lat", "lng"), ("latitude", "longitude")):
+        if lat is not None:
+            break
         if d.get(lk) and d.get(gk):
             try:
                 lat, lng = float(d[lk]), float(d[gk])

@@ -105,7 +105,10 @@ export const updateItemStatus = (id, status) => updateItem(id, { status })
 export const updateStopStatus = (id, status) => updateStop(id, { status })
 
 export const enrichItem    = (id)   => req(`/items/${id}/enrich`)
-export const washLookup    = (id)   => req(`/items/${id}/wash-lookup`, { method: 'POST' })
+export const washLookup    = (id, address = '') => req(
+  `/items/${id}/wash-lookup${address ? '?address=' + encodeURIComponent(address) : ''}`,
+  { method: 'POST' }
+)
 export const checkFlight   = (id)   => req(`/items/${id}/flight-check`)
 export const checkRail     = (id)   => req(`/items/${id}/rail-check`)
 export const lookupAirline = (iata) => req(`/flights/airline-lookup?iata=${encodeURIComponent(iata)}`)

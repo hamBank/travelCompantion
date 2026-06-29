@@ -83,3 +83,33 @@ def test_wash_lookup_endpoint_exists(client, session):
     r = client.post(f"/items/{item['id']}/wash-lookup")
     # 503 (no API key) is fine — 404 is not
     assert r.status_code != 404
+
+
+def test_wash_lookup_accepts_address_param(client, session, monkeypatch):
+    """address query param bypasses DB location and is used for geocoding."""
+    import backend.routers.items as items_mod
+    monkeypatch.setattr(items_mod, "_PLACES_KEY", "fake-key")
+
+    # Mock _nominatim_geocode to track what address is requested
+    captured = {}
+    def fake_geocode(q):
+        captured['q'] = q
+        return (48.8868, 2.3410)  # Montmartre coords
+    monkeypatch.setattr(items_mod, "_nominatim_geocode", fake_geocode)
+
+    # Mock Places API to return empty (we only care about geocoding)
+    monkeypatch.setattr(items_mod, "_places_nearby_laundry", lambda *a, **k: [])
+    monkeypatch.setattr(items_mod, "_claude_enhance_washing", lambda e, **k: e)
+
+    trip = client.post("/trips/", json={"name": "T"}).json()
+    stop = client.post(f"/trips/{trip['id']}/stops",
+                       json={"location": "Paris", "status": "planned"}).json()
+    item = client.post(f"/stops/{stop['id']}/items",
+                       json={"kind": "accommodation", "name": "Old Hotel",
+                             "status": "pending",
+                             "details": {"location": "Old stale address, Paris"}}).json()
+
+    # Pass a DIFFERENT address via query param — should use this, not the DB one
+    r = client.post(f"/items/{item['id']}/wash-lookup?address=16+Rue+Tholoz%C3%A9%2C+75018+Paris")
+    assert r.status_code == 200
+    assert captured.get('q') == "16 Rue Tholozé, 75018 Paris"
