@@ -169,7 +169,7 @@ For `details`, use these snake_case keys per kind (include only those you can fi
 {hints}
 
 Rules (apply per item):
-- Times are LOCAL wall-clock, formatted "YYYY-MM-DDTHH:MM" (no timezone suffix). For flights/rail, depart_time uses the origin's local time and arrive_time the destination's local time.
+- Times are LOCAL wall-clock, formatted "YYYY-MM-DDTHH:MM" (no timezone suffix). For flights/rail, depart_time uses the origin's local time and arrive_time the destination's local time. ONLY include times that appear EXPLICITLY in the document — do NOT calculate or estimate segment times from overall journey durations or connection totals.
 - depart_tz / arrive_tz must be fixed UTC-offset strings in the form "GMT+8", "GMT-5", or "GMT+5:30" — the offset actually in effect at that place on that date. Never use city names or IANA zone names (no "Asia/Singapore", no "Helsinki").
 - `scheduled_at` is the item's primary time: departure for transport, check-in for accommodation, start time otherwise. Same format, or null if unknown.
 - `name` is a short human label. For flights and rail: "Origin City → Destination City" using city names only — no airport or station codes, e.g. "Singapore → Helsinki" not "Singapore SIN → Helsinki HEL". For accommodation: the property name. For other items: a brief descriptive label.
@@ -819,11 +819,12 @@ def _compute_diff(existing, item: dict) -> dict:
     new_d = item.get("details") or {}
     # Detail fields where the existing value is trusted over re-imports:
     # location is often manually curated; description is LLM-generated prose.
-    # origin/destination are defining identifiers for transport legs — if already
-    # set they should not be overwritten by a connection booking that shows the
-    # overall SIN→CDG route rather than the individual SIN→HEL/HEL→CDG legs.
+    # These fields, once set from a verified source (flight check, prior import),
+    # should not be overwritten by a booking confirmation that may only show
+    # overall journey times rather than individual segment times.
     _KEEP_EXISTING = {"description", "location", "start_location", "end_location",
-                      "origin", "destination"}
+                      "origin", "destination", "depart_time", "arrive_time",
+                      "depart_tz", "arrive_tz"}
 
     for k, nv in new_d.items():
         if nv in (None, "", []):
