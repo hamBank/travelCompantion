@@ -163,18 +163,10 @@ def _frontend_sha():
     except Exception:
         return 'unknown'
 
-def _data_version() -> int:
-    """Millisecond mtime of travel.db — changes on any write, zero if unavailable."""
-    db_path = os.path.join(os.path.dirname(__file__), "..", "travel.db")
-    try:
-        return int(os.path.getmtime(db_path) * 1000)
-    except OSError:
-        return 0
-
-
 @app.get("/health")
 def health():
-    return {"status": "ok", "sha": _frontend_sha(), "data_version": _data_version()}
+    from .database import get_data_version
+    return {"status": "ok", "sha": _frontend_sha(), "data_version": get_data_version()}
 
 
 @app.get("/currency/convert")

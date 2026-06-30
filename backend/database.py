@@ -1,9 +1,46 @@
+import os
+import time
 from sqlmodel import create_engine, Session, SQLModel
-from sqlalchemy import text
+from sqlalchemy import text, event
+from sqlalchemy.orm import Session as _SASession
 
-DATABASE_URL = "sqlite:///./travel.db"
+# Default to the local SQLite file; override with DATABASE_URL in production
+# (e.g. postgresql+psycopg://user:pass@host/travelcomp).
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./travel.db")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 30})
+
+def _connect_args(url: str) -> dict:
+    """Driver connect_args that only make sense for SQLite.
+
+    check_same_thread/timeout are SQLite-specific; passing them to psycopg
+    raises. Returns an empty dict for any non-sqlite URL.
+    """
+    if url.startswith("sqlite"):
+        return {"check_same_thread": False, "timeout": 30}
+    return {}
+
+
+engine = create_engine(DATABASE_URL, connect_args=_connect_args(DATABASE_URL))
+
+
+# ── data_version: a process-wide counter that advances on every write ──────────
+# Backs the cross-device sync poller (see /health). Seeded from the wall clock so
+# it keeps moving forward across process restarts, then bumped by the after_flush
+# listener below whenever a session flushes inserts/updates/deletes. This is
+# storage-agnostic — it works identically on SQLite and Postgres because it
+# observes ORM activity rather than a database file's mtime.
+_DATA_VERSION = int(time.time() * 1000)
+
+
+def get_data_version() -> int:
+    return _DATA_VERSION
+
+
+@event.listens_for(_SASession, "after_flush")
+def _bump_data_version(session, flush_context):
+    if session.new or session.dirty or session.deleted:
+        global _DATA_VERSION
+        _DATA_VERSION += 1
 
 
 def get_session():
@@ -12,26 +49,41 @@ def get_session():
 
 
 def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
-    _migrate()
+    # On SQLite (dev/test) the app owns schema creation for convenience.
+    # On Postgres, Alembic owns the schema — `alembic upgrade head` runs at
+    # deploy time before the service starts, so we must NOT create_all here or
+    # it would collide with Alembic's own CREATE TABLEs. Data backfills are
+    # idempotent and run on both.
+    if DATABASE_URL.startswith("sqlite"):
+        SQLModel.metadata.create_all(engine)
+        _migrate()
     _backfill_accommodations()
     _backfill_trip_ownership()
 
 
 def _migrate():
-    """Apply additive schema changes to existing databases."""
+    """Apply additive schema changes to existing databases.
+
+    Each statement runs in its own connection/transaction: on Postgres a failed
+    ALTER (column already exists) aborts the current transaction, so a shared
+    connection would poison every subsequent statement. A fresh connection per
+    statement keeps the "try, ignore-if-exists" pattern working on both engines.
+
+    NOTE: new schema changes should be added as Alembic revisions, not here.
+    This remains only to carry pre-Alembic databases forward.
+    """
     new_columns = [
         "ALTER TABLE trip ADD COLUMN start_date DATETIME",
         "ALTER TABLE trip ADD COLUMN end_date DATETIME",
         "ALTER TABLE itineraryitem ADD COLUMN details TEXT",
     ]
-    with engine.connect() as conn:
-        for sql in new_columns:
-            try:
+    for sql in new_columns:
+        try:
+            with engine.connect() as conn:
                 conn.execute(text(sql))
                 conn.commit()
-            except Exception:
-                pass  # column already exists
+        except Exception:
+            pass  # column already exists
 
 
 def _backfill_accommodations():

@@ -10,6 +10,19 @@ python -m uvicorn backend.main:app --reload
 # → http://localhost:8000
 ```
 
+## Database & schema migrations
+`DATABASE_URL` selects the backend (defaults to `sqlite:///./travel.db`; Postgres
+in prod). Schema is owned by **Alembic** — the models in `backend/models.py` are
+the source of truth. After any model change:
+```bash
+alembic revision --autogenerate -m "describe change"   # review the file
+alembic upgrade head
+python -m pytest tests/test_alembic_drift.py            # must stay green
+```
+The URL comes from `DATABASE_URL` via `alembic/env.py` (not alembic.ini). See
+`docs/postgres-migration.md` for the full runbook. Tests use `create_all()` for
+speed; the drift guard keeps that in sync with the migrations.
+
 ## Frontend build
 The app bakes the current git SHA into the JS bundle so the SHA health-poller can
 detect stale clients. The build MUST run after the source commit so it captures the

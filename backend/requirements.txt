@@ -15,3 +15,5 @@ reportlab>=4.0.0
 tzdata>=2024.1
 prometheus-client>=0.20.0
 prometheus-fastapi-instrumentator>=7.0.0
+alembic>=1.13.0
+psycopg[binary]>=3.2.0
