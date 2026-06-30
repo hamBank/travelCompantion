@@ -66,6 +66,32 @@ def test_cannot_edit_or_delete_another_users_personal_item(client, session):
     assert client.delete(f"/packing/{other.id}").status_code == 404
 
 
+def test_nested_bags_and_cycle_protection(client):
+    tid = _trip(client)
+    outer = client.post(f"/trips/{tid}/bags", json={"name": "Suitcase"}).json()
+    inner = client.post(f"/trips/{tid}/bags", json={"name": "Cube", "parent_id": outer["id"]}).json()
+    assert inner["parent_id"] == outer["id"]
+
+    # A bag can't be its own parent
+    assert client.patch(f"/bags/{outer['id']}", json={"parent_id": outer["id"]}).status_code == 400
+    # Can't nest a bag inside its own descendant (would create a cycle)
+    assert client.patch(f"/bags/{outer['id']}", json={"parent_id": inner["id"]}).status_code == 400
+
+    # Clearing the parent is allowed
+    assert client.patch(f"/bags/{inner['id']}", json={"parent_id": None}).json()["parent_id"] is None
+
+
+def test_deleting_parent_promotes_children(client):
+    tid = _trip(client)
+    outer = client.post(f"/trips/{tid}/bags", json={"name": "Suitcase"}).json()
+    inner = client.post(f"/trips/{tid}/bags", json={"name": "Cube", "parent_id": outer["id"]}).json()
+
+    assert client.delete(f"/bags/{outer['id']}").status_code == 204
+    bags = {b["id"]: b for b in client.get(f"/trips/{tid}/packing").json()["bags"]}
+    assert outer["id"] not in bags
+    assert bags[inner["id"]]["parent_id"] is None   # promoted to top level
+
+
 def test_bag_crud_and_unassign_on_delete(client, session):
     tid = _trip(client)
     bag = client.post(f"/trips/{tid}/bags", json={"name": "Carry-on"}).json()

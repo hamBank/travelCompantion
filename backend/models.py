@@ -296,10 +296,12 @@ class UserImportToken(SQLModel, table=True):
 
 
 class Bag(SQLModel, table=True):
-    """A piece of luggage for a trip (shared/trip-level). Packing items go in one."""
+    """A piece of luggage for a trip (shared/trip-level). Packing items go in one.
+    Bags may nest (parent_id) — e.g. a packing cube inside a suitcase."""
     id: Optional[int] = Field(default=None, primary_key=True)
     trip_id: int = Field(foreign_key="trip.id", index=True)
     name: str
+    parent_id: Optional[int] = Field(default=None, foreign_key="bag.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -320,12 +322,19 @@ class PackingItem(SQLModel, table=True):
 
 class BagCreate(SQLModel):
     name: str
+    parent_id: Optional[int] = None
+
+
+class BagUpdate(SQLModel):
+    name: Optional[str] = None
+    parent_id: Optional[int] = None
 
 
 class BagRead(SQLModel):
     id: int
     trip_id: int
     name: str
+    parent_id: Optional[int] = None
 
 
 class PackingItemCreate(SQLModel):

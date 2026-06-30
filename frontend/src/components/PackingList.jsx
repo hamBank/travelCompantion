@@ -4,6 +4,7 @@ import {
   createBag, updateBag, deleteBag,
 } from '../api.js'
 import PackItemEditModal from './PackItemEditModal.jsx'
+import BagEditModal from './BagEditModal.jsx'
 
 export const isPacked = (it) => it.packed_count >= it.quantity && it.quantity > 0
 export const isShared = (it) => !it.owner_email
@@ -21,6 +22,7 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
   const [bagId, setBagId] = useState('')
   const [newBagName, setNewBagName] = useState('')
   const [editItem, setEditItem] = useState(null)
+  const [editBag, setEditBag] = useState(null)
 
   // Collapsed bag groups, persisted per trip so the layout sticks across reloads.
   const COLLAPSE_KEY = `tc-pack-collapsed-${tripId}`
@@ -64,24 +66,62 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
   async function addBag(e) {
     e.preventDefault()
     if (!newBagName.trim()) return
-    await createBag(tripId, newBagName.trim())
+    await createBag(tripId, { name: newBagName.trim() })
     setNewBagName(''); load()
   }
-  async function renameBag(bag) {
-    const n = prompt('Rename bag', bag.name)
-    if (n && n.trim() && n !== bag.name) { await updateBag(bag.id, n.trim()); load() }
-  }
-  async function removeBag(bag) {
-    if (confirm(`Delete bag "${bag.name}"? Items in it become unassigned.`)) { await deleteBag(bag.id); load() }
-  }
+  async function saveBag(id, data) { await updateBag(id, data); load() }
+  async function removeBag(id)     { await deleteBag(id); load() }
 
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading packing list…</p>
   if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
 
-  // Group items by bag (preserving bag order; unassigned last).
-  const groups = [...bags.map(b => ({ key: String(b.id), bag: b })), { key: NO_BAG, bag: null }]
-  const byBag = id => items.filter(i => (i.bag_id == null ? NO_BAG : String(i.bag_id)) === id)
+  // Bags nest via parent_id — render as a tree. Counts roll up the subtree.
+  const childrenOf = id => bags.filter(b => b.parent_id === id)
+  const itemsInBag = id => items.filter(i => i.bag_id === id)
+  const noBagItems = items.filter(i => i.bag_id == null)
+  const topBags = bags.filter(b => b.parent_id == null)
+  function subtreeCounts(id) {
+    let packed = 0, total = 0
+    for (const i of itemsInBag(id)) { packed += i.packed_count; total += i.quantity }
+    for (const c of childrenOf(id)) { const s = subtreeCounts(c.id); packed += s.packed; total += s.total }
+    return { packed, total }
+  }
   const pct = counts.total ? Math.round((counts.packed / counts.total) * 100) : 0
+
+  function renderItems(list) {
+    return list.map(it => (
+      <PackRow key={it.id} it={it} bags={bags} onToggle={toggle} onStep={step}
+               onRemove={remove} onPatch={patch} onEdit={setEditItem} canEdit={canEdit} />
+    ))
+  }
+
+  function renderBag(bag, depth) {
+    const kids = childrenOf(bag.id)
+    const direct = itemsInBag(bag.id)
+    const { packed, total } = subtreeCounts(bag.id)
+    const isCollapsed = collapsed.has(String(bag.id))
+    return (
+      <div key={bag.id} className="mb-2" style={{ marginLeft: depth ? '1rem' : 0, borderLeft: depth ? '1px solid var(--border)' : 'none', paddingLeft: depth ? '0.5rem' : 0 }}>
+        <div className="flex items-center gap-2 mb-1">
+          <button onClick={() => toggleCollapse(String(bag.id))} className="flex items-center gap-2 hover:opacity-80 transition-opacity" title={isCollapsed ? 'Expand' : 'Collapse'}>
+            <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem', width: '0.7rem' }}>{isCollapsed ? '▸' : '▾'}</span>
+            <span style={{ color: 'var(--text-muted)' }} className="text-xs font-semibold uppercase tracking-wide">🧳 {bag.name}</span>
+            <span style={{ color: 'var(--text-faint)' }} className="text-xs">{packed}/{total}</span>
+          </button>
+          {canEdit && (
+            <button onClick={() => setEditBag(bag)} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70 ml-1" title="Edit bag">✎</button>
+          )}
+        </div>
+        {!isCollapsed && (
+          <div>
+            {direct.length === 0 && kids.length === 0
+              ? <p style={{ color: 'var(--text-faint)' }} className="text-xs pl-1 py-1">Empty</p>
+              : <>{renderItems(direct)}{kids.map(k => renderBag(k, depth + 1))}</>}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -130,47 +170,34 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
         >Add</button>
       </form>
 
-      {/* Bag groups */}
-      {groups.map(({ key, bag }) => {
-        const list = byBag(key)
-        if (key === NO_BAG && list.length === 0) return null
-        const bp = list.reduce((a, i) => a + i.packed_count, 0)
-        const bt = list.reduce((a, i) => a + i.quantity, 0)
-        const isCollapsed = collapsed.has(key)
+      {/* Bag tree, then unassigned items */}
+      {topBags.map(b => renderBag(b, 0))}
+      {noBagItems.length > 0 && (() => {
+        const isCollapsed = collapsed.has(NO_BAG)
+        const bp = noBagItems.reduce((a, i) => a + i.packed_count, 0)
+        const bt = noBagItems.reduce((a, i) => a + i.quantity, 0)
         return (
-          <div key={key} className="mb-4">
-            <div className="flex items-center gap-2 mb-1.5">
-              <button
-                onClick={() => toggleCollapse(key)}
-                className="flex items-center gap-2 hover:opacity-80 transition-opacity"
-                title={isCollapsed ? 'Expand' : 'Collapse'}
-              >
-                <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem', width: '0.7rem' }}>{isCollapsed ? '▸' : '▾'}</span>
-                <span style={{ color: 'var(--text-muted)' }} className="text-xs font-semibold uppercase tracking-wide">
-                  {bag ? `🧳 ${bag.name}` : 'No bag'}
-                </span>
-                <span style={{ color: 'var(--text-faint)' }} className="text-xs">{bp}/{bt}</span>
-              </button>
-              {bag && canEdit && (
-                <span className="flex gap-1.5 ml-1">
-                  <button onClick={() => renameBag(bag)} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70" title="Rename">✎</button>
-                  <button onClick={() => removeBag(bag)} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70" title="Delete">🗑</button>
-                </span>
-              )}
-            </div>
-            {!isCollapsed && (
-              list.length === 0
-                ? <p style={{ color: 'var(--text-faint)' }} className="text-xs pl-1 py-1">Empty</p>
-                : list.map(it => <PackRow key={it.id} it={it} bags={bags} onToggle={toggle} onStep={step} onRemove={remove} onPatch={patch} onEdit={setEditItem} canEdit={canEdit} />)
-            )}
+          <div className="mb-2">
+            <button onClick={() => toggleCollapse(NO_BAG)} className="flex items-center gap-2 hover:opacity-80 transition-opacity mb-1" title={isCollapsed ? 'Expand' : 'Collapse'}>
+              <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem', width: '0.7rem' }}>{isCollapsed ? '▸' : '▾'}</span>
+              <span style={{ color: 'var(--text-muted)' }} className="text-xs font-semibold uppercase tracking-wide">No bag</span>
+              <span style={{ color: 'var(--text-faint)' }} className="text-xs">{bp}/{bt}</span>
+            </button>
+            {!isCollapsed && renderItems(noBagItems)}
           </div>
         )
-      })}
+      })()}
 
       {editItem && (
         <PackItemEditModal
           item={editItem} bags={bags} canEdit={canEdit}
           onSave={patch} onDelete={remove} onClose={() => setEditItem(null)}
+        />
+      )}
+      {editBag && (
+        <BagEditModal
+          bag={editBag} bags={bags}
+          onSave={saveBag} onDelete={removeBag} onClose={() => setEditBag(null)}
         />
       )}
 

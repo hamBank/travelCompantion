@@ -15,7 +15,7 @@ from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_trip_role
 from ..models import (
-    Bag, BagCreate, BagRead,
+    Bag, BagCreate, BagUpdate, BagRead,
     PackingItem, PackingItemCreate, PackingItemUpdate, PackingItemRead,
     TripRole,
 )
@@ -141,6 +141,26 @@ def delete_item(
 
 # ── Bags (trip-wide, editor+) ───────────────────────────────────────────────────
 
+def _validate_parent(session: Session, bag: Bag, parent_id: Optional[int]) -> None:
+    """Ensure parent_id is a valid, same-trip bag that won't create a cycle."""
+    if parent_id is None:
+        return
+    if parent_id == bag.id:
+        raise HTTPException(status_code=400, detail="A bag can't be its own parent")
+    parent = session.get(Bag, parent_id)
+    if not parent or parent.trip_id != bag.trip_id:
+        raise HTTPException(status_code=400, detail="Parent bag not found on this trip")
+    # Walk up from the proposed parent; if we reach `bag`, it'd be a cycle.
+    seen, cur = set(), parent
+    while cur is not None:
+        if cur.id == bag.id:
+            raise HTTPException(status_code=400, detail="That would nest a bag inside itself")
+        if cur.id in seen:
+            break
+        seen.add(cur.id)
+        cur = session.get(Bag, cur.parent_id) if cur.parent_id else None
+
+
 @router.post("/trips/{trip_id}/bags", response_model=BagRead)
 def create_bag(
     trip_id: int, body: BagCreate,
@@ -149,6 +169,9 @@ def create_bag(
 ):
     require_trip_role(session, user, trip_id, TripRole.editor)
     bag = Bag(trip_id=trip_id, name=body.name)
+    if body.parent_id is not None:
+        _validate_parent(session, bag, body.parent_id)
+        bag.parent_id = body.parent_id
     session.add(bag)
     session.commit()
     session.refresh(bag)
@@ -157,7 +180,7 @@ def create_bag(
 
 @router.patch("/bags/{bag_id}", response_model=BagRead)
 def update_bag(
-    bag_id: int, body: BagCreate,
+    bag_id: int, body: BagUpdate,
     session: Session = Depends(get_session),
     user: dict = Depends(get_current_user),
 ):
@@ -165,7 +188,12 @@ def update_bag(
     if not bag:
         raise HTTPException(status_code=404, detail="Bag not found")
     require_trip_role(session, user, bag.trip_id, TripRole.editor)
-    bag.name = body.name
+    data = body.model_dump(exclude_unset=True)
+    if "name" in data and data["name"]:
+        bag.name = data["name"]
+    if "parent_id" in data:
+        _validate_parent(session, bag, data["parent_id"])
+        bag.parent_id = data["parent_id"]
     session.add(bag)
     session.commit()
     session.refresh(bag)
@@ -186,5 +214,10 @@ def delete_bag(
     for it in session.exec(select(PackingItem).where(PackingItem.bag_id == bag_id)).all():
         it.bag_id = None
         session.add(it)
+    # Promote child bags up to this bag's parent so they aren't orphaned.
+    for child in session.exec(select(Bag).where(Bag.parent_id == bag_id)).all():
+        child.parent_id = bag.parent_id
+        session.add(child)
+    session.commit()  # flush reassignments before removing the row (FK safety)
     session.delete(bag)
     session.commit()
