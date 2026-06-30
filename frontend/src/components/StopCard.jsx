@@ -11,7 +11,7 @@ import ItemEditModal, { buildMapsUrl } from './ItemEditModal.jsx'
 import CostDisplay from './CostDisplay.jsx'
 import RichText from './RichText.jsx'
 import { isFullyPaid } from '../currency.js'
-import { countryFlag } from '../countryFlag.js'
+import { countryFlag, countryCode } from '../countryFlag.js'
 import { airportName } from '../airportNames.js'
 import RailDetailModal from './RailDetailModal.jsx'
 
@@ -119,6 +119,24 @@ export function DayBanner({ dateKey, weather }) {
       )}
     </div>
   )
+}
+
+// Flag as an image (emoji flags don't render on Chrome/Edge on Windows). Falls
+// back to the emoji where no ISO code resolves.
+export function FlagMark({ country }) {
+  const code = countryCode(country)
+  if (code) {
+    return (
+      <img
+        src={`https://flagcdn.com/24x18/${code}.png`}
+        srcSet={`https://flagcdn.com/48x36/${code}.png 2x`}
+        width="24" height="18" alt={country} title={country}
+        className="shrink-0" style={{ borderRadius: '2px', display: 'inline-block' }}
+      />
+    )
+  }
+  const emoji = countryFlag(country)
+  return emoji ? <span className="text-base leading-none shrink-0">{emoji}</span> : null
 }
 
 // Cards inside a TimeRow consume this to suppress their internal time display.
@@ -338,8 +356,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
 
   const checkoutAccom = items.find(i => i.kind === 'accommodation' && i.details?.checkout)
 
-  const flag = countryFlag(stop.country)
-
   async function cycleStatus(e) {
     e.stopPropagation()
     if (busy) return
@@ -424,7 +440,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
         className="w-full px-4 py-3.5 flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
       >
         <div className="flex-1 min-w-0 flex items-center gap-1.5">
-          {flag && <span className="text-base leading-none shrink-0">{flag}</span>}
+          <FlagMark country={stop.country} />
           <span className="font-medium text-sm truncate">{stop.location}</span>
           {(stop.arrive || stop.depart) && (
             <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0">

@@ -71,6 +71,17 @@ export default defineConfig({
               cacheableResponse: { statuses: [200] },
             },
           },
+          {
+            // Flag images (flagcdn) — CacheFirst so they render offline after the
+            // first load and aren't re-fetched. Static content, long-lived.
+            urlPattern: ({ url }) => url.hostname === 'flagcdn.com',
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'flag-images',
+              expiration: { maxEntries: 100, maxAgeSeconds: 180 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
       },
     }),

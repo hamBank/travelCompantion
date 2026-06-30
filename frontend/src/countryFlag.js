@@ -25,3 +25,15 @@ export function countryFlag(country) {
   if (!country) return ''
   return FLAGS[country.toLowerCase().trim()] ?? ''
 }
+
+/**
+ * ISO-3166-1 alpha-2 code (lowercase) for a country, derived from its flag
+ * emoji — the two regional-indicator symbols *are* the country code. Used to
+ * render flag images, which (unlike emoji) display on Chrome/Edge on Windows.
+ */
+export function countryCode(country) {
+  const emoji = countryFlag(country)
+  const cps = [...emoji].map(c => c.codePointAt(0))
+  if (cps.length !== 2) return ''
+  return String.fromCharCode(cps[0] - 0x1f1e6 + 65, cps[1] - 0x1f1e6 + 65).toLowerCase()
+}
