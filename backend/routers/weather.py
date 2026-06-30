@@ -10,13 +10,11 @@ from sqlmodel import Session
 
 from ..database import get_session
 from ..models import WeatherCache
-from ..weather import get_weather
+from ..weather import get_weather, cache_key
 
 router = APIRouter()
 
 CACHE_TTL = timedelta(hours=6)
-# Bump when the payload shape changes so stale-shaped entries are re-fetched.
-CACHE_VERSION = "v2"  # v2 adds wind
 
 
 @router.get("/weather")
@@ -25,17 +23,14 @@ def weather_lookup(
     session: Session = Depends(get_session),
 ):
     try:
-        lat_r = round(float(str(lat).split(",")[0]), 2)
-        lng_r = round(float(str(lng).split(",")[0]), 2)
+        key = cache_key(lat, lng, start, end)
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid lat/lng")
-
-    key = f"{CACHE_VERSION},{lat_r},{lng_r},{start},{end}"
     cached = session.get(WeatherCache, key)
     if cached and (datetime.utcnow() - cached.fetched_at) < CACHE_TTL:
         return {"weather": cached.payload, "cached": True}
 
-    data = get_weather(lat_r, lng_r, start, end)
+    data = get_weather(lat, lng, start, end)
 
     if cached:
         cached.payload = data

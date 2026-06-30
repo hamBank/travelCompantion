@@ -33,6 +33,26 @@ WMO_ICONS = {
 FORECAST_HORIZON_DAYS = 16
 CLIMATOLOGY_YEARS = 3
 
+# Cache-key versioning: bump when the payload shape changes so stale-shaped
+# entries are re-fetched rather than served. v2 added wind.
+CACHE_VERSION = "v2"
+
+
+def cache_key(lat, lng, start: str, end: str) -> str:
+    """Canonical WeatherCache key. Coords rounded to 2dp so nearby lookups share."""
+    lat_r = round(float(str(lat).split(",")[0]), 2)
+    lng_r = round(float(str(lng).split(",")[0]), 2)
+    return f"{CACHE_VERSION},{lat_r},{lng_r},{start},{end}"
+
+
+def parse_cache_key(key: str):
+    """Inverse of cache_key → (lat, lng, start, end), or None if not current version."""
+    parts = key.split(",")
+    if len(parts) != 5 or parts[0] != CACHE_VERSION:
+        return None
+    _, lat, lng, start, end = parts
+    return lat, lng, start, end
+
 
 def _icon_for(code: int) -> tuple[str, str]:
     return WMO_ICONS.get(int(code), ("🌡", f"Code {code}"))
