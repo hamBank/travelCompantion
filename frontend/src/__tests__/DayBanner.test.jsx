@@ -13,13 +13,13 @@ describe('DayBanner', () => {
     const wx = { icon: '☀', tmin: 20.6, tmax: 30.4, desc: 'Clear', source: 'forecast' }
     const { container } = render(<DayBanner dateKey="2026-07-22" weather={wx} />)
     expect(container.textContent).toContain('☀')
-    expect(container.textContent).toContain('21–30°')  // rounded
+    expect(container.textContent).toContain('21–30°C')  // rounded, with unit
   })
 
-  it('shows rounded wind with the wind emoji when present', () => {
+  it('shows rounded wind with the wind emoji and km/h unit when present', () => {
     const wx = { icon: '☀', tmin: 20, tmax: 30, wind: 14.6, desc: 'Clear', source: 'forecast' }
     const { container } = render(<DayBanner dateKey="2026-07-22" weather={wx} />)
-    expect(container.textContent).toContain('💨 15')
+    expect(container.textContent).toContain('💨 15km/h')
   })
 
   it('omits wind when not provided', () => {

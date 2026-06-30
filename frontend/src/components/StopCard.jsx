@@ -108,9 +108,9 @@ export function DayBanner({ dateKey, weather }) {
             weather.source === 'climatology' ? 'seasonal average (live forecast nearer the date)' : 'live forecast',
           ].filter(Boolean).join(' · ')}
         >
-          {weather.icon} {Math.round(weather.tmin)}–{Math.round(weather.tmax)}°
+          {weather.icon} {Math.round(weather.tmin)}–{Math.round(weather.tmax)}°C
           {weather.wind != null && (
-            <span className="ml-1">💨 {Math.round(weather.wind)}</span>
+            <span className="ml-1">💨 {Math.round(weather.wind)}km/h</span>
           )}
           {weather.source === 'climatology' && (
             <span style={{ fontSize: '0.85em', opacity: 0.75 }} className="ml-1">avg</span>
