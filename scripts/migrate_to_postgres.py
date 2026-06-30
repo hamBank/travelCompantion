@@ -61,12 +61,22 @@ def copy_all(source_url: str, dest_url: str) -> dict[str, int]:
     return counts
 
 
+def _id_tables() -> list[str]:
+    """Tables with an integer 'id' PK — the ones with a serial sequence to reset.
+
+    Excludes e.g. UserImportToken, which is keyed on user_email.
+    """
+    return [m.__tablename__ for m in COPY_ORDER if "id" in m.__table__.columns]
+
+
 def _reset_sequences(engine) -> None:
     """Advance each table's id sequence past the max copied id (Postgres only)."""
     from sqlalchemy import text
 
     with engine.connect() as conn:
         for model in COPY_ORDER:
+            if "id" not in model.__table__.columns:
+                continue
             table = model.__tablename__
             # pg_get_serial_sequence returns NULL if the column isn't serial; the
             # WHERE guard skips the setval in that case.

@@ -10,7 +10,15 @@ from sqlmodel import SQLModel, Session, create_engine, select
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import backend.models as m  # noqa: E402
-from scripts.migrate_to_postgres import copy_all  # noqa: E402
+from scripts.migrate_to_postgres import copy_all, _id_tables  # noqa: E402
+
+
+def test_sequence_reset_skips_non_id_pk_tables():
+    tables = _id_tables()
+    # UserImportToken is keyed on user_email — must not be in the sequence-reset set
+    assert "userimporttoken" not in tables
+    # representative id-keyed tables must be present
+    assert {"trip", "stop", "itineraryitem", "itemhistory"} <= set(tables)
 
 
 def _seed(url: str):
