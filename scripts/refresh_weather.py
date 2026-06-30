@@ -19,10 +19,69 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlmodel import Session, select  # noqa: E402
 from backend.database import engine  # noqa: E402
-from backend.models import WeatherCache  # noqa: E402
+from backend.models import WeatherCache, Stop  # noqa: E402
 from backend.weather import (  # noqa: E402
-    get_weather as _get_weather, geocode as _geocode, parse_cache_key, parse_q_key,
+    get_weather as _get_weather, geocode as _geocode,
+    parse_cache_key, parse_q_key, cache_key, CACHE_VERSION, _valid_coords,
 )
+
+
+def _stop_span(stop):
+    # Date part only. DB datetimes stringify as "YYYY-MM-DD HH:MM:SS"; the
+    # frontend (from JSON) uses "YYYY-MM-DDTHH:MM" — split on both separators so
+    # the resulting key matches what the client requests.
+    def d(v):
+        return str(v).split("T")[0].split(" ")[0] if v else None
+    start = d(stop.arrive)
+    end = d(stop.depart) or start
+    return start, end
+
+
+def _q_key(location, country, start, end):
+    """Build a q: cache key matching the endpoint's normalization."""
+    q = ", ".join(x for x in [location, country] if x)
+    qn = q.strip().lower().replace(",", " ").replace("  ", " ").strip()
+    return f"{CACHE_VERSION},q:{qn},{start},{end}", q
+
+
+def _upsert(session, key, data):
+    row = session.get(WeatherCache, key)
+    if row:
+        row.payload = data
+        row.fetched_at = datetime.utcnow()
+    else:
+        row = WeatherCache(cache_key=key, payload=data)
+    session.add(row)
+
+
+def warm_stops(session, *, get_weather=_get_weather, geocode=_geocode) -> int:
+    """Proactively (re)fetch weather for EVERY stop, by arrive→depart span.
+
+    Covers stops no one has opened yet — important in headerless mode, where the
+    client wouldn't otherwise trigger a per-stop lookup. Keys mirror exactly what
+    the frontend requests, so the warmed entries are the ones it reads.
+    """
+    stops = session.exec(select(Stop)).all()
+    warmed = 0
+    for stop in stops:
+        start, end = _stop_span(stop)
+        if not start or not end:
+            continue
+        coords = _valid_coords(stop.lat, stop.lng)
+        if coords:
+            key = cache_key(stop.lat, stop.lng, start, end)
+            data = get_weather(stop.lat, stop.lng, start, end)
+        else:
+            if not stop.location:
+                continue
+            key, q = _q_key(stop.location, stop.country, start, end)
+            resolved = geocode(q)
+            data = get_weather(resolved[0], resolved[1], start, end) if resolved else {}
+        if data:
+            _upsert(session, key, data)
+            warmed += 1
+    session.commit()
+    return warmed
 
 
 def refresh_all(session: Session, *, get_weather=_get_weather, geocode=_geocode) -> int:
@@ -56,8 +115,8 @@ def refresh_all(session: Session, *, get_weather=_get_weather, geocode=_geocode)
 
 def main() -> None:
     with Session(engine) as session:
-        n = refresh_all(session)
-    print(f"{datetime.utcnow():%F %T} refreshed {n} weather cache entr{'y' if n == 1 else 'ies'}")
+        n = warm_stops(session)
+    print(f"{datetime.utcnow():%F %T} warmed weather for {n} stop{'' if n == 1 else 's'}")
 
 
 if __name__ == "__main__":

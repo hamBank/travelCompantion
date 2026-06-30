@@ -8,7 +8,8 @@ from sqlmodel import SQLModel, Session, create_engine, select
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from backend import weather  # noqa: E402
 from backend.models import WeatherCache  # noqa: E402
-from scripts.refresh_weather import refresh_all  # noqa: E402
+from scripts.refresh_weather import refresh_all, warm_stops  # noqa: E402
+from datetime import datetime as _dt
 
 
 def test_cache_key_roundtrip_and_rounding():
@@ -63,6 +64,38 @@ def test_refresh_all_regeocodes_q_keys():
         assert n == 1
         row = s.exec(select(WeatherCache)).one()
         assert row.payload["2026-08-20"]["tmax"] == 13
+
+
+def test_warm_stops_warms_coord_and_q_stops_with_matching_keys():
+    from backend.models import Stop, WeatherCache as WC
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        # coord stop
+        s.add(Stop(trip_id=1, location="Matera", country="Italy", lat="40.66", lng="16.60",
+                   arrive=_dt(2026, 7, 27), depart=_dt(2026, 7, 28)))
+        # coordless stop (home) → must geocode
+        s.add(Stop(trip_id=1, location="Duffy", country="Australia",
+                   arrive=_dt(2026, 8, 20), depart=_dt(2026, 8, 21)))
+        # stop with no dates → skipped
+        s.add(Stop(trip_id=1, location="Nowhere", country=""))
+        s.commit()
+
+        def fake_geocode(q):
+            assert "Duffy" in q
+            return (-35.34, 149.03)
+
+        def fake_get_weather(lat, lng, start, end):
+            return {start: {"tmin": 1, "tmax": 2, "wind": 3}}
+
+        n = warm_stops(s, get_weather=fake_get_weather, geocode=fake_geocode)
+        assert n == 2  # Matera + Duffy; Nowhere skipped
+
+        keys = {r.cache_key for r in s.exec(select(WC)).all()}
+        # coord key matches the endpoint's cache_key()
+        assert "v2,40.66,16.6,2026-07-27,2026-07-28" in keys
+        # q key matches the endpoint's normalization of "Duffy, Australia"
+        assert "v2,q:duffy australia,2026-08-20,2026-08-21" in keys
 
 
 def test_refresh_all_skips_stale_version_keys():

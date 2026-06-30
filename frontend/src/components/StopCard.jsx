@@ -284,22 +284,30 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   // Use stop.items directly instead of syncing to local state—this ensures fresh data
   const items = stop.items
 
-  // Weather for the day headers: forecast/climatology per the stop's date span.
+  // Weather for the day headers: forecast/climatology over the stop's date span.
+  // Prefer arrive→depart so the span matches the server-side daily warm (which
+  // works off the same fields), keeping cache keys identical. Falls back to the
+  // item date range when a stop has no arrive/depart.
   const [weather, setWeather] = useState({})
+  const _arr = stop.arrive ? String(stop.arrive).split('T')[0] : null
+  const _dep = stop.depart ? String(stop.depart).split('T')[0] : null
   const _dayKeys = items.map(itemDateKey).filter(Boolean).sort()
-  const wxStart = _dayKeys[0] || (stop.arrive ? String(stop.arrive).split('T')[0] : null)
-  const wxEnd   = _dayKeys[_dayKeys.length - 1] || (stop.depart ? String(stop.depart).split('T')[0] : null)
+  const wxStart = _arr || _dayKeys[0] || null
+  const wxEnd   = _dep || _dayKeys[_dayKeys.length - 1] || _arr || null
   // Place-name fallback so stops without stored coords (e.g. home) still resolve.
   const wxQuery = stop.location ? [stop.location, stop.country].filter(Boolean).join(', ') : ''
+  // In headerless (frameless) mode every stop's content is always shown, so we
+  // must fetch regardless of `open`; in framed mode fetch when expanded.
+  const contentVisible = hideFrame || open
   useEffect(() => {
-    if (!open || !wxStart || !wxEnd) return
+    if (!contentVisible || !wxStart || !wxEnd) return
     if (!stop.lat && !stop.lng && !wxQuery) return
     let cancelled = false
     getWeather(stop.lat, stop.lng, wxStart, wxEnd, wxQuery)
       .then(r => { if (!cancelled) setWeather(r.weather || {}) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [open, stop.lat, stop.lng, wxQuery, wxStart, wxEnd])
+  }, [contentVisible, stop.lat, stop.lng, wxQuery, wxStart, wxEnd])
 
   function handleItemSaved(updated) {
     // Refresh parent timeline to get fresh data with the update
