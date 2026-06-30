@@ -295,6 +295,17 @@ class UserImportToken(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class WeatherCache(SQLModel, table=True):
+    """6-hour cache of Open-Meteo lookups, keyed by rounded coords + date range.
+
+    Climatology is near-static and forecasts change slowly, so caching avoids
+    hammering the API (and surviving restarts means deploys don't re-fetch).
+    """
+    cache_key: str = Field(primary_key=True)    # "lat,lng,start,end" (coords rounded)
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    fetched_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # ── ItemHistory (versioning / audit log) ──────────────────────────────────────
 
 class ItemHistory(SQLModel, table=True):

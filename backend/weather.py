@@ -1,0 +1,175 @@
+"""Weather lookup via Open-Meteo (free, no API key).
+
+For dates within the ~16-day forecast horizon we use the live forecast; for dates
+beyond it (e.g. a trip weeks out) we fall back to *climatology* — the average of
+the same calendar dates over the past few years from the archive API. Both yield
+a per-date {tmin, tmax, icon, desc} the UI can show in the day header.
+
+Network access goes through an injectable `fetch_json` so the logic is unit-tested
+without hitting the network.
+"""
+from __future__ import annotations
+
+import json
+import urllib.request
+from collections import Counter
+from datetime import date, timedelta
+from statistics import mean
+
+# WMO weather codes → (emoji, description). Mirrors the legacy desktop app.
+WMO_ICONS = {
+    0: ("☀", "Clear"),
+    1: ("🌤", "Mostly clear"), 2: ("⛅", "Partly cloudy"), 3: ("☁", "Overcast"),
+    45: ("🌫", "Fog"), 48: ("🌫", "Icy fog"),
+    51: ("🌦", "Light drizzle"), 53: ("🌦", "Drizzle"), 55: ("🌧", "Heavy drizzle"),
+    61: ("🌧", "Light rain"), 63: ("🌧", "Rain"), 65: ("🌧", "Heavy rain"),
+    71: ("🌨", "Light snow"), 73: ("🌨", "Snow"), 75: ("❄", "Heavy snow"),
+    77: ("🌨", "Snow grains"),
+    80: ("🌦", "Light showers"), 81: ("🌧", "Showers"), 82: ("⛈", "Heavy showers"),
+    85: ("🌨", "Snow showers"), 86: ("🌨", "Heavy snow showers"),
+    95: ("⛈", "Thunderstorm"), 96: ("⛈", "Thunderstorm + hail"), 99: ("⛈", "Thunderstorm + hail"),
+}
+
+FORECAST_HORIZON_DAYS = 16
+CLIMATOLOGY_YEARS = 3
+
+
+def _icon_for(code: int) -> tuple[str, str]:
+    return WMO_ICONS.get(int(code), ("🌡", f"Code {code}"))
+
+
+def _fetch_json(url: str) -> dict:
+    with urllib.request.urlopen(url, timeout=10) as resp:
+        return json.loads(resp.read())
+
+
+def _valid_coords(lat, lng) -> tuple[float, float] | None:
+    try:
+        lat_f = float(str(lat).split(",")[0].strip())
+        lng_f = float(str(lng).split(",")[0].strip())
+    except (ValueError, TypeError):
+        return None
+    if not (-90 <= lat_f <= 90) or not (-180 <= lng_f <= 180):
+        return None
+    return lat_f, lng_f
+
+
+def parse_daily(payload: dict) -> dict[str, dict]:
+    """Open-Meteo daily payload → {iso_date: {tmin, tmax, code}} (skips null rows)."""
+    daily = (payload or {}).get("daily", {}) or {}
+    out: dict[str, dict] = {}
+    times = daily.get("time", []) or []
+    tmax = daily.get("temperature_2m_max", []) or []
+    tmin = daily.get("temperature_2m_min", []) or []
+    codes = daily.get("weathercode", []) or []
+    for i, d in enumerate(times):
+        mx = tmax[i] if i < len(tmax) else None
+        mn = tmin[i] if i < len(tmin) else None
+        if mx is None or mn is None:
+            continue
+        cd = codes[i] if i < len(codes) and codes[i] is not None else 0
+        out[d] = {"tmin": mn, "tmax": mx, "code": int(cd)}
+    return out
+
+
+def average_climatology(year_payloads: list[dict]) -> dict[str, dict]:
+    """Average several years of archive daily data, keyed by MM-DD.
+
+    Each payload covers the same calendar span in a different year. Temps are
+    averaged; the weather code is the most common across years.
+    """
+    by_md: dict[str, dict] = {}
+    for payload in year_payloads:
+        for iso, rec in parse_daily(payload).items():
+            md = iso[5:]  # "MM-DD"
+            by_md.setdefault(md, {"tmin": [], "tmax": [], "code": []})
+            by_md[md]["tmin"].append(rec["tmin"])
+            by_md[md]["tmax"].append(rec["tmax"])
+            by_md[md]["code"].append(rec["code"])
+    result: dict[str, dict] = {}
+    for md, vals in by_md.items():
+        if not vals["tmin"]:
+            continue
+        modal_code = Counter(vals["code"]).most_common(1)[0][0]
+        result[md] = {
+            "tmin": round(mean(vals["tmin"]), 1),
+            "tmax": round(mean(vals["tmax"]), 1),
+            "code": int(modal_code),
+        }
+    return result
+
+
+def _decorate(rec: dict, source: str) -> dict:
+    icon, desc = _icon_for(rec["code"])
+    return {
+        "tmin": round(rec["tmin"], 1),
+        "tmax": round(rec["tmax"], 1),
+        "icon": icon,
+        "desc": desc,
+        "source": source,
+    }
+
+
+def get_weather(lat, lng, start: str, end: str, *, fetch_json=_fetch_json, today: date | None = None) -> dict[str, dict]:
+    """Return {iso_date: {tmin, tmax, icon, desc, source}} for [start, end] inclusive.
+
+    Live forecast for dates within the horizon; climatology for the rest.
+    """
+    coords = _valid_coords(lat, lng)
+    if not coords:
+        return {}
+    lat_f, lng_f = coords
+    start_d = date.fromisoformat(start)
+    end_d = date.fromisoformat(end)
+    if end_d < start_d:
+        return {}
+    today = today or date.today()
+    horizon = today + timedelta(days=FORECAST_HORIZON_DAYS)
+
+    out: dict[str, dict] = {}
+
+    # 1) Live forecast for the portion of [start,end] inside [today, horizon].
+    fc_start = max(start_d, today)
+    fc_end = min(end_d, horizon)
+    if fc_start <= fc_end:
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?latitude={lat_f}&longitude={lng_f}"
+            f"&daily=temperature_2m_max,temperature_2m_min,weathercode"
+            f"&timezone=auto&start_date={fc_start.isoformat()}&end_date={fc_end.isoformat()}"
+        )
+        try:
+            for iso, rec in parse_daily(fetch_json(url)).items():
+                out[iso] = _decorate(rec, "forecast")
+        except Exception:
+            pass
+
+    # 2) Climatology for any remaining dates (typically a future trip).
+    remaining = [
+        start_d + timedelta(days=i)
+        for i in range((end_d - start_d).days + 1)
+        if (start_d + timedelta(days=i)).isoformat() not in out
+    ]
+    if remaining:
+        payloads = []
+        for yr_off in range(1, CLIMATOLOGY_YEARS + 1):
+            try:
+                hist_start = start_d.replace(year=start_d.year - yr_off)
+                hist_end = end_d.replace(year=end_d.year - yr_off)
+            except ValueError:
+                continue  # e.g. Feb 29 — skip that year
+            url = (
+                f"https://archive-api.open-meteo.com/v1/archive?latitude={lat_f}&longitude={lng_f}"
+                f"&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto"
+                f"&start_date={hist_start.isoformat()}&end_date={hist_end.isoformat()}"
+            )
+            try:
+                payloads.append(fetch_json(url))
+            except Exception:
+                continue
+        climo = average_climatology(payloads)
+        for d in remaining:
+            rec = climo.get(d.isoformat()[5:])
+            if rec:
+                out[d.isoformat()] = _decorate(rec, "climatology")
+
+    return out

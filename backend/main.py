@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from .database import create_db_and_tables
-from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me
+from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me, weather
 from .routers.auth_router import router as auth_router
 from . import metrics as _metrics  # registers all travelcomp_* counters at startup
 
@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 # ── Public path lists ─────────────────────────────────────────────────────────
 # /metrics is unauthenticated — Prometheus scrapers don't carry user JWTs.
 # Metrics contain only aggregate counts/durations; no PII.
-_PUBLIC_PREFIXES = ("/auth/", "/health", "/metrics", "/currency/", "/assets/",
+_PUBLIC_PREFIXES = ("/auth/", "/health", "/metrics", "/currency/", "/weather", "/assets/",
                     "/sw.", "/sw-update", "/workbox-", "/registerSW.", "/manifest.",
                     "/coverage", "/ingest/")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
@@ -94,6 +94,7 @@ app.include_router(documents.router, tags=["documents"])
 app.include_router(pending.router, tags=["pending"])
 app.include_router(ingest.router, tags=["ingest"])
 app.include_router(me.router, tags=["me"])
+app.include_router(weather.router, tags=["weather"])
 
 
 @app.post("/deploy")

@@ -1,5 +1,5 @@
-import { useState, createContext, useContext } from 'react'
-import { updateStopStatus, updateItemStatus } from '../api.js'
+import { useState, useEffect, createContext, useContext } from 'react'
+import { updateStopStatus, updateItemStatus, getWeather } from '../api.js'
 import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
@@ -91,13 +91,18 @@ function fmtDayHeader(dateKey) {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
-function DayBanner({ dateKey }) {
+export function DayBanner({ dateKey, weather }) {
   return (
     <div
       style={{ background: 'var(--surface-2)', borderRadius: '0.375rem' }}
-      className="px-3 py-1.5 text-xs font-semibold"
+      className="px-3 py-1.5 text-xs font-semibold flex items-center"
     >
-      {fmtDayHeader(dateKey)}
+      <span>{fmtDayHeader(dateKey)}</span>
+      {weather && (
+        <span style={{ color: 'var(--text-faint)' }} className="ml-2 font-normal" title={weather.desc}>
+          {weather.icon} {Math.round(weather.tmin)}–{Math.round(weather.tmax)}°
+        </span>
+      )}
     </div>
   )
 }
@@ -247,6 +252,20 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   // Use stop.items directly instead of syncing to local state—this ensures fresh data
   const items = stop.items
 
+  // Weather for the day headers: forecast/climatology per the stop's date span.
+  const [weather, setWeather] = useState({})
+  const _dayKeys = items.map(itemDateKey).filter(Boolean).sort()
+  const wxStart = _dayKeys[0] || (stop.arrive ? String(stop.arrive).split('T')[0] : null)
+  const wxEnd   = _dayKeys[_dayKeys.length - 1] || (stop.depart ? String(stop.depart).split('T')[0] : null)
+  useEffect(() => {
+    if (!open || !stop.lat || !stop.lng || !wxStart || !wxEnd) return
+    let cancelled = false
+    getWeather(stop.lat, stop.lng, wxStart, wxEnd)
+      .then(r => { if (!cancelled) setWeather(r.weather || {}) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [open, stop.lat, stop.lng, wxStart, wxEnd])
+
   function handleItemSaved(updated) {
     // Refresh parent timeline to get fresh data with the update
     onUpdate?.()
@@ -355,7 +374,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
                 const showBanner = !skipDays?.has(dk)
                 return (
                   <div key={dk} className="space-y-1">
-                    {showBanner && <DayBanner dateKey={dk} />}
+                    {showBanner && <DayBanner dateKey={dk} weather={weather[dk]} />}
                     {byDate[dk].flatMap(item => [
                       <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>,
                       layovers[item.id] && <OffsetRow key={`lay-${item.id}`}><LayoverBadge {...layovers[item.id]} /></OffsetRow>,
@@ -444,7 +463,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               <div className="space-y-2">
                 {sortedDates.map(dk => (
                   <div key={dk} className="space-y-1">
-                    <DayBanner dateKey={dk} />
+                    <DayBanner dateKey={dk} weather={weather[dk]} />
                     {byDate[dk].flatMap(item => [
                       renderCard(item),
                       layovers[item.id] && <LayoverBadge key={`lay-${item.id}`} {...layovers[item.id]} />,
