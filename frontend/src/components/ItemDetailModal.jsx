@@ -7,6 +7,7 @@ import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
 import { relevantDayIndices, filterHoursByDays } from '../washHours.js'
 import { registerModal, unregisterModal } from '../modalNav.js'
+import { useSwipeNav } from '../swipeNav.js'
 import { fmtDayTime } from '../dates.js'
 
 const fmtDateTime = fmtDayTime
@@ -637,6 +638,8 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNa
     registerModal(item.id, onClose)
     return () => unregisterModal()
   }, [item.id, onClose])
+
+  useSwipeNav(item.id)  // mobile: swipe left/right = next/prev (mirrors j/k)
 
   useEffect(() => {
     function onKey(e) {

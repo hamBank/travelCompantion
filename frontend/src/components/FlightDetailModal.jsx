@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { checkFlight, updateItem } from '../api.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { registerModal, unregisterModal } from '../modalNav.js'
+import { useSwipeNav } from '../swipeNav.js'
 import { aggregateBaggage } from '../baggage.js'
 import { seatguruUrl } from '../seatguru.js'
 import { airportName, airportLabel } from '../airportNames.js'
@@ -228,6 +229,8 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
     registerModal(item.id, onClose)
     return () => unregisterModal()
   }, [item.id, onClose])
+
+  useSwipeNav(item.id)  // mobile: swipe left/right = next/prev (mirrors j/k)
 
   useEffect(() => {
     function onKey(e) {

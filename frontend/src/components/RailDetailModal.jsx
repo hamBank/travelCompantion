@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { updateItem } from '../api.js'
 import { registerModal, unregisterModal } from '../modalNav.js'
+import { useSwipeNav } from '../swipeNav.js'
 import { aggregateBaggage } from '../baggage.js'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
@@ -353,6 +354,8 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
     registerModal(item.id, onClose)
     return () => unregisterModal()
   }, [item.id, onClose])
+
+  useSwipeNav(item.id)  // mobile: swipe left/right = next/prev (mirrors j/k)
 
   useEffect(() => {
     function onKey(e) {
