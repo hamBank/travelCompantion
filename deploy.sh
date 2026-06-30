@@ -97,7 +97,11 @@ if ! $UPDATE_ONLY; then
   # git (Apache already present)
   apt-get install -y -qq git
 
-  ok "System packages ready  python=$(python3 --version | cut -d' ' -f2)  node=$(node -v)  npm=$(npm -v)"
+  # Postgres server + client (client provides pg_dump for backups). Harmless if
+  # the app stays on SQLite; required once DATABASE_URL points at Postgres.
+  apt-get install -y -qq postgresql postgresql-client
+
+  ok "System packages ready  python=$(python3 --version | cut -d' ' -f2)  node=$(node -v)  npm=$(npm -v)  pg=$(psql --version 2>/dev/null | awk '{print $3}')"
 
   # ── Apache modules ─────────────────────────────────────────────────────────
   info "Enabling Apache modules (proxy, headers)"
@@ -154,6 +158,33 @@ mkdir -p "$PIP_CACHE" && chown "$APP_USER:$APP_USER" "$PIP_CACHE"
 sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q --upgrade pip
 sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q -r "$APP_DIR/backend/requirements.txt"
 ok "Python dependencies installed"
+
+# ── 4a. Database schema migrations (Postgres) ─────────────────────────────────
+# On Postgres, Alembic owns the schema. Back up first, then upgrade to head
+# BEFORE the service restarts so new code never meets an old schema. On SQLite
+# the app still self-migrates on startup (create_all/_migrate), so we skip this.
+DB_URL="$(grep -E '^DATABASE_URL=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")"
+if [[ "$DB_URL" == postgresql* ]]; then
+  BACKUP_DIR="$APP_DIR/backups"
+  sudo -u "$APP_USER" mkdir -p "$BACKUP_DIR"
+  STAMP="$(date '+%Y%m%d-%H%M%S')"
+  # pg_dump wants a plain postgresql:// URL (no +psycopg driver suffix).
+  PG_DUMP_URL="${DB_URL/+psycopg/}"
+  info "Backing up Postgres → $BACKUP_DIR/travelcomp-$STAMP.sql"
+  if command -v pg_dump &>/dev/null; then
+    sudo -u "$APP_USER" sh -c "pg_dump '$PG_DUMP_URL' > '$BACKUP_DIR/travelcomp-$STAMP.sql'" \
+      && ok "Backup written" \
+      || warn "pg_dump failed (continuing — first deploy may have an empty DB)"
+  else
+    warn "pg_dump not found — skipping backup"
+  fi
+  info "Applying Alembic migrations (upgrade head)"
+  sudo -u "$APP_USER" sh -c "cd '$APP_DIR' && env DATABASE_URL='$DB_URL' '$VENV/bin/python' -m alembic upgrade head" \
+    && ok "Schema at head" \
+    || die "Alembic upgrade failed — aborting before restart"
+else
+  ok "SQLite backend — schema self-migrates on startup (skipping Alembic step)"
+fi
 
 # ── 4b. (Re)start service — runs HERE so npm below can never block it ──────────
 # backend/static/ is already correct from git reset --hard; there is no reason
