@@ -1,13 +1,27 @@
 # SQLite → Postgres migration
 
-Status: **Phases 1–3 done on production** (code dialect-agnostic + Alembic;
-Postgres provisioned; all data copied and verified). The app **still runs on
-SQLite** — Phase 4 (cutover) is pending.
+Status: **COMPLETE — production runs on Postgres** (cut over 2026-06-30). The DB
+password was rotated at cutover; data was re-copied fresh and verified; the app
+process holds a live connection to Postgres.
 
-> ⚠️ **Rotate the DB password at cutover.** The provisioning password was emitted
-> in a migration log line before that was masked, so treat it as compromised.
-> Re-provision with a fresh password (update `.pg-bootstrap` or run
-> `provision_postgres.sh`) and use the new one in `DATABASE_URL`.
+## Cutover & rollback (sentinel-driven)
+
+`.env` is root-owned, so `deploy.sh` (root) manages the `DATABASE_URL` line based
+on sentinel files the app user can create in `$APP_DIR`:
+
+```bash
+# Cut over to Postgres
+touch /opt/travelcomp/.pg-cutover && touch /opt/travelcomp/.deploy-trigger
+
+# Roll back to SQLite (uses travel.db as of cutover; PG-only writes since are lost)
+touch /opt/travelcomp/.pg-rollback && touch /opt/travelcomp/.deploy-trigger
+```
+
+Pre-cutover SQLite snapshot kept at `travel.db.bak-<timestamp>` for rollback.
+
+> The original provisioning password was briefly printed in a migration log before
+> masking; it was rotated at cutover (new value in `$APP_DIR/.pg-bootstrap`,
+> 600/owned by the app user). The script now masks passwords in output.
 
 ## Live-server bootstrap mechanism (how Phase 2/3 ran)
 
