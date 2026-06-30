@@ -33,8 +33,13 @@ export const deleteTrip = (id) => req(`/trips/${id}`, { method: 'DELETE' })
 export const updateTrip = (id, data) =>
   req(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 
-export const getWeather = (lat, lng, start, end) =>
-  req(`/weather?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&start=${start}&end=${end}`)
+export const getWeather = (lat, lng, start, end, q) => {
+  const p = new URLSearchParams({ start, end })
+  if (lat) p.set('lat', lat)
+  if (lng) p.set('lng', lng)
+  if (q) p.set('q', q)
+  return req(`/weather?${p.toString()}`)
+}
 
 export const getTripTimeline = (id, opts = {}) => {
   const params = new URLSearchParams(opts)

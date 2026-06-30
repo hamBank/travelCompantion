@@ -11,6 +11,7 @@ without hitting the network.
 from __future__ import annotations
 
 import json
+import urllib.parse
 import urllib.request
 from collections import Counter
 from datetime import date, timedelta
@@ -46,12 +47,20 @@ def cache_key(lat, lng, start: str, end: str) -> str:
 
 
 def parse_cache_key(key: str):
-    """Inverse of cache_key → (lat, lng, start, end), or None if not current version."""
+    """Inverse of cache_key → (lat, lng, start, end), or None if not a coord key."""
     parts = key.split(",")
-    if len(parts) != 5 or parts[0] != CACHE_VERSION:
+    if len(parts) != 5 or parts[0] != CACHE_VERSION or parts[1].startswith("q:"):
         return None
     _, lat, lng, start, end = parts
     return lat, lng, start, end
+
+
+def parse_q_key(key: str):
+    """Parse a place-name cache key → (query, start, end), or None."""
+    parts = key.split(",")
+    if len(parts) != 4 or parts[0] != CACHE_VERSION or not parts[1].startswith("q:"):
+        return None
+    return parts[1][2:], parts[2], parts[3]
 
 
 def _icon_for(code: int) -> tuple[str, str]:
@@ -61,6 +70,29 @@ def _icon_for(code: int) -> tuple[str, str]:
 def _fetch_json(url: str) -> dict:
     with urllib.request.urlopen(url, timeout=10) as resp:
         return json.loads(resp.read())
+
+
+def _fetch_geocode(q: str):
+    # Nominatim requires a User-Agent; without one it returns 403.
+    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
+        {"q": q, "format": "json", "limit": 1}
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": "travel-companion/1.0"})
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        return json.loads(resp.read())
+
+
+def geocode(q: str, *, fetch=_fetch_geocode):
+    """Resolve a place name to (lat, lng) via Nominatim, or None."""
+    if not q or not q.strip():
+        return None
+    try:
+        results = fetch(q)
+        if results:
+            return float(results[0]["lat"]), float(results[0]["lon"])
+    except Exception:
+        pass
+    return None
 
 
 def _valid_coords(lat, lng) -> tuple[float, float] | None:

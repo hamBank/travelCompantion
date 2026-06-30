@@ -64,6 +64,22 @@ def test_get_weather_uses_climatology_beyond_horizon():
     assert out["2026-07-22"]["desc"] == "Mostly clear"
 
 
+def test_geocode_resolves_place_name():
+    def fake_fetch(q):
+        assert "Duffy" in q
+        return [{"lat": "-35.34", "lon": "149.03"}]
+
+    assert weather.geocode("Duffy, Australia", fetch=fake_fetch) == (-35.34, 149.03)
+
+
+def test_geocode_returns_none_on_empty_or_failure():
+    assert weather.geocode("") is None
+    assert weather.geocode("x", fetch=lambda q: []) is None
+    def boom(q):
+        raise RuntimeError("down")
+    assert weather.geocode("x", fetch=boom) is None
+
+
 def test_get_weather_bad_coords_returns_empty():
     assert weather.get_weather("nope", "nope", "2026-07-22", "2026-07-23") == {}
 

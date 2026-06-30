@@ -289,14 +289,17 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const _dayKeys = items.map(itemDateKey).filter(Boolean).sort()
   const wxStart = _dayKeys[0] || (stop.arrive ? String(stop.arrive).split('T')[0] : null)
   const wxEnd   = _dayKeys[_dayKeys.length - 1] || (stop.depart ? String(stop.depart).split('T')[0] : null)
+  // Place-name fallback so stops without stored coords (e.g. home) still resolve.
+  const wxQuery = stop.location ? [stop.location, stop.country].filter(Boolean).join(', ') : ''
   useEffect(() => {
-    if (!open || !stop.lat || !stop.lng || !wxStart || !wxEnd) return
+    if (!open || !wxStart || !wxEnd) return
+    if (!stop.lat && !stop.lng && !wxQuery) return
     let cancelled = false
-    getWeather(stop.lat, stop.lng, wxStart, wxEnd)
+    getWeather(stop.lat, stop.lng, wxStart, wxEnd, wxQuery)
       .then(r => { if (!cancelled) setWeather(r.weather || {}) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [open, stop.lat, stop.lng, wxStart, wxEnd])
+  }, [open, stop.lat, stop.lng, wxQuery, wxStart, wxEnd])
 
   function handleItemSaved(updated) {
     // Refresh parent timeline to get fresh data with the update

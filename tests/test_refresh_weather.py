@@ -44,6 +44,27 @@ def test_refresh_all_updates_payload_and_timestamp():
         assert row.fetched_at > old_time
 
 
+def test_refresh_all_regeocodes_q_keys():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        s.add(WeatherCache(cache_key="v2,q:duffy australia,2026-08-20,2026-08-20", payload={}))
+        s.commit()
+
+        def fake_geocode(q):
+            assert q == "duffy australia"
+            return (-35.34, 149.03)
+
+        def fake_get_weather(lat, lng, start, end):
+            assert (lat, lng) == (-35.34, 149.03)
+            return {"2026-08-20": {"tmin": 2, "tmax": 13}}
+
+        n = refresh_all(s, get_weather=fake_get_weather, geocode=fake_geocode)
+        assert n == 1
+        row = s.exec(select(WeatherCache)).one()
+        assert row.payload["2026-08-20"]["tmax"] == 13
+
+
 def test_refresh_all_skips_stale_version_keys():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)

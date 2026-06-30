@@ -20,19 +20,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sqlmodel import Session, select  # noqa: E402
 from backend.database import engine  # noqa: E402
 from backend.models import WeatherCache  # noqa: E402
-from backend.weather import get_weather as _get_weather, parse_cache_key  # noqa: E402
+from backend.weather import (  # noqa: E402
+    get_weather as _get_weather, geocode as _geocode, parse_cache_key, parse_q_key,
+)
 
 
-def refresh_all(session: Session, *, get_weather=_get_weather) -> int:
-    """Re-fetch each current-version cache entry in place. Returns count refreshed."""
+def refresh_all(session: Session, *, get_weather=_get_weather, geocode=_geocode) -> int:
+    """Re-fetch each current-version cache entry in place. Returns count refreshed.
+
+    Handles both coordinate keys and place-name (q:) keys (re-geocoding the
+    latter), so home/coordinate-less stops stay current too.
+    """
     rows = session.exec(select(WeatherCache)).all()
     refreshed = 0
     for row in rows:
-        parsed = parse_cache_key(row.cache_key)
-        if not parsed:
-            continue  # stale-version key — leave it (frontend won't request it)
-        lat, lng, start, end = parsed
-        data = get_weather(lat, lng, start, end)
+        coord = parse_cache_key(row.cache_key)
+        if coord:
+            lat, lng, start, end = coord
+            data = get_weather(lat, lng, start, end)
+        else:
+            qp = parse_q_key(row.cache_key)
+            if not qp:
+                continue  # stale-version key — leave it
+            q, start, end = qp
+            resolved = geocode(q)
+            data = get_weather(resolved[0], resolved[1], start, end) if resolved else {}
         if data:
             row.payload = data
             row.fetched_at = datetime.utcnow()
