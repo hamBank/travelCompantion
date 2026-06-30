@@ -99,8 +99,17 @@ export function DayBanner({ dateKey, weather }) {
     >
       <span>{fmtDayHeader(dateKey)}</span>
       {weather && (
-        <span style={{ color: 'var(--text-faint)' }} className="ml-2 font-normal" title={weather.desc}>
+        <span
+          style={{ color: 'var(--text-faint)' }}
+          className="ml-2 font-normal"
+          title={weather.source === 'climatology'
+            ? `${weather.desc} — seasonal average (live forecast nearer the date)`
+            : `${weather.desc} — live forecast`}
+        >
           {weather.icon} {Math.round(weather.tmin)}–{Math.round(weather.tmax)}°
+          {weather.source === 'climatology' && (
+            <span style={{ fontSize: '0.85em', opacity: 0.75 }} className="ml-1">avg</span>
+          )}
         </span>
       )}
     </div>

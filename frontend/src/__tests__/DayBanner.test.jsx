@@ -10,10 +10,20 @@ describe('DayBanner', () => {
   })
 
   it('appends the weather icon and rounded min–max when provided', () => {
-    const wx = { icon: '☀', tmin: 20.6, tmax: 30.4, desc: 'Clear' }
+    const wx = { icon: '☀', tmin: 20.6, tmax: 30.4, desc: 'Clear', source: 'forecast' }
     const { container } = render(<DayBanner dateKey="2026-07-22" weather={wx} />)
     expect(container.textContent).toContain('☀')
     expect(container.textContent).toContain('21–30°')  // rounded
+  })
+
+  it('flags climatology data with "avg" but not live forecasts', () => {
+    const climo = { icon: '⛅', tmin: 19, tmax: 32, desc: 'Partly cloudy', source: 'climatology' }
+    const { container: c1 } = render(<DayBanner dateKey="2026-07-22" weather={climo} />)
+    expect(c1.textContent).toContain('avg')
+
+    const live = { icon: '☀', tmin: 15, tmax: 25, desc: 'Clear', source: 'forecast' }
+    const { container: c2 } = render(<DayBanner dateKey="2026-07-02" weather={live} />)
+    expect(c2.textContent).not.toContain('avg')
   })
 
   it('shows no weather span when weather is absent', () => {
