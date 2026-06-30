@@ -62,13 +62,15 @@ def parse_daily(payload: dict) -> dict[str, dict]:
     tmax = daily.get("temperature_2m_max", []) or []
     tmin = daily.get("temperature_2m_min", []) or []
     codes = daily.get("weathercode", []) or []
+    winds = daily.get("windspeed_10m_max", []) or []
     for i, d in enumerate(times):
         mx = tmax[i] if i < len(tmax) else None
         mn = tmin[i] if i < len(tmin) else None
         if mx is None or mn is None:
             continue
         cd = codes[i] if i < len(codes) and codes[i] is not None else 0
-        out[d] = {"tmin": mn, "tmax": mx, "code": int(cd)}
+        wind = winds[i] if i < len(winds) and winds[i] is not None else None
+        out[d] = {"tmin": mn, "tmax": mx, "code": int(cd), "wind": wind}
     return out
 
 
@@ -82,10 +84,12 @@ def average_climatology(year_payloads: list[dict]) -> dict[str, dict]:
     for payload in year_payloads:
         for iso, rec in parse_daily(payload).items():
             md = iso[5:]  # "MM-DD"
-            by_md.setdefault(md, {"tmin": [], "tmax": [], "code": []})
+            by_md.setdefault(md, {"tmin": [], "tmax": [], "code": [], "wind": []})
             by_md[md]["tmin"].append(rec["tmin"])
             by_md[md]["tmax"].append(rec["tmax"])
             by_md[md]["code"].append(rec["code"])
+            if rec.get("wind") is not None:
+                by_md[md]["wind"].append(rec["wind"])
     result: dict[str, dict] = {}
     for md, vals in by_md.items():
         if not vals["tmin"]:
@@ -95,15 +99,18 @@ def average_climatology(year_payloads: list[dict]) -> dict[str, dict]:
             "tmin": round(mean(vals["tmin"]), 1),
             "tmax": round(mean(vals["tmax"]), 1),
             "code": int(modal_code),
+            "wind": round(mean(vals["wind"]), 1) if vals["wind"] else None,
         }
     return result
 
 
 def _decorate(rec: dict, source: str) -> dict:
     icon, desc = _icon_for(rec["code"])
+    wind = rec.get("wind")
     return {
         "tmin": round(rec["tmin"], 1),
         "tmax": round(rec["tmax"], 1),
+        "wind": round(wind, 1) if wind is not None else None,  # km/h
         "icon": icon,
         "desc": desc,
         "source": source,
@@ -134,7 +141,7 @@ def get_weather(lat, lng, start: str, end: str, *, fetch_json=_fetch_json, today
     if fc_start <= fc_end:
         url = (
             f"https://api.open-meteo.com/v1/forecast?latitude={lat_f}&longitude={lng_f}"
-            f"&daily=temperature_2m_max,temperature_2m_min,weathercode"
+            f"&daily=temperature_2m_max,temperature_2m_min,weathercode,windspeed_10m_max"
             f"&timezone=auto&start_date={fc_start.isoformat()}&end_date={fc_end.isoformat()}"
         )
         try:
@@ -159,7 +166,7 @@ def get_weather(lat, lng, start: str, end: str, *, fetch_json=_fetch_json, today
                 continue  # e.g. Feb 29 — skip that year
             url = (
                 f"https://archive-api.open-meteo.com/v1/archive?latitude={lat_f}&longitude={lng_f}"
-                f"&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto"
+                f"&daily=temperature_2m_max,temperature_2m_min,weathercode,windspeed_10m_max&timezone=auto"
                 f"&start_date={hist_start.isoformat()}&end_date={hist_end.isoformat()}"
             )
             try:

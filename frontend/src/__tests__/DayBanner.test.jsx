@@ -16,6 +16,18 @@ describe('DayBanner', () => {
     expect(container.textContent).toContain('21–30°')  // rounded
   })
 
+  it('shows rounded wind with the wind emoji when present', () => {
+    const wx = { icon: '☀', tmin: 20, tmax: 30, wind: 14.6, desc: 'Clear', source: 'forecast' }
+    const { container } = render(<DayBanner dateKey="2026-07-22" weather={wx} />)
+    expect(container.textContent).toContain('💨 15')
+  })
+
+  it('omits wind when not provided', () => {
+    const wx = { icon: '☀', tmin: 20, tmax: 30, desc: 'Clear', source: 'forecast' }
+    const { container } = render(<DayBanner dateKey="2026-07-22" weather={wx} />)
+    expect(container.textContent).not.toContain('💨')
+  })
+
   it('flags climatology data with "avg" but not live forecasts', () => {
     const climo = { icon: '⛅', tmin: 19, tmax: 32, desc: 'Partly cloudy', source: 'climatology' }
     const { container: c1 } = render(<DayBanner dateKey="2026-07-22" weather={climo} />)

@@ -15,6 +15,8 @@ from ..weather import get_weather
 router = APIRouter()
 
 CACHE_TTL = timedelta(hours=6)
+# Bump when the payload shape changes so stale-shaped entries are re-fetched.
+CACHE_VERSION = "v2"  # v2 adds wind
 
 
 @router.get("/weather")
@@ -28,7 +30,7 @@ def weather_lookup(
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid lat/lng")
 
-    key = f"{lat_r},{lng_r},{start},{end}"
+    key = f"{CACHE_VERSION},{lat_r},{lng_r},{start},{end}"
     cached = session.get(WeatherCache, key)
     if cached and (datetime.utcnow() - cached.fetched_at) < CACHE_TTL:
         return {"weather": cached.payload, "cached": True}
