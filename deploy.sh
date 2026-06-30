@@ -155,6 +155,30 @@ sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q --
 sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q -r "$APP_DIR/backend/requirements.txt"
 ok "Python dependencies installed"
 
+# ── 4a-cut. Cutover control (root edits the root-owned .env) ───────────────────
+# The non-sudo app user toggles the DB backend via sentinel files it can create:
+#   .pg-rollback → remove DATABASE_URL (revert to SQLite), clears both sentinels
+#   .pg-cutover  → set DATABASE_URL to Postgres (password from .pg-bootstrap)
+# Neither present → leave .env untouched (whatever is set stays).
+if [[ -f "$APP_DIR/.pg-rollback" ]]; then
+  sed -i '/^DATABASE_URL=/d' "$APP_DIR/.env" 2>/dev/null || true
+  rm -f "$APP_DIR/.pg-cutover" "$APP_DIR/.pg-rollback"
+  ok "Rollback: reverted to SQLite (DATABASE_URL removed)"
+elif [[ -f "$APP_DIR/.pg-cutover" ]]; then
+  PWC="$(cat "$APP_DIR/.pg-bootstrap" 2>/dev/null | tr -d '\r\n')"
+  if [[ -n "$PWC" ]]; then
+    NEW_URL="postgresql+psycopg://travelcomp:$PWC@localhost/travelcomp"
+    if grep -q '^DATABASE_URL=' "$APP_DIR/.env" 2>/dev/null; then
+      sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$NEW_URL|" "$APP_DIR/.env"
+    else
+      echo "DATABASE_URL=$NEW_URL" >> "$APP_DIR/.env"
+    fi
+    ok "Cutover: DATABASE_URL → Postgres"
+  else
+    warn "Cutover requested but .pg-bootstrap missing — staying on SQLite"
+  fi
+fi
+
 # ── 4a0. Ensure Postgres present + role/database provisioned (root) ────────────
 # Runs in both fresh and update deploys (idempotent). Installs the server if
 # missing, then — only when PG_BOOTSTRAP_PASSWORD is set in .env — ensures the
