@@ -22,6 +22,20 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
   const [newBagName, setNewBagName] = useState('')
   const [editItem, setEditItem] = useState(null)
 
+  // Collapsed bag groups, persisted per trip so the layout sticks across reloads.
+  const COLLAPSE_KEY = `tc-pack-collapsed-${tripId}`
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '[]')) } catch { return new Set() }
+  })
+  function toggleCollapse(key) {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
+      return next
+    })
+  }
+
   async function load() {
     try { setData(await getPacking(tripId)) }
     catch (e) { setError(e.message) }
@@ -122,13 +136,21 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
         if (key === NO_BAG && list.length === 0) return null
         const bp = list.reduce((a, i) => a + i.packed_count, 0)
         const bt = list.reduce((a, i) => a + i.quantity, 0)
+        const isCollapsed = collapsed.has(key)
         return (
           <div key={key} className="mb-4">
             <div className="flex items-center gap-2 mb-1.5">
-              <span style={{ color: 'var(--text-muted)' }} className="text-xs font-semibold uppercase tracking-wide">
-                {bag ? `🧳 ${bag.name}` : 'No bag'}
-              </span>
-              <span style={{ color: 'var(--text-faint)' }} className="text-xs">{bp}/{bt}</span>
+              <button
+                onClick={() => toggleCollapse(key)}
+                className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                title={isCollapsed ? 'Expand' : 'Collapse'}
+              >
+                <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem', width: '0.7rem' }}>{isCollapsed ? '▸' : '▾'}</span>
+                <span style={{ color: 'var(--text-muted)' }} className="text-xs font-semibold uppercase tracking-wide">
+                  {bag ? `🧳 ${bag.name}` : 'No bag'}
+                </span>
+                <span style={{ color: 'var(--text-faint)' }} className="text-xs">{bp}/{bt}</span>
+              </button>
               {bag && canEdit && (
                 <span className="flex gap-1.5 ml-1">
                   <button onClick={() => renameBag(bag)} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70" title="Rename">✎</button>
@@ -136,9 +158,11 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
                 </span>
               )}
             </div>
-            {list.length === 0
-              ? <p style={{ color: 'var(--text-faint)' }} className="text-xs pl-1 py-1">Empty</p>
-              : list.map(it => <PackRow key={it.id} it={it} bags={bags} onToggle={toggle} onStep={step} onRemove={remove} onPatch={patch} onEdit={setEditItem} canEdit={canEdit} />)}
+            {!isCollapsed && (
+              list.length === 0
+                ? <p style={{ color: 'var(--text-faint)' }} className="text-xs pl-1 py-1">Empty</p>
+                : list.map(it => <PackRow key={it.id} it={it} bags={bags} onToggle={toggle} onStep={step} onRemove={remove} onPatch={patch} onEdit={setEditItem} canEdit={canEdit} />)
+            )}
           </div>
         )
       })}

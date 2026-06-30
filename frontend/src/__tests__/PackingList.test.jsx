@@ -16,6 +16,7 @@ const DATA = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   api.getPacking.mockResolvedValue(DATA)
   api.updatePackItem.mockResolvedValue({})
 })
@@ -41,6 +42,14 @@ describe('PackingList', () => {
     render(<PackingList tripId={9} userEmail="me@x.com" canEdit />)
     await screen.findByText('Tent')
     expect(screen.getByText('Shared')).toBeTruthy()   // Tent is shared (distinct from form's "shared" label)
+  })
+
+  it('collapses a bag group, hiding its items', async () => {
+    render(<PackingList tripId={9} userEmail="me@x.com" canEdit />)
+    expect(await screen.findByText('Socks')).toBeTruthy()       // Carry-on item visible
+    fireEvent.click(screen.getByText('🧳 Carry-on'))            // collapse via the bag header
+    await waitFor(() => expect(screen.queryByText('Socks')).toBeNull())
+    expect(screen.getByText('Tent')).toBeTruthy()               // other group unaffected
   })
 
   it('toggling an unpacked item packs it fully', async () => {
