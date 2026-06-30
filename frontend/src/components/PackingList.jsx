@@ -3,6 +3,7 @@ import {
   getPacking, createPackItem, updatePackItem, deletePackItem,
   createBag, updateBag, deleteBag,
 } from '../api.js'
+import PackItemEditModal from './PackItemEditModal.jsx'
 
 export const isPacked = (it) => it.packed_count >= it.quantity && it.quantity > 0
 export const isShared = (it) => !it.owner_email
@@ -19,6 +20,7 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
   const [shared, setShared] = useState(false)
   const [bagId, setBagId] = useState('')
   const [newBagName, setNewBagName] = useState('')
+  const [editItem, setEditItem] = useState(null)
 
   async function load() {
     try { setData(await getPacking(tripId)) }
@@ -136,10 +138,17 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
             </div>
             {list.length === 0
               ? <p style={{ color: 'var(--text-faint)' }} className="text-xs pl-1 py-1">Empty</p>
-              : list.map(it => <PackRow key={it.id} it={it} bags={bags} onToggle={toggle} onStep={step} onRemove={remove} onPatch={patch} canEdit={canEdit} />)}
+              : list.map(it => <PackRow key={it.id} it={it} bags={bags} onToggle={toggle} onStep={step} onRemove={remove} onPatch={patch} onEdit={setEditItem} canEdit={canEdit} />)}
           </div>
         )
       })}
+
+      {editItem && (
+        <PackItemEditModal
+          item={editItem} bags={bags} canEdit={canEdit}
+          onSave={patch} onDelete={remove} onClose={() => setEditItem(null)}
+        />
+      )}
 
       {/* Add bag */}
       {canEdit && (
@@ -156,9 +165,10 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
   )
 }
 
-function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, canEdit }) {
+function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, onEdit, canEdit }) {
   const packed = isPacked(it)
   const shared = isShared(it)
+  const editable = !shared || canEdit   // own personal items always; shared needs editor
   return (
     <div
       className="flex items-center gap-2 py-1.5 group"
@@ -191,8 +201,10 @@ function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, canEdit }) {
         <option value="">No bag</option>
         {bags.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
       </select>
-      <button onClick={() => onRemove(it.id)} style={{ color: 'var(--text-faint)' }}
-              className="text-xs shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity" title="Remove">✕</button>
+      {editable && (
+        <button onClick={() => onEdit(it)} style={{ color: 'var(--text-faint)' }}
+                className="text-xs shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity" title="Edit">✎</button>
+      )}
     </div>
   )
 }
