@@ -8,6 +8,7 @@ import LoginPage from './components/LoginPage.jsx'
 import UserSettings from './components/UserSettings.jsx'
 import ShareModal from './components/ShareModal.jsx'
 import PendingReview from './components/PendingReview.jsx'
+import PackingList from './components/PackingList.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf, getPending } from './api.js'
 import { canEdit, canManage } from './roles.js'
@@ -57,6 +58,7 @@ function AppShell({ user, onLogout }) {
   const [tripStops, setTripStops] = useState([])
   const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [kindFilter, setKindFilter] = useState('')
+  const [packing, setPacking] = useState(false)
   const online = useOnline()
 
   function refreshPending() {
@@ -82,8 +84,8 @@ function AppShell({ user, onLogout }) {
 
   const [userChoseList, setUserChoseList] = useState(false)
 
-  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setStats(null); setTripStops([]); setKindFilter('') }
-  function goBack() { setSelectedTrip(null); setEditing(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter('') }
+  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setPacking(false); setStats(null); setTripStops([]); setKindFilter('') }
+  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter('') }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
@@ -152,12 +154,14 @@ function AppShell({ user, onLogout }) {
       <KindFilterContext.Provider value={kindFilter}>
       <main className="w-full px-4 sm:px-8 lg:px-16 py-6">
         {selectedTrip
-          ? editing
-            ? <EditTrip
-                trip={selectedTrip}
-                onTripRenamed={name => setSelectedTrip(t => ({ ...t, name }))}
-              />
-            : <TripTimeline tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops} />
+          ? packing
+            ? <PackingList tripId={selectedTrip.id} userEmail={user?.email} canEdit={canEdit(selectedTrip.role)} />
+            : editing
+              ? <EditTrip
+                  trip={selectedTrip}
+                  onTripRenamed={name => setSelectedTrip(t => ({ ...t, name }))}
+                />
+              : <TripTimeline tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops} />
           : <TripList onOpen={openTrip} skipAutoOpen={userChoseList} />
         }
       </main>
@@ -174,7 +178,7 @@ function AppShell({ user, onLogout }) {
               + Add item
             </button>
           )}
-          {selectedTrip && online && canEdit(selectedTrip.role) && (
+          {selectedTrip && online && !packing && canEdit(selectedTrip.role) && (
             <button
               onClick={() => setEditing(e => !e)}
               style={{
@@ -186,6 +190,20 @@ function AppShell({ user, onLogout }) {
               className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
             >
               {editing ? 'View' : 'Edit'}
+            </button>
+          )}
+          {selectedTrip && online && (
+            <button
+              onClick={() => { setPacking(p => !p); setEditing(false) }}
+              style={{
+                background: packing ? 'var(--accent)' : 'transparent',
+                color: packing ? 'var(--accent-fg)' : 'var(--text-muted)',
+                border: '1px solid',
+                borderColor: packing ? 'var(--accent)' : 'var(--border)',
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              🎒 {packing ? 'Timeline' : 'Packing'}
             </button>
           )}
           {selectedTrip && online && canManage(selectedTrip.role) && (

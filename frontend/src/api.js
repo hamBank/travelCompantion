@@ -33,6 +33,15 @@ export const deleteTrip = (id) => req(`/trips/${id}`, { method: 'DELETE' })
 export const updateTrip = (id, data) =>
   req(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 
+// ── Packing list ─────────────────────────────────────────────────────────────
+export const getPacking       = (tripId)        => req(`/trips/${tripId}/packing`)
+export const createPackItem   = (tripId, data)  => req(`/trips/${tripId}/packing`, { method: 'POST', body: JSON.stringify(data) })
+export const updatePackItem   = (id, data)      => req(`/packing/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const deletePackItem   = (id)            => req(`/packing/${id}`, { method: 'DELETE' })
+export const createBag        = (tripId, name)  => req(`/trips/${tripId}/bags`, { method: 'POST', body: JSON.stringify({ name }) })
+export const updateBag        = (id, name)      => req(`/bags/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) })
+export const deleteBag        = (id)            => req(`/bags/${id}`, { method: 'DELETE' })
+
 export const getWeather = (lat, lng, start, end, q) => {
   const p = new URLSearchParams({ start, end })
   if (lat) p.set('lat', lat)

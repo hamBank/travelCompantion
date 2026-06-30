@@ -295,6 +295,65 @@ class UserImportToken(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class Bag(SQLModel, table=True):
+    """A piece of luggage for a trip (shared/trip-level). Packing items go in one."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    trip_id: int = Field(foreign_key="trip.id", index=True)
+    name: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PackingItem(SQLModel, table=True):
+    """A thing to pack. owner_email == "" means a SHARED item (everyone sees it);
+    otherwise it's personal to that user and only they see it. quantity/packed_count
+    track partial packing (e.g. 3 of 5 socks packed)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    trip_id: int = Field(foreign_key="trip.id", index=True)
+    name: str
+    owner_email: str = Field(default="", index=True)   # "" = shared
+    bag_id: Optional[int] = Field(default=None, foreign_key="bag.id")
+    quantity: int = 1
+    packed_count: int = 0
+    sort_order: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class BagCreate(SQLModel):
+    name: str
+
+
+class BagRead(SQLModel):
+    id: int
+    trip_id: int
+    name: str
+
+
+class PackingItemCreate(SQLModel):
+    name: str
+    shared: bool = False
+    bag_id: Optional[int] = None
+    quantity: int = 1
+    packed_count: int = 0
+
+
+class PackingItemUpdate(SQLModel):
+    name: Optional[str] = None
+    shared: Optional[bool] = None
+    bag_id: Optional[int] = None
+    quantity: Optional[int] = None
+    packed_count: Optional[int] = None
+
+
+class PackingItemRead(SQLModel):
+    id: int
+    trip_id: int
+    name: str
+    owner_email: str          # "" = shared; frontend compares to current user
+    bag_id: Optional[int] = None
+    quantity: int
+    packed_count: int
+
+
 class WeatherCache(SQLModel, table=True):
     """6-hour cache of Open-Meteo lookups, keyed by rounded coords + date range.
 
