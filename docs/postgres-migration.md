@@ -1,7 +1,27 @@
 # SQLite → Postgres migration
 
-Status: **Phase 1 complete** (code is dialect-agnostic and Alembic-managed).
-Phases 2–4 (provisioning, data copy, cutover) are runbook steps below.
+Status: **Phases 1–3 done on production** (code dialect-agnostic + Alembic;
+Postgres provisioned; all data copied and verified). The app **still runs on
+SQLite** — Phase 4 (cutover) is pending.
+
+> ⚠️ **Rotate the DB password at cutover.** The provisioning password was emitted
+> in a migration log line before that was masked, so treat it as compromised.
+> Re-provision with a fresh password (update `.pg-bootstrap` or run
+> `provision_postgres.sh`) and use the new one in `DATABASE_URL`.
+
+## Live-server bootstrap mechanism (how Phase 2/3 ran)
+
+The SSH user (`travelcomp`) can't `sudo`, but the webhook deploy runs as root.
+So privileged steps go through the deploy:
+- `deploy.sh` installs Postgres if missing and, when a password is present in
+  `$APP_DIR/.pg-bootstrap` (a `travelcomp`-writable sentinel) or
+  `PG_BOOTSTRAP_PASSWORD` in `.env`, idempotently ensures the `travelcomp`
+  role + database exist.
+- Schema + data then run as `travelcomp` (no root needed):
+  `alembic upgrade head` and `scripts/migrate_to_postgres.py` against the PG URL.
+
+Verified: all 9 tables row-for-row equal to `travel.db` (513 rows); sequences
+advanced past max ids.
 
 ## Why / what changed in Phase 1
 
