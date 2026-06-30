@@ -241,20 +241,26 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
-  const [items, setItems] = useState(stop.items)
+  const [itemEdits, setItemEdits] = useState({})  // Only track local edits, not synced items
   const canEdit = useCanEdit()
 
+  // Use stop.items directly instead of syncing to local state—this ensures fresh data
+  const items = stop.items
+
   function handleItemSaved(updated) {
-    setItems(prev => prev.map(i => i.id === updated.id ? updated : i))
+    // Refresh parent timeline to get fresh data with the update
+    onUpdate?.()
   }
 
   function handleItemDeleted(id) {
-    setItems(prev => prev.filter(i => i.id !== id))
+    // Refresh parent timeline to remove the item
+    onUpdate?.()
   }
 
   function handleItemAdded(newItem) {
-    setItems(prev => [...prev, newItem])
     onItemAdded?.(newItem)
+    // Refresh parent timeline to include the new item
+    onUpdate?.()
   }
 
 

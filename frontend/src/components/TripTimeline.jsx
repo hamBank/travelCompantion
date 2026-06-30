@@ -22,6 +22,7 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   const [warnings, setWarnings] = useState([])
   const [dismissed, setDismissed] = useState(false)
   const [navItem, setNavItem] = useState(null)
+  const [renderKey, setRenderKey] = useState(0)  // force remount on data refresh
   const allItemsRef    = useRef([])
   const dataVersionRef = useRef(0)      // last known data_version from /health
   const pendingRefresh = useRef(false)  // queued while edit modal is open
@@ -91,10 +92,10 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
         ? await getTripTimeline(tripId, { sync: Date.now() })  // cache-bust query param for silent refreshes
         : await getTripTimeline(tripId)
       setTimeline(tl)
-      // Close any open modal and clear navItem so fresh data is used
+
+      // Force component remount for silent refreshes by changing key
       if (silent) {
-        getCurrentModal()?.closeFn?.()
-        setNavItem(null)
+        setRenderKey(k => k + 1)
       }
       // Legacy accommodation backfill — editors only (timeline also lazy-migrates).
       if (canEdit(tl.role)) { try { await backfillAccommodations(tripId) } catch (_) {} }
@@ -234,7 +235,7 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
 
         <div className="space-y-1.5">
           {timeline.stops.map((stop, i) => (
-            <StopCard key={stop.id} stop={stop} index={i} onUpdate={load}
+            <StopCard key={`${stop.id}-${renderKey}`} stop={stop} index={i} onUpdate={load}
               inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames}
               inboundConnection={inboundConnections[stop.id] ?? null}
               skipDays={skipDaysByStop[stop.id] ?? null} />
