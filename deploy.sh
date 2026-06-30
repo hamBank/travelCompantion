@@ -97,11 +97,7 @@ if ! $UPDATE_ONLY; then
   # git (Apache already present)
   apt-get install -y -qq git
 
-  # Postgres server + client (client provides pg_dump for backups). Harmless if
-  # the app stays on SQLite; required once DATABASE_URL points at Postgres.
-  apt-get install -y -qq postgresql postgresql-client
-
-  ok "System packages ready  python=$(python3 --version | cut -d' ' -f2)  node=$(node -v)  npm=$(npm -v)  pg=$(psql --version 2>/dev/null | awk '{print $3}')"
+  ok "System packages ready  python=$(python3 --version | cut -d' ' -f2)  node=$(node -v)  npm=$(npm -v)"
 
   # ── Apache modules ─────────────────────────────────────────────────────────
   info "Enabling Apache modules (proxy, headers)"
@@ -158,6 +154,32 @@ mkdir -p "$PIP_CACHE" && chown "$APP_USER:$APP_USER" "$PIP_CACHE"
 sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q --upgrade pip
 sudo -u "$APP_USER" env PIP_CACHE_DIR="$PIP_CACHE" "$VENV/bin/pip" install -q -r "$APP_DIR/backend/requirements.txt"
 ok "Python dependencies installed"
+
+# ── 4a0. Ensure Postgres present + role/database provisioned (root) ────────────
+# Runs in both fresh and update deploys (idempotent). Installs the server if
+# missing, then — only when PG_BOOTSTRAP_PASSWORD is set in .env — ensures the
+# travelcomp role+database exist. This lets provisioning happen through the
+# root-run deploy even though the SSH user can't sudo. Setting the bootstrap
+# password does NOT switch the app to Postgres; that's a separate DATABASE_URL change.
+if ! command -v psql &>/dev/null; then
+  info "Installing Postgres (server + client)"
+  apt-get update -qq && apt-get install -y -qq postgresql postgresql-client \
+    && ok "Postgres installed" || warn "Postgres install failed"
+fi
+PG_BOOT="$(grep -E '^PG_BOOTSTRAP_PASSWORD=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")"
+if [[ -n "$PG_BOOT" ]] && command -v psql &>/dev/null; then
+  systemctl is-active --quiet postgresql || systemctl start postgresql || true
+  info "Ensuring Postgres role/database 'travelcomp' (idempotent)"
+  if [[ "$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='travelcomp'")" == "1" ]]; then
+    sudo -u postgres psql -c "ALTER ROLE \"travelcomp\" WITH LOGIN PASSWORD '$PG_BOOT';" >/dev/null
+  else
+    sudo -u postgres psql -c "CREATE ROLE \"travelcomp\" WITH LOGIN PASSWORD '$PG_BOOT';" >/dev/null
+  fi
+  if [[ "$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='travelcomp'")" != "1" ]]; then
+    sudo -u postgres psql -c "CREATE DATABASE \"travelcomp\" OWNER \"travelcomp\";" >/dev/null
+  fi
+  ok "Postgres role/database ready"
+fi
 
 # ── 4a. Database schema migrations (Postgres) ─────────────────────────────────
 # On Postgres, Alembic owns the schema. Back up first, then upgrade to head
