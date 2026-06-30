@@ -228,7 +228,7 @@ function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, onEdit, canEdi
       <input type="checkbox" checked={packed} onChange={() => onToggle(it)} />
       <span
         className="text-sm flex-1 min-w-0 truncate"
-        style={{ color: packed ? 'var(--text-faint)' : 'var(--text)', textDecoration: packed ? 'line-through' : 'none' }}
+        style={{ color: packed ? 'var(--text-faint)' : 'var(--text)' }}
       >
         {it.name}
       </span>
