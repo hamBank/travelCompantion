@@ -166,7 +166,10 @@ if ! command -v psql &>/dev/null; then
   apt-get update -qq && apt-get install -y -qq postgresql postgresql-client \
     && ok "Postgres installed" || warn "Postgres install failed"
 fi
-PG_BOOT="$(grep -E '^PG_BOOTSTRAP_PASSWORD=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")"
+# Bootstrap password may come from a $APP_DIR/.pg-bootstrap sentinel (writable by
+# the app user, which can't sudo) or from PG_BOOTSTRAP_PASSWORD in .env.
+PG_BOOT="$(cat "$APP_DIR/.pg-bootstrap" 2>/dev/null | tr -d '\r\n' || true)"
+[[ -z "$PG_BOOT" ]] && PG_BOOT="$(grep -E '^PG_BOOTSTRAP_PASSWORD=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")"
 if [[ -n "$PG_BOOT" ]] && command -v psql &>/dev/null; then
   systemctl is-active --quiet postgresql || systemctl start postgresql || true
   info "Ensuring Postgres role/database 'travelcomp' (idempotent)"
