@@ -96,7 +96,9 @@ def main() -> None:
     ap.add_argument("--to", dest="dest", required=True, help="destination SQLAlchemy URL")
     args = ap.parse_args()
 
-    print(f"Copying {args.source} → {args.dest}")
+    from sqlalchemy.engine import make_url
+    safe_dest = make_url(args.dest).render_as_string(hide_password=True)
+    print(f"Copying {args.source} → {safe_dest}")
     counts = copy_all(args.source, args.dest)
     total = sum(counts.values())
     for table, n in counts.items():
