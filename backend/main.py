@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 # /metrics is unauthenticated — Prometheus scrapers don't carry user JWTs.
 # Metrics contain only aggregate counts/durations; no PII.
 _PUBLIC_PREFIXES = ("/auth/", "/health", "/metrics", "/currency/", "/weather",
-                    "/push/vapid-public-key", "/push/debug-log", "/assets/",
+                    "/push/vapid-public-key", "/assets/",
                     "/sw.", "/sw-update", "/sw-push", "/workbox-", "/registerSW.", "/manifest.",
                     "/coverage", "/ingest/")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",

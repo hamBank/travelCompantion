@@ -3,17 +3,6 @@ from backend.models import PushSubscription
 from sqlmodel import select
 
 
-def test_debug_log_accepts_any_json_and_never_errors(client):
-    r = client.post("/push/debug-log", json={"stage": "test", "foo": "bar"})
-    assert r.status_code == 200
-    assert r.json() == {"ok": True}
-
-
-def test_debug_log_tolerates_empty_body(client):
-    r = client.post("/push/debug-log")
-    assert r.status_code == 200
-
-
 def test_vapid_public_key_503_when_unconfigured(client, monkeypatch):
     import backend.routers.push as push_router
     monkeypatch.setattr(push_router, "get_vapid_public_key", lambda: None)

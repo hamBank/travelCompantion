@@ -5,7 +5,7 @@ service worker's PushManager). Subscribe/unsubscribe require auth: a
 subscription is always tied to the authenticated user's email, and can only be
 removed by its owner.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from ..database import get_session
@@ -14,20 +14,6 @@ from ..models import PushSubscription, PushSubscriptionCreate
 from ..push import get_vapid_public_key
 
 router = APIRouter()
-
-
-@router.post("/push/debug-log")
-async def debug_log(request: Request):
-    """Temporary diagnostic beacon: the service worker's push handler POSTs here
-    with whatever it observed, so we can see what happened on a device we have
-    no console access to. Remove once push delivery is confirmed working."""
-    import logging
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    logging.getLogger("push.debug").info("sw push debug: %s", body)
-    return {"ok": True}
 
 
 @router.get("/push/vapid-public-key")
