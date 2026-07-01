@@ -388,7 +388,7 @@ class NotificationLog(SQLModel, table=True):
     so the periodic job never double-sends across runs."""
     id: Optional[int] = Field(default=None, primary_key=True)
     item_id: int = Field(index=True)
-    kind: str                                    # "checkin" | "departure"
+    kind: str                                    # "checkin_heads_up" | "checkin" | "departure"
     sent_at: datetime = Field(default_factory=datetime.utcnow)
 
 

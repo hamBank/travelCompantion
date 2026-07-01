@@ -364,6 +364,59 @@ RandomizedDelaySec=600
 [Install]
 WantedBy=timers.target" || true
 
+# scripts/send_notifications.py has the same "documented as cron, never scheduled"
+# gap as weather did. Safe to run unconditionally even before VAPID keys are set —
+# send_due_notifications swallows PushSendError per-subscriber and just no-ops.
+write_unit "/etc/systemd/system/${SERVICE_NAME}-notifications.service" "[Unit]
+Description=Travel Companion push notification dispatch
+
+[Service]
+Type=oneshot
+User=$APP_USER
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$ENV_FILE
+ExecStart=$VENV/bin/python $APP_DIR/scripts/send_notifications.py
+StandardOutput=append:/var/log/travelcomp/notifications.log
+StandardError=append:/var/log/travelcomp/notifications.log" || true
+
+write_unit "/etc/systemd/system/${SERVICE_NAME}-notifications.timer" "[Unit]
+Description=Run Travel Companion push notification dispatch every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target" || true
+
+# scripts/pg_backup.sh has the same gap too, but it's Postgres-only (reads
+# $APP_DIR/.pg-bootstrap for the DB password) — most installs stay on SQLite
+# (CLAUDE.md's default), where that file never exists. Guard the ExecStart so
+# a SQLite-only server logs a clean skip instead of a daily "failed" unit.
+write_unit "/etc/systemd/system/${SERVICE_NAME}-backup.service" "[Unit]
+Description=Travel Companion daily Postgres backup
+
+[Service]
+Type=oneshot
+User=$APP_USER
+WorkingDirectory=$APP_DIR
+Environment=APP_DIR=$APP_DIR
+ExecStart=/bin/bash -c 'test -f $APP_DIR/.pg-bootstrap || { echo \"Postgres not bootstrapped — skipping backup\"; exit 0; }; exec $APP_DIR/scripts/pg_backup.sh'
+StandardOutput=append:/var/log/travelcomp/pg-backup.log
+StandardError=append:/var/log/travelcomp/pg-backup.log" || true
+
+write_unit "/etc/systemd/system/${SERVICE_NAME}-backup.timer" "[Unit]
+Description=Run Travel Companion Postgres backup daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target" || true
+
 # Only enable/start on first install. On updates the units are already active,
 # and calling systemctl from within the running update service itself causes
 # a circular dependency → systemd returns exit code 243/CREDENTIALS.
@@ -372,6 +425,8 @@ if ! $UPDATE_ONLY; then
   systemctl enable "$SERVICE_NAME"
   systemctl enable --now "${SERVICE_NAME}-update.path"
   systemctl enable --now "${SERVICE_NAME}-weather.timer"
+  systemctl enable --now "${SERVICE_NAME}-notifications.timer"
+  systemctl enable --now "${SERVICE_NAME}-backup.timer"
   ok "Systemd units created and enabled: ${SERVICE_FILE}"
 else
   # Never call daemon-reload or enable from within the running update service.
