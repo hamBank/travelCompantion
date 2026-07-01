@@ -233,6 +233,41 @@ def test_departure_notification_body_shows_local_time_not_utc(session):
     assert "14:35" in calls[0][1]["body"]   # local time, not 11:35 (the UTC equivalent)
 
 
+def test_trigger_fires_at_the_correct_real_world_instant_regardless_of_observer_timezone(session):
+    """The backend has no notion of "the user's current timezone" at all, by
+    design — a check-in opening is a single objective moment in real time
+    (UTC); the push simply lands on every subscribed device at that same real
+    instant, whatever the local wall-clock time happens to be there. So the
+    real thing to validate isn't "does it use the user's timezone" (it
+    shouldn't — and doesn't), it's "is the trigger correct in absolute/UTC
+    terms," including across a calendar-day boundary between the flight's own
+    timezone and some other observer's.
+
+    Tokyo (Asia/Tokyo, UTC+9) flight departs "2026-07-03T09:00" local → true
+    UTC depart is 2026-07-03T00:00. With a 24h check-in window, the TRUE
+    trigger is 2026-07-02T00:00 UTC.
+
+    For an observer in Los Angeles (UTC-7 in July), that same real instant is
+    2026-07-01T17:00 PDT — a full calendar day earlier locally than it is in
+    Tokyo (July 1 in LA vs July 2 in Tokyo) — deliberately chosen so a bug
+    that leaked any particular local calendar date into the comparison would
+    be caught by this test, not just an hour-of-day error.
+    """
+    trip, stop = _seed_trip(session)
+    correct_utc_trigger = datetime(2026, 7, 2, 0, 0)
+    _flight(session, stop, "2026-07-03T09:00", checkin_window="24h", depart_tz="Asia/Tokyo")
+
+    # Just before the true UTC trigger — must NOT fire yet, even though in
+    # Tokyo's own local calendar it's already "the 2nd" at this instant.
+    n_before = send_due_notifications(session, now=correct_utc_trigger - timedelta(minutes=1), sender=_fake_sender([]))
+    assert n_before == 0
+
+    # At/just after the true UTC trigger — must fire, regardless of what date
+    # or hour that is in any other timezone (Tokyo, LA, or anywhere else).
+    n_after = send_due_notifications(session, now=correct_utc_trigger + timedelta(minutes=1), sender=_fake_sender([]))
+    assert n_after == 1
+
+
 def test_expired_subscription_is_deleted(session):
     trip, stop = _seed_trip(session)
     now = datetime(2026, 8, 1, 12, 0)
