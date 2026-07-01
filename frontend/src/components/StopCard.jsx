@@ -198,6 +198,15 @@ export function fmtConnectionDur(ms) {
   return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`
 }
 
+// A stop can hold more than one accommodation item (e.g. a multi-port cruise
+// matched to a single stop) — pick the one with the LAST checkout, not just
+// the first accommodation item encountered in array order.
+export function latestCheckoutAccommodation(items) {
+  return (items || [])
+    .filter(i => i.kind === 'accommodation' && i.details?.checkout)
+    .reduce((latest, i) => (!latest || i.details.checkout > latest.details.checkout) ? i : latest, null)
+}
+
 export function computeCrossStopLayover(fromStop, toStop) {
   // Last transport arrival in fromStop (UTC-aware)
   let latestArr = null, latestArrMs = null
@@ -365,7 +374,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const foodItems = visibleItems.filter(i => i.kind === 'food')
   const purchaseItems = visibleItems.filter(i => i.kind === 'purchase')
 
-  const checkoutAccom = items.find(i => i.kind === 'accommodation' && i.details?.checkout)
+  const checkoutAccom = latestCheckoutAccommodation(items)
 
   async function cycleStatus(e) {
     e.stopPropagation()
