@@ -5,8 +5,9 @@ Idempotent via NotificationLog — running any number of times per real-world
 event sends at most one notification per (item, kind).
 """
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
@@ -36,13 +37,40 @@ def _parse_checkin_window(s) -> Optional[float]:
     return None
 
 
-def _parse_dt(s) -> Optional[datetime]:
-    if not s:
+def _local_to_utc(dt_str, tz) -> Optional[datetime]:
+    """Convert a stored local wall-clock datetime + timezone to a naive UTC
+    datetime (naive throughout, matching this module's datetime.utcnow() use).
+
+    Mirrors frontend/src/components/StopCard.jsx:toUtcMs exactly — same fixed-
+    offset ("GMT+8", "+08:00") and IANA zone name ("Europe/Helsinki") parsing —
+    so the notification trigger and the UI agree on when things actually happen.
+    Falls back to treating the datetime as already-UTC when tz is absent or
+    can't be resolved (matches the frontend's fallback too).
+    """
+    if not dt_str:
         return None
+    base = str(dt_str)
+    if "T" not in base:
+        base += "T00:00"
     try:
-        return datetime.fromisoformat(str(s)[:16])
+        naive = datetime.fromisoformat(base[:16])
     except ValueError:
         return None
+    if not tz:
+        return naive
+
+    tz_s = str(tz).strip()
+    m = re.match(r"^(?:GMT|UTC)?\s*([+-]?)(\d{1,2})(?::?(\d{2}))?$", tz_s, re.IGNORECASE)
+    if m and (m.group(1) or m.group(3) is not None or m.group(2)):
+        sign = -1 if m.group(1) == "-" else 1
+        off_min = sign * (int(m.group(2)) * 60 + int(m.group(3) or 0))
+        return naive - timedelta(minutes=off_min)
+
+    try:
+        aware_local = naive.replace(tzinfo=ZoneInfo(tz_s))
+        return aware_local.astimezone(timezone.utc).replace(tzinfo=None)
+    except Exception:
+        return naive
 
 
 def _due_triggers(session: Session, now: datetime):
@@ -57,9 +85,10 @@ def _due_triggers(session: Session, now: datetime):
 
     for item in items:
         d = item.details or {}
-        depart = _parse_dt(d.get("depart_time"))
+        depart_local = d.get("depart_time")
+        depart = _local_to_utc(depart_local, d.get("depart_tz"))
         if not depart or depart <= now:
-            continue  # no depart time, or already departed
+            continue  # no depart time, or already departed (both in UTC)
 
         if item.kind == ItemKind.flight:
             window_hours = _parse_checkin_window(d.get("checkin_window"))
@@ -78,14 +107,17 @@ def _due_triggers(session: Session, now: datetime):
         if notify_at < now - timedelta(hours=GRACE_HOURS):
             continue  # too stale
 
-        yield item, kind, depart
+        yield item, kind, depart_local
 
 
-def _notification_payload(item: ItineraryItem, kind: str, depart: datetime) -> dict:
+def _notification_payload(item: ItineraryItem, kind: str, depart_local: str) -> dict:
+    """depart_local is the flight/train's own local departure time string
+    (e.g. "2026-07-02T14:35") — shown as-is so the notification reads in the
+    same local time the traveller sees in the app, not a UTC-shifted one."""
     name = item.name or item.kind.value
     if kind == "checkin":
         return {"title": "Check-in now open", "body": f"{name} — online check-in is open", "url": "/", "urgent": True}
-    when = depart.strftime("%H:%M")
+    when = str(depart_local)[11:16] if len(str(depart_local)) >= 16 else str(depart_local)
     return {"title": "Departure approaching", "body": f"{name} departs at {when}", "url": "/", "urgent": True}
 
 

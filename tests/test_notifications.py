@@ -35,18 +35,22 @@ def _seed_trip(session, member_email="a@x.com"):
     return trip, stop
 
 
-def _flight(session, stop, depart, checkin_window="24h", name="QF1"):
-    item = ItineraryItem(stop_id=stop.id, kind=ItemKind.flight, name=name,
-                         details={"depart_time": depart, "checkin_window": checkin_window})
+def _flight(session, stop, depart, checkin_window="24h", name="QF1", depart_tz=None):
+    details = {"depart_time": depart, "checkin_window": checkin_window}
+    if depart_tz:
+        details["depart_tz"] = depart_tz
+    item = ItineraryItem(stop_id=stop.id, kind=ItemKind.flight, name=name, details=details)
     session.add(item)
     session.commit()
     session.refresh(item)
     return item
 
 
-def _rail(session, stop, depart, name="Eurostar"):
-    item = ItineraryItem(stop_id=stop.id, kind=ItemKind.rail, name=name,
-                         details={"depart_time": depart})
+def _rail(session, stop, depart, name="Eurostar", depart_tz=None):
+    details = {"depart_time": depart}
+    if depart_tz:
+        details["depart_tz"] = depart_tz
+    item = ItineraryItem(stop_id=stop.id, kind=ItemKind.rail, name=name, details=details)
     session.add(item)
     session.commit()
     session.refresh(item)
@@ -169,6 +173,64 @@ def test_only_trip_members_receive_notification(session):
     send_due_notifications(session, now=now, sender=_fake_sender(calls))
     assert len(calls) == 1
     assert calls[0][0]["endpoint"] == "https://push/1"
+
+
+def test_checkin_trigger_accounts_for_flights_departure_timezone(session):
+    """Regression test for a real bug: depart_time is stored as LOCAL wall-clock
+    time at the departure airport, but the old code compared it directly against
+    real UTC `now` with no timezone conversion at all — silently mistreating
+    e.g. "14:35 Helsinki time" as if it were "14:35 UTC" (a 3h error in summer).
+
+    Helsinki (Europe/Helsinki) is UTC+3 in July. depart_time "2026-07-02T14:35"
+    local → true UTC departure is 2026-07-02T11:35. With a 24h check-in window,
+    the TRUE trigger is 2026-07-01T11:35 UTC; the OLD BUGGY trigger would have
+    been 2026-07-01T14:35 UTC (using the naive local digits unconverted).
+    `now` below sits between those two — due under the fix, not due under the bug.
+    """
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 7, 1, 12, 0)  # after the correct trigger, before the buggy one
+    _flight(session, stop, "2026-07-02T14:35", checkin_window="24h", depart_tz="Europe/Helsinki")
+
+    n = send_due_notifications(session, now=now, sender=_fake_sender([]))
+    assert n == 1
+
+
+def test_checkin_trigger_with_fixed_offset_timezone_matches_iana(session):
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 7, 1, 12, 0)
+    _flight(session, stop, "2026-07-02T14:35", checkin_window="24h", depart_tz="+03:00")
+
+    n = send_due_notifications(session, now=now, sender=_fake_sender([]))
+    assert n == 1
+
+
+def test_checkin_trigger_not_yet_due_before_timezone_corrected_time(session):
+    """Same flight as above, but `now` is before the TRUE (tz-corrected) trigger
+    — must not fire yet, even though it's after the local-clock digits alone
+    would suggest under the old buggy interpretation."""
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 7, 1, 10, 0)  # before 11:35 UTC true trigger
+    _flight(session, stop, "2026-07-02T14:35", checkin_window="24h", depart_tz="Europe/Helsinki")
+
+    n = send_due_notifications(session, now=now, sender=_fake_sender([]))
+    assert n == 0
+
+
+def test_departure_notification_body_shows_local_time_not_utc(session):
+    """The notification text must show the flight/train's own local departure
+    time (what the traveller sees in the app), not a UTC-shifted value.
+
+    depart_time "2026-07-01T14:35" Helsinki (UTC+3) → true UTC depart 11:35;
+    3h lead → notify_at 08:35 UTC. `now` sits between notify_at and the true
+    departure, so the trigger is due but the flight hasn't "already left".
+    """
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 7, 1, 9, 0)
+    _rail(session, stop, "2026-07-01T14:35", name="Helsinki express", depart_tz="Europe/Helsinki")
+
+    calls = []
+    send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert "14:35" in calls[0][1]["body"]   # local time, not 11:35 (the UTC equivalent)
 
 
 def test_expired_subscription_is_deleted(session):
