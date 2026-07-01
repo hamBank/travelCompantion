@@ -232,17 +232,23 @@ function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, onEdit, canEdi
       >
         {it.name}
       </span>
-      {shared && (
-        <span style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', fontSize: '0.6rem' }}
-              className="px-1.5 py-0.5 rounded uppercase tracking-wide font-medium shrink-0">Shared</span>
-      )}
-      {it.quantity > 1 && (
-        <span className="flex items-center gap-1 shrink-0" style={{ color: 'var(--text-faint)' }}>
-          <button onClick={() => onStep(it, -1)} className="text-xs hover:opacity-70 px-1" title="Pack one less">−</button>
-          <span className="text-xs tabular-nums">{it.packed_count}/{it.quantity}</span>
-          <button onClick={() => onStep(it, 1)} className="text-xs hover:opacity-70 px-1" title="Pack one more">+</button>
-        </span>
-      )}
+      {/* Fixed-width counts column so steppers line up across rows */}
+      <div className="shrink-0 flex items-center justify-end gap-1" style={{ width: '5rem', color: 'var(--text-faint)' }}>
+        {it.quantity > 1 && (
+          <>
+            <button onClick={() => onStep(it, -1)} className="text-xs hover:opacity-70 px-1" title="Pack one less">−</button>
+            <span className="text-xs tabular-nums">{it.packed_count}/{it.quantity}</span>
+            <button onClick={() => onStep(it, 1)} className="text-xs hover:opacity-70 px-1" title="Pack one more">+</button>
+          </>
+        )}
+      </div>
+      {/* Fixed-width shared column to the right of the counts */}
+      <div className="shrink-0 flex justify-start" style={{ width: '4.5rem' }}>
+        {shared && (
+          <span style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', fontSize: '0.6rem' }}
+                className="px-1.5 py-0.5 rounded uppercase tracking-wide font-medium">Shared</span>
+        )}
+      </div>
       <select
         value={it.bag_id ?? ''} onChange={e => onPatch(it.id, { bag_id: e.target.value ? Number(e.target.value) : null })}
         title="Move to bag"
