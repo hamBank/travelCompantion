@@ -363,6 +363,35 @@ class PackingItemRead(SQLModel):
     packed_count: int
 
 
+class PushSubscription(SQLModel, table=True):
+    """One browser/device's Web Push subscription. A user may have several
+    (phone, laptop, etc.) — "disable per device" means deleting just that
+    device's row, which is what unsubscribing does."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_email: str = Field(index=True)
+    endpoint: str = Field(unique=True, index=True)
+    p256dh: str
+    auth: str
+    device_label: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PushSubscriptionCreate(SQLModel):
+    endpoint: str
+    p256dh: str
+    auth: str
+    device_label: str = ""
+
+
+class NotificationLog(SQLModel, table=True):
+    """Records that a notification for (item_id, kind) has already been sent,
+    so the periodic job never double-sends across runs."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    item_id: int = Field(index=True)
+    kind: str                                    # "checkin" | "departure"
+    sent_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class WeatherCache(SQLModel, table=True):
     """6-hour cache of Open-Meteo lookups, keyed by rounded coords + date range.
 

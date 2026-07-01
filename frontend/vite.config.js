@@ -46,7 +46,7 @@ export default defineConfig({
       workbox: {
         // Adds a message handler so the page can promote a waiting worker (Firefox
         // doesn't reliably auto-activate on the SW's own skipWaiting()).
-        importScripts: ['sw-update.js'],
+        importScripts: ['sw-update.js', 'sw-push.js'],
         // The SPA navigation fallback serves index.html for every navigation; exclude
         // /coverage so its server-rendered reports aren't hijacked into the app.
         navigateFallbackDenylist: [/^\/coverage/, /^\/metrics/],

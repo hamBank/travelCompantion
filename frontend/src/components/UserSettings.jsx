@@ -3,6 +3,43 @@ import { HOME_CURRENCY_KEY } from '../currency.js'
 import { useState as useReactState, useEffect } from 'react'
 import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound, getHideStopFrames, setHideStopFrames, getFontScale, setFontScale, FONT_SCALE_OPTIONS } from '../settings.js'
 import { getImportAddress } from '../api.js'
+import { isPushSupported, getPushEnabled, enablePush, disablePush } from '../push.js'
+
+function NotificationsSection() {
+  const [enabled, setEnabled] = useReactState(getPushEnabled)
+  const [busy, setBusy] = useReactState(false)
+  const [error, setError] = useReactState(null)
+  const supported = isPushSupported()
+
+  async function toggle() {
+    if (busy) return
+    setBusy(true); setError(null)
+    try {
+      if (enabled) { await disablePush(); setEnabled(false) }
+      else { await enablePush(); setEnabled(true) }
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Notifications</p>
+      <p style={{ color: 'var(--text-muted)' }} className="text-xs">
+        Alerts when online check-in opens for a flight, or a train/transfer's departure is approaching.
+        This is a per-device setting — enable it separately on each phone or browser you use.
+      </p>
+      {supported ? (
+        <Toggle label={busy ? 'Working…' : (enabled ? 'Notifications on for this device' : 'Enable notifications on this device')} on={enabled} onToggle={toggle} />
+      ) : (
+        <p style={{ color: 'var(--text-faint)' }} className="text-xs">Not supported on this browser/device.</p>
+      )}
+      {error && <p style={{ color: 'var(--error)' }} className="text-xs">{error}</p>}
+    </div>
+  )
+}
 
 function ImportAddress() {
   const [addr, setAddr] = useReactState(null)
@@ -127,6 +164,8 @@ export default function UserSettings({ onClose }) {
               </div>
             </div>
           </div>
+
+          <NotificationsSection />
 
           <ImportAddress />
 

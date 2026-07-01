@@ -42,6 +42,11 @@ export const createBag        = (tripId, data)  => req(`/trips/${tripId}/bags`, 
 export const updateBag        = (id, data)      => req(`/bags/${id}`, { method: 'PATCH', body: JSON.stringify(typeof data === 'string' ? { name: data } : data) })
 export const deleteBag        = (id)            => req(`/bags/${id}`, { method: 'DELETE' })
 
+// ── Push notifications ──────────────────────────────────────────────────────
+export const getVapidPublicKey = () => req('/push/vapid-public-key')
+export const subscribePush     = (data) => req('/push/subscribe', { method: 'POST', body: JSON.stringify(data) })
+export const unsubscribePush   = (endpoint) => req(`/push/subscribe?endpoint=${encodeURIComponent(endpoint)}`, { method: 'DELETE' })
+
 export const getWeather = (lat, lng, start, end, q) => {
   const p = new URLSearchParams({ start, end })
   if (lat) p.set('lat', lat)
