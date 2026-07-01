@@ -263,9 +263,13 @@ def test_norm_name_case_insensitive():
 
 # ── River cruise / sailing-schedule pattern ─────────────────────────────────
 # Regression for the AmaWaterways-style booking: one "accommodation" item per
-# night, all sharing the ship's name, with location following the Sailing
-# Schedule's "Overnight" town (or an "(overnight sailing)" placeholder for the
-# one night the ship cruises between two towns with no fixed mooring).
+# CONTIGUOUS overnight stay, all sharing the ship's name, with location
+# following the Sailing Schedule's "Overnight" town (or an "(overnight
+# sailing)" placeholder for the one night the ship cruises between two towns
+# with no fixed mooring). Consecutive nights in the SAME town (e.g. two nights
+# docked at the disembarkation city) collapse into a single item spanning the
+# full stay — NOT one item per calendar night — so they don't look like
+# duplicates in the item list.
 
 def _river_cruise_stops(client, trip_id):
     towns = ["Arles", "Avignon", "Viviers", "Tournon", "Sainte Colombe", "Lyon"]
@@ -273,23 +277,24 @@ def _river_cruise_stops(client, trip_id):
             for t in towns}
 
 
-def test_river_cruise_creates_one_accommodation_item_per_night(client, session):
+def test_river_cruise_creates_one_accommodation_item_per_stay(client, session):
     trip = client.post("/trips/", json={"name": "Colors of Provence"}).json()
     towns = _river_cruise_stops(client, trip["id"])
     stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
 
     ship = "AmaKristina"
-    # (location, checkin, checkout, stop to match against)
-    nights = [
+    # (location, checkin, checkout, stop to match against) — one row per STAY,
+    # not per night: the two nights docked in Lyon (Aug 11 & 12) are ONE stay
+    # spanning arrival through disembarkation.
+    stays = [
         ("Arles",                       "2026-08-06T15:00", "2026-08-07T18:00", "Arles"),
         ("Avignon",                     "2026-08-07T22:00", "2026-08-08T23:59", "Avignon"),
         ("Viviers (overnight sailing)", "2026-08-08T23:59", "2026-08-09T06:30", "Viviers"),
         ("Tournon",                     "2026-08-09T20:00", "2026-08-10T14:30", "Tournon"),
         ("Sainte Colombe",              "2026-08-10T21:30", "2026-08-11T13:00", "Sainte Colombe"),
-        ("Lyon",                        "2026-08-11T16:00", "2026-08-12",       "Lyon"),
-        ("Lyon",                        "2026-08-12",       "2026-08-13T09:00", "Lyon"),
+        ("Lyon",                        "2026-08-11T16:00", "2026-08-13T09:00", "Lyon"),
     ]
-    # All 7 nights legitimately share ONE booking reference — this is the exact
+    # All stays legitimately share ONE booking reference — this is the exact
     # shape that collapsed to a single item before the _item_key fix below.
     booking_ref = "20755062"
     parsed = {"items": [
@@ -300,21 +305,25 @@ def test_river_cruise_creates_one_accommodation_item_per_night(client, session):
                         "booking_ref": booking_ref},
             "confidence": "high",
         }
-        for loc, checkin, checkout, stop_town in nights
+        for loc, checkin, checkout, stop_town in stays
     ]}
     pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
 
-    assert len(pcs) == 7  # a shared booking_ref across nights must NOT collapse them
+    assert len(pcs) == 6  # a shared booking_ref across stays must NOT collapse them
     assert all(pc.op == "create" for pc in pcs)
     assert all(pc.kind.value == "accommodation" for pc in pcs)
     assert all(pc.payload["name"] == ship for pc in pcs)
     assert all(pc.payload["details"]["booking_ref"] == booking_ref for pc in pcs)
 
     locations = [pc.payload["details"]["location"] for pc in pcs]
-    assert locations == [loc for loc, _, _, _ in nights]
+    assert locations == [loc for loc, _, _, _ in stays]
+    assert locations.count("Lyon") == 1  # the two Lyon nights merge into one stay, not a dupe
 
     checkins = [pc.payload["details"]["checkin"] for pc in pcs]
-    assert len(set(checkins)) == 7  # every night is a distinct pending change, none deduped/merged
+    assert len(set(checkins)) == 6  # every stay is a distinct pending change, none deduped/merged
+
+    lyon_pc = next(pc for pc in pcs if pc.payload["details"]["location"] == "Lyon")
+    assert lyon_pc.payload["details"]["checkout"] == "2026-08-13T09:00"  # spans both nights
 
     # The ambiguous cruising night (no fixed town) is flagged, not silently
     # dropped or mislabeled as a normal stop.
