@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -315,5 +315,66 @@ describe('latestCheckoutAccommodation', () => {
     const noCheckout = { id: 1, kind: 'accommodation', details: {} }
     const withCheckout = accom(2, '2026-08-07T18:00')
     expect(latestCheckoutAccommodation([noCheckout, withCheckout])).toBe(withCheckout)
+  })
+})
+
+// ── weatherSegments ──────────────────────────────────────────────────────────
+// Regression: a stop with no location of its own (e.g. a multi-port cruise)
+// got zero weather for every day, since the fetch effect bailed out entirely
+// before ever calling the API. Per-night accommodation items should supply
+// their own location for a separate weather look-up when it differs from
+// (or simply exists when) the stop has none.
+
+describe('weatherSegments', () => {
+  const nightlyAccom = (id, location, checkin, checkout) => ({
+    id, kind: 'accommodation', name: 'AmaKristina',
+    details: { location, checkin, checkout },
+  })
+
+  it('returns one segment per night when the stop has no location at all', () => {
+    const stop = { location: '' }
+    const items = [
+      nightlyAccom(1, 'Arles', '2026-08-06T15:00', '2026-08-07T18:00'),
+      nightlyAccom(2, 'Avignon', '2026-08-07T22:00', '2026-08-08T23:59'),
+    ]
+    const segments = weatherSegments(stop, items)
+    expect(segments).toEqual([
+      { start: '2026-08-06', end: '2026-08-07', query: 'Arles' },
+      { start: '2026-08-07', end: '2026-08-08', query: 'Avignon' },
+    ])
+  })
+
+  it('skips a night whose location matches the stop (case/whitespace-insensitive)', () => {
+    const stop = { location: '  Paris ' }
+    const items = [nightlyAccom(1, 'paris', '2026-08-06T15:00', '2026-08-07T12:00')]
+    expect(weatherSegments(stop, items)).toEqual([])
+  })
+
+  it('only treats a differing location as a separate segment', () => {
+    const stop = { location: 'Paris' }
+    const items = [
+      nightlyAccom(1, 'Paris', '2026-08-06T15:00', '2026-08-07T12:00'),   // matches stop — skipped
+      nightlyAccom(2, 'Versailles', '2026-08-07T12:00', '2026-08-08T10:00'), // day trip — separate
+    ]
+    expect(weatherSegments(stop, items)).toEqual([
+      { start: '2026-08-07', end: '2026-08-08', query: 'Versailles' },
+    ])
+  })
+
+  it('ignores non-accommodation items and items with no location', () => {
+    const stop = { location: '' }
+    const items = [
+      { id: 1, kind: 'flight', details: { origin: 'SIN', destination: 'CDG' } },
+      { id: 2, kind: 'accommodation', details: { checkin: '2026-08-06T15:00' } }, // no location
+    ]
+    expect(weatherSegments(stop, items)).toEqual([])
+  })
+
+  it('falls back to a single-day end when checkout is missing', () => {
+    const stop = { location: '' }
+    const items = [nightlyAccom(1, 'Tournon', '2026-08-09T20:00', null)]
+    expect(weatherSegments(stop, items)).toEqual([
+      { start: '2026-08-09', end: '2026-08-09', query: 'Tournon' },
+    ])
   })
 })

@@ -198,6 +198,33 @@ export function fmtConnectionDur(ms) {
   return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`
 }
 
+function _normLoc(s) {
+  return String(s || '').trim().toLowerCase()
+}
+
+// A stop's weather is normally fetched once for its own location/date span.
+// That breaks down for a multi-port cruise matched to a single stop: each
+// night's accommodation item has its own town, which can differ from (or
+// simply exist when) the stop has none at all. For every accommodation item
+// whose own location differs from the stop's, return a separate lookup
+// segment {start, end, query} — a plain string comparison, not distance math,
+// since a traveller-entered location differing from the stop's name is
+// already a strong, cheap signal it's genuinely a different place.
+export function weatherSegments(stop, items) {
+  const stopKey = _normLoc(stop.location)
+  const segments = []
+  for (const item of items || []) {
+    if (item.kind !== 'accommodation') continue
+    const loc = item.details?.location
+    if (!loc || _normLoc(loc) === stopKey) continue
+    const start = item.details?.checkin ? String(item.details.checkin).split('T')[0] : null
+    if (!start) continue
+    const end = item.details?.checkout ? String(item.details.checkout).split('T')[0] : start
+    segments.push({ start, end, query: loc })
+  }
+  return segments
+}
+
 // A stop can hold more than one accommodation item (e.g. a multi-port cruise
 // matched to a single stop) — pick the one with the LAST checkout, not just
 // the first accommodation item encountered in array order.
@@ -305,18 +332,34 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const wxEnd   = _dep || _dayKeys[_dayKeys.length - 1] || _arr || null
   // Place-name fallback so stops without stored coords (e.g. home) still resolve.
   const wxQuery = stop.location ? [stop.location, stop.country].filter(Boolean).join(', ') : ''
+  // Per-night overrides for stops whose own location doesn't represent every
+  // day (e.g. a multi-port cruise) — see weatherSegments().
+  const segments = weatherSegments(stop, items)
+  const segmentsKey = JSON.stringify(segments)
   // In headerless (frameless) mode every stop's content is always shown, so we
   // must fetch regardless of `open`; in framed mode fetch when expanded.
   const contentVisible = hideFrame || open
   useEffect(() => {
-    if (!contentVisible || !wxStart || !wxEnd) return
-    if (!stop.lat && !stop.lng && !wxQuery) return
+    if (!contentVisible) return
+    const hasBase = wxStart && wxEnd && (stop.lat || stop.lng || wxQuery)
+    if (!hasBase && segments.length === 0) return
     let cancelled = false
-    getWeather(stop.lat, stop.lng, wxStart, wxEnd, wxQuery)
-      .then(r => { if (!cancelled) setWeather(r.weather || {}) })
+    const lookups = [
+      hasBase ? getWeather(stop.lat, stop.lng, wxStart, wxEnd, wxQuery) : Promise.resolve({ weather: {} }),
+      ...segments.map(seg => getWeather(null, null, seg.start, seg.end, seg.query)),
+    ]
+    Promise.all(lookups)
+      .then(results => {
+        if (cancelled) return
+        // Segment (per-night) results are more specific than the stop-level
+        // base, so they're merged in afterwards and win on overlapping dates.
+        const merged = {}
+        for (const r of results) Object.assign(merged, r.weather || {})
+        setWeather(merged)
+      })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [contentVisible, stop.lat, stop.lng, wxQuery, wxStart, wxEnd])
+  }, [contentVisible, stop.lat, stop.lng, wxQuery, wxStart, wxEnd, segmentsKey])
 
   function handleItemSaved(updated) {
     // Refresh parent timeline to get fresh data with the update
