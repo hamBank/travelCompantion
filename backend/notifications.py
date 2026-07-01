@@ -18,6 +18,12 @@ from .push import send_push, PushSendError
 # TODO: make configurable (per-item or per-user) — fixed default for now.
 DEPARTURE_LEAD_HOURS = 3
 
+# How long before check-in actually opens to send a "get ready" heads-up. Some
+# airlines assign seats in check-in order, so arriving even a few minutes late
+# can mean picking from whatever's left — better to alert too early than to
+# only confirm after the fact that the window has already been open a while.
+CHECKIN_HEADS_UP_MINUTES = 20
+
 # If a trigger time has already passed by more than this, skip it rather than
 # firing a stale/misleading notification (e.g. after a cron outage).
 GRACE_HOURS = 6
@@ -94,20 +100,23 @@ def _due_triggers(session: Session, now: datetime):
             window_hours = _parse_checkin_window(d.get("checkin_window"))
             if window_hours is None:
                 continue
-            notify_at = depart - timedelta(hours=window_hours)
-            kind = "checkin"
+            checkin_opens_at = depart - timedelta(hours=window_hours)
+            candidates = [
+                ("checkin_heads_up", checkin_opens_at - timedelta(minutes=CHECKIN_HEADS_UP_MINUTES)),
+                ("checkin", checkin_opens_at),
+            ]
         else:
-            notify_at = depart - timedelta(hours=DEPARTURE_LEAD_HOURS)
-            kind = "departure"
+            candidates = [("departure", depart - timedelta(hours=DEPARTURE_LEAD_HOURS))]
 
-        if (item.id, kind) in logged:
-            continue
-        if notify_at > now:
-            continue  # not due yet
-        if notify_at < now - timedelta(hours=GRACE_HOURS):
-            continue  # too stale
+        for kind, notify_at in candidates:
+            if (item.id, kind) in logged:
+                continue
+            if notify_at > now:
+                continue  # not due yet
+            if notify_at < now - timedelta(hours=GRACE_HOURS):
+                continue  # too stale
 
-        yield item, kind, depart_local
+            yield item, kind, depart_local
 
 
 def _notification_payload(item: ItineraryItem, kind: str, depart_local: str) -> dict:
@@ -124,12 +133,16 @@ def _notification_payload(item: ItineraryItem, kind: str, depart_local: str) -> 
     destination = d.get("destination") or d.get("end_location") or ""
 
     label = f"{name} ({number})" if number else name
+    route = f" to {destination}" if destination else ""
+
+    if kind == "checkin_heads_up":
+        body = f"{label}{route} at {when} — check-in opens in {CHECKIN_HEADS_UP_MINUTES} min, be ready to grab a good seat"
+        return {"title": "Check-in opening soon", "body": body, "url": "/", "urgent": True}
+
     if kind == "checkin":
-        route = f" to {destination}" if destination else ""
         body = f"{label}{route} at {when} — online check-in is open"
         return {"title": "Check-in now open", "body": body, "url": "/", "urgent": True}
 
-    route = f" to {destination}" if destination else ""
     body = f"{label}{route} departs at {when}"
     return {"title": "Departure approaching", "body": body, "url": "/", "urgent": True}
 

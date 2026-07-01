@@ -87,14 +87,15 @@ def _fake_sender(calls):
 def test_flight_checkin_fires_when_window_open(session):
     trip, stop = _seed_trip(session)
     now = datetime(2026, 8, 1, 12, 0)
-    # Departs in 20h, check-in opens 24h before → already open
+    # Departs in 20h, check-in opens 24h before → already open (and the
+    # heads-up trigger, 20 min earlier still, is also already due).
     _flight(session, stop, (now + timedelta(hours=20)).isoformat(timespec="minutes"), checkin_window="24h")
 
     calls = []
     n = send_due_notifications(session, now=now, sender=_fake_sender(calls))
-    assert n == 1
-    assert len(calls) == 1
-    assert "Check-in" in calls[0][1]["title"]
+    assert n == 2
+    titles = {c[1]["title"] for c in calls}
+    assert titles == {"Check-in opening soon", "Check-in now open"}
 
 
 def test_notifications_are_sent_as_urgent(session):
@@ -212,8 +213,9 @@ def test_checkin_trigger_accounts_for_flights_departure_timezone(session):
     now = datetime(2026, 7, 1, 12, 0)  # after the correct trigger, before the buggy one
     _flight(session, stop, "2026-07-02T14:35", checkin_window="24h", depart_tz="Europe/Helsinki")
 
-    n = send_due_notifications(session, now=now, sender=_fake_sender([]))
-    assert n == 1
+    calls = []
+    send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert "Check-in now open" in {c[1]["title"] for c in calls}
 
 
 def test_checkin_trigger_with_fixed_offset_timezone_matches_iana(session):
@@ -221,8 +223,9 @@ def test_checkin_trigger_with_fixed_offset_timezone_matches_iana(session):
     now = datetime(2026, 7, 1, 12, 0)
     _flight(session, stop, "2026-07-02T14:35", checkin_window="24h", depart_tz="+03:00")
 
-    n = send_due_notifications(session, now=now, sender=_fake_sender([]))
-    assert n == 1
+    calls = []
+    send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert "Check-in now open" in {c[1]["title"] for c in calls}
 
 
 def test_checkin_trigger_not_yet_due_before_timezone_corrected_time(session):
@@ -278,15 +281,19 @@ def test_trigger_fires_at_the_correct_real_world_instant_regardless_of_observer_
     correct_utc_trigger = datetime(2026, 7, 2, 0, 0)
     _flight(session, stop, "2026-07-03T09:00", checkin_window="24h", depart_tz="Asia/Tokyo")
 
-    # Just before the true UTC trigger — must NOT fire yet, even though in
-    # Tokyo's own local calendar it's already "the 2nd" at this instant.
-    n_before = send_due_notifications(session, now=correct_utc_trigger - timedelta(minutes=1), sender=_fake_sender([]))
-    assert n_before == 0
+    # Just before the true UTC trigger — the "now open" alert must NOT fire
+    # yet, even though in Tokyo's own local calendar it's already "the 2nd" at
+    # this instant. (The heads-up alert, timed 20 min earlier, is already due
+    # by this point — that's a separate, correctly-timed trigger, not this bug.)
+    calls_before = []
+    send_due_notifications(session, now=correct_utc_trigger - timedelta(minutes=1), sender=_fake_sender(calls_before))
+    assert "Check-in now open" not in {c[1]["title"] for c in calls_before}
 
     # At/just after the true UTC trigger — must fire, regardless of what date
     # or hour that is in any other timezone (Tokyo, LA, or anywhere else).
-    n_after = send_due_notifications(session, now=correct_utc_trigger + timedelta(minutes=1), sender=_fake_sender([]))
-    assert n_after == 1
+    calls_after = []
+    send_due_notifications(session, now=correct_utc_trigger + timedelta(minutes=1), sender=_fake_sender(calls_after))
+    assert "Check-in now open" in {c[1]["title"] for c in calls_after}
 
 
 def test_expired_subscription_is_deleted(session):
@@ -302,6 +309,10 @@ def test_expired_subscription_is_deleted(session):
     assert remaining == []
 
 
+def _call_titled(calls, title):
+    return next(c for c in calls if c[1]["title"] == title)
+
+
 def test_checkin_notification_includes_flight_number_and_destination(session):
     trip, stop = _seed_trip(session)
     now = datetime(2026, 8, 1, 12, 0)
@@ -311,7 +322,7 @@ def test_checkin_notification_includes_flight_number_and_destination(session):
 
     calls = []
     send_due_notifications(session, now=now, sender=_fake_sender(calls))
-    body = calls[0][1]["body"]
+    body = _call_titled(calls, "Check-in now open")[1]["body"]
     assert "AY132" in body
     assert "Helsinki" in body
     assert "08:00" in body  # depart time carried through, not just the check-in window
@@ -324,7 +335,60 @@ def test_checkin_notification_omits_missing_flight_number_and_destination(sessio
 
     calls = []
     send_due_notifications(session, now=now, sender=_fake_sender(calls))
-    assert calls[0][1]["body"] == "QF1 at 08:00 — online check-in is open"
+    body = _call_titled(calls, "Check-in now open")[1]["body"]
+    assert body == "QF1 at 08:00 — online check-in is open"
+
+
+def test_checkin_heads_up_fires_before_the_window_opens(session):
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    # Check-in opens in exactly 10 minutes — inside the 20-min heads-up lead,
+    # but the window itself is not yet open.
+    _flight(session, stop, (now + timedelta(hours=24, minutes=10)).isoformat(timespec="minutes"),
+            checkin_window="24h", name="QF1", flight_number="QF1", destination="Singapore")
+
+    calls = []
+    n = send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert n == 1
+    title, body = calls[0][1]["title"], calls[0][1]["body"]
+    assert title == "Check-in opening soon"
+    assert "QF1" in body
+    assert "Singapore" in body
+    assert "20 min" in body
+
+
+def test_checkin_heads_up_not_yet_due_well_before_the_window(session):
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    # Check-in opens in 21 hours — outside even the heads-up lead.
+    _flight(session, stop, (now + timedelta(hours=45)).isoformat(timespec="minutes"), checkin_window="24h")
+
+    n = send_due_notifications(session, now=now, sender=_fake_sender([]))
+    assert n == 0
+
+
+def test_checkin_heads_up_and_now_open_are_deduped_independently(session):
+    """Each kind is logged separately, so a heads-up already sent doesn't
+    block the later "now open" alert, and re-running after both have fired
+    sends nothing more."""
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _flight(session, stop, (now + timedelta(hours=24, minutes=10)).isoformat(timespec="minutes"),
+            checkin_window="24h")
+
+    calls = []
+    n1 = send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert n1 == 1  # only heads-up is due so far
+    assert calls[0][1]["title"] == "Check-in opening soon"
+
+    # 15 minutes later: the window has now opened too.
+    n2 = send_due_notifications(session, now=now + timedelta(minutes=15), sender=_fake_sender(calls))
+    assert n2 == 1
+    assert calls[1][1]["title"] == "Check-in now open"
+
+    # Running again later changes nothing — both kinds already logged.
+    n3 = send_due_notifications(session, now=now + timedelta(hours=1), sender=_fake_sender(calls))
+    assert n3 == 0
 
 
 def test_rail_departure_notification_includes_train_number_and_destination(session):
