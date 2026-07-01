@@ -1012,6 +1012,16 @@ def build_pending_changes(session, user_email, trip_id, stops, parsed,
             if ref and date:
                 return (kind, ref, date)
 
+        elif kind == "accommodation":
+            # A multi-night stay (e.g. a cruise broken into one item per night)
+            # legitimately shares ONE booking_ref across many nights — date-scope
+            # the ref so nights aren't collapsed into a single dedup key.
+            ci = _datepart(d.get("checkin"))
+            if ref and ci:
+                return (kind, ref, ci)
+            if ref:
+                return (kind, ref)
+
         elif ref:
             return (kind, ref)
 

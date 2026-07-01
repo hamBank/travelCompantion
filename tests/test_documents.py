@@ -289,21 +289,26 @@ def test_river_cruise_creates_one_accommodation_item_per_night(client, session):
         ("Lyon",                        "2026-08-11T16:00", "2026-08-12",       "Lyon"),
         ("Lyon",                        "2026-08-12",       "2026-08-13T09:00", "Lyon"),
     ]
+    # All 7 nights legitimately share ONE booking reference — this is the exact
+    # shape that collapsed to a single item before the _item_key fix below.
+    booking_ref = "20755062"
     parsed = {"items": [
         {
             "kind": "accommodation", "name": ship, "scheduled_at": checkin,
             "matched_stop_id": towns[stop_town]["id"],
-            "details": {"location": loc, "checkin": checkin, "checkout": checkout},
+            "details": {"location": loc, "checkin": checkin, "checkout": checkout,
+                        "booking_ref": booking_ref},
             "confidence": "high",
         }
         for loc, checkin, checkout, stop_town in nights
     ]}
     pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
 
-    assert len(pcs) == 7
+    assert len(pcs) == 7  # a shared booking_ref across nights must NOT collapse them
     assert all(pc.op == "create" for pc in pcs)
     assert all(pc.kind.value == "accommodation" for pc in pcs)
     assert all(pc.payload["name"] == ship for pc in pcs)
+    assert all(pc.payload["details"]["booking_ref"] == booking_ref for pc in pcs)
 
     locations = [pc.payload["details"]["location"] for pc in pcs]
     assert locations == [loc for loc, _, _, _ in nights]
@@ -314,3 +319,21 @@ def test_river_cruise_creates_one_accommodation_item_per_night(client, session):
     # The ambiguous cruising night (no fixed town) is flagged, not silently
     # dropped or mislabeled as a normal stop.
     assert "(overnight sailing)" in locations[2]
+
+
+def test_accommodation_same_booking_ref_different_checkin_not_deduped(client, session):
+    """A second confirmation for a DIFFERENT stay under the same booking_ref
+    (e.g. a two-city hotel package, or the cruise nights above) must create a
+    separate item rather than being treated as a duplicate of the first."""
+    trip, stop = _trip_with_stop(client)
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
+    parsed = {"items": [
+        {"kind": "accommodation", "name": "Hotel A", "matched_stop_id": stop["id"],
+         "details": {"location": "Paris", "checkin": "2026-08-01", "checkout": "2026-08-02",
+                     "booking_ref": "REF1"}},
+        {"kind": "accommodation", "name": "Hotel A", "matched_stop_id": stop["id"],
+         "details": {"location": "Paris", "checkin": "2026-08-02", "checkout": "2026-08-03",
+                     "booking_ref": "REF1"}},
+    ]}
+    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    assert len(pcs) == 2
