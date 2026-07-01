@@ -5,6 +5,7 @@
 // what actually happened on devices we have no console access to. Remove the
 // beacon calls once push delivery is confirmed working end to end.
 function beacon(info) {
+  console.log('[sw-push]', info)
   try {
     fetch('/push/debug-log', {
       method: 'POST',
@@ -13,6 +14,13 @@ function beacon(info) {
     }).catch(() => {})
   } catch (e) { /* ignore */ }
 }
+
+// Fires for EVERY event this worker receives, not just 'push' — if a push
+// event is being dropped before it even reaches our JS, this line alone
+// (visible in Web Inspector) tells us whether the worker woke up at all.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.__diag) console.log('[sw-push] worker is alive, received message', e.data)
+})
 
 self.addEventListener('push', (event) => {
   beacon({ stage: 'push-event-received', hasData: !!event.data })
