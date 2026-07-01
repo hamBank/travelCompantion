@@ -337,6 +337,33 @@ Unit=${SERVICE_NAME}-update.service
 [Install]
 WantedBy=multi-user.target" || true
 
+# scripts/refresh_weather.py is documented as "run via cron" but nothing here
+# actually scheduled it, so cached weather for future stops (climatology) never
+# got the daily re-fetch needed to flip to a live forecast as the date nears —
+# a timer, not a long-running service, since the script runs once and exits.
+write_unit "/etc/systemd/system/${SERVICE_NAME}-weather.service" "[Unit]
+Description=Travel Companion daily weather refresh
+
+[Service]
+Type=oneshot
+User=$APP_USER
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$ENV_FILE
+ExecStart=$VENV/bin/python $APP_DIR/scripts/refresh_weather.py
+StandardOutput=append:/var/log/travelcomp/weather-refresh.log
+StandardError=append:/var/log/travelcomp/weather-refresh.log" || true
+
+write_unit "/etc/systemd/system/${SERVICE_NAME}-weather.timer" "[Unit]
+Description=Run Travel Companion weather refresh daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target" || true
+
 # Only enable/start on first install. On updates the units are already active,
 # and calling systemctl from within the running update service itself causes
 # a circular dependency → systemd returns exit code 243/CREDENTIALS.
@@ -344,6 +371,7 @@ if ! $UPDATE_ONLY; then
   systemctl daemon-reload
   systemctl enable "$SERVICE_NAME"
   systemctl enable --now "${SERVICE_NAME}-update.path"
+  systemctl enable --now "${SERVICE_NAME}-weather.timer"
   ok "Systemd units created and enabled: ${SERVICE_FILE}"
 else
   # Never call daemon-reload or enable from within the running update service.

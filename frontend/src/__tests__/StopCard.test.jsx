@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -274,5 +274,46 @@ describe('HideTimeCtx', () => {
       </HideTimeCtx.Provider>
     )
     expect(screen.getByTestId('val').textContent).toBe('true')
+  })
+})
+
+// ── latestCheckoutAccommodation ──────────────────────────────────────────────
+// Regression: a stop can hold multiple accommodation items (e.g. a multi-port
+// cruise matched to a single stop) — the "Check out" pill must show the LAST
+// checkout, not just the first accommodation item in array order.
+
+describe('latestCheckoutAccommodation', () => {
+  const accom = (id, checkout, name = `Hotel ${id}`) => ({
+    id, kind: 'accommodation', name, details: { checkout },
+  })
+
+  it('returns null when there are no accommodation items', () => {
+    expect(latestCheckoutAccommodation([{ id: 1, kind: 'flight', details: {} }])).toBeNull()
+  })
+
+  it('returns the single accommodation item when there is only one', () => {
+    const item = accom(1, '2026-08-07T18:00')
+    expect(latestCheckoutAccommodation([item])).toBe(item)
+  })
+
+  it('picks the LATEST checkout even when it is not first in the array', () => {
+    // Order mirrors the cruise scenario: Arles checks out on the 7th, but
+    // this stop's final (Lyon) checkout on the 13th must win.
+    const arles = accom(1, '2026-08-07T18:00', 'AmaKristina')
+    const lyon = accom(2, '2026-08-13T09:00', 'AmaKristina')
+    expect(latestCheckoutAccommodation([arles, lyon])).toBe(lyon)
+  })
+
+  it('handles a bare-date checkout sorting correctly against a full datetime', () => {
+    const earlier = accom(1, '2026-08-12')
+    const later = accom(2, '2026-08-13T09:00')
+    expect(latestCheckoutAccommodation([earlier, later])).toBe(later)
+    expect(latestCheckoutAccommodation([later, earlier])).toBe(later)
+  })
+
+  it('ignores accommodation items with no checkout', () => {
+    const noCheckout = { id: 1, kind: 'accommodation', details: {} }
+    const withCheckout = accom(2, '2026-08-07T18:00')
+    expect(latestCheckoutAccommodation([noCheckout, withCheckout])).toBe(withCheckout)
   })
 })
