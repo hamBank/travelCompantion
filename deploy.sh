@@ -179,6 +179,26 @@ elif [[ -f "$APP_DIR/.pg-cutover" ]]; then
   fi
 fi
 
+# ── 4a-env. Merge app-user-requested env vars into the root-owned .env ─────────
+# General-purpose sibling of the .pg-cutover mechanism above: the app user can't
+# write .env directly, but can write $APP_DIR/.env-add (KEY=VALUE per line,
+# app-user-owned). Each deploy merges those lines into .env (update-in-place if
+# the key exists, else append) and clears the file. Used for one-off config like
+# VAPID keys that don't need their own bespoke sentinel.
+if [[ -s "$APP_DIR/.env-add" ]]; then
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    key="${line%%=*}"
+    if grep -q "^${key}=" "$APP_DIR/.env" 2>/dev/null; then
+      sed -i "s|^${key}=.*|${line}|" "$APP_DIR/.env"
+    else
+      echo "$line" >> "$APP_DIR/.env"
+    fi
+  done < "$APP_DIR/.env-add"
+  : > "$APP_DIR/.env-add"
+  ok "Merged .env-add into .env"
+fi
+
 # ── 4a0. Ensure Postgres present + role/database provisioned (root) ────────────
 # Runs in both fresh and update deploys (idempotent). Installs the server if
 # missing, then — only when PG_BOOTSTRAP_PASSWORD is set in .env — ensures the
