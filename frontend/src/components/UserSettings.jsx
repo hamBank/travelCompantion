@@ -3,12 +3,13 @@ import { HOME_CURRENCY_KEY } from '../currency.js'
 import { useState as useReactState, useEffect } from 'react'
 import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound, getHideStopFrames, setHideStopFrames, getFontScale, setFontScale, FONT_SCALE_OPTIONS } from '../settings.js'
 import { getImportAddress } from '../api.js'
-import { isPushSupported, getPushEnabled, enablePush, disablePush } from '../push.js'
+import { isPushSupported, getPushEnabled, enablePush, disablePush, showLocalTestNotification } from '../push.js'
 
 function NotificationsSection() {
   const [enabled, setEnabled] = useReactState(getPushEnabled)
   const [busy, setBusy] = useReactState(false)
   const [error, setError] = useReactState(null)
+  const [localTestResult, setLocalTestResult] = useReactState(null)
   const supported = isPushSupported()
 
   async function toggle() {
@@ -24,6 +25,12 @@ function NotificationsSection() {
     }
   }
 
+  async function testLocal() {
+    setLocalTestResult(null); setError(null)
+    try { await showLocalTestNotification(); setLocalTestResult('Requested — check now for a "Local test" notification.') }
+    catch (e) { setLocalTestResult(null); setError(e.message) }
+  }
+
   return (
     <div className="space-y-2">
       <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Notifications</p>
@@ -32,7 +39,17 @@ function NotificationsSection() {
         This is a per-device setting — enable it separately on each phone or browser you use.
       </p>
       {supported ? (
-        <Toggle label={busy ? 'Working…' : (enabled ? 'Notifications on for this device' : 'Enable notifications on this device')} on={enabled} onToggle={toggle} />
+        <>
+          <Toggle label={busy ? 'Working…' : (enabled ? 'Notifications on for this device' : 'Enable notifications on this device')} on={enabled} onToggle={toggle} />
+          <button
+            onClick={testLocal}
+            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            className="w-full text-xs px-3 py-2 rounded-lg hover:opacity-80 transition-opacity"
+          >
+            Send local test notification (no server involved)
+          </button>
+          {localTestResult && <p style={{ color: 'var(--success)' }} className="text-xs">{localTestResult}</p>}
+        </>
       ) : (
         <p style={{ color: 'var(--text-faint)' }} className="text-xs">Not supported on this browser/device.</p>
       )}

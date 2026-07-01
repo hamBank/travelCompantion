@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   urlBase64ToUint8Array, isPushSupported, getPushEnabled,
-  enablePush, disablePush,
+  enablePush, disablePush, showLocalTestNotification,
 } from '../push.js'
 import * as api from '../api.js'
 
@@ -95,5 +95,15 @@ describe('enablePush / disablePush', () => {
     expect(api.unsubscribePush).toHaveBeenCalledWith('https://push.example/abc')
     expect(subscription.unsubscribe).toHaveBeenCalled()
     expect(getPushEnabled()).toBe(false)
+  })
+
+  it('showLocalTestNotification calls registration.showNotification with no server round-trip', async () => {
+    registration.showNotification = vi.fn().mockResolvedValue(undefined)
+    global.Notification.permission = 'granted'
+
+    await showLocalTestNotification()
+
+    expect(registration.showNotification).toHaveBeenCalledWith('Local test', expect.objectContaining({ body: expect.any(String) }))
+    expect(api.subscribePush).not.toHaveBeenCalled()
   })
 })

@@ -58,6 +58,25 @@ export async function enablePush() {
   setPushEnabled(true)
 }
 
+/**
+ * Show a notification directly from this device, with no server or push
+ * service involved — isolates "can this device display notifications at all"
+ * from "is a push message actually being delivered to it".
+ */
+export async function showLocalTestNotification() {
+  if (!isPushSupported()) throw new Error('Push notifications are not supported on this device/browser')
+  if (Notification.permission !== 'granted') {
+    const p = await Notification.requestPermission()
+    if (p !== 'granted') throw new Error('Notification permission was not granted')
+  }
+  const reg = await navigator.serviceWorker.ready
+  await reg.showNotification('Local test', {
+    body: 'If you see this, notification display works on this device.',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+  })
+}
+
 export async function disablePush() {
   setPushEnabled(false)
   if (!isPushSupported()) return
