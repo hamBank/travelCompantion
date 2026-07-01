@@ -189,6 +189,35 @@ the per-passenger allowance on EACH leg. Apply it to all flight segment's passen
 - The stop point of a connection (e.g. HEL) is the origin of the second leg AND the destination \
 of the first leg — use your knowledge of the route to infer these if not stated explicitly.
 
+CRUISE / RIVER CRUISE ITINERARY DOCUMENTS (critical — apply when the document has a "Sailing \
+Schedule" table and/or a "Ship" field in its booking summary):
+- Extract ONLY from the "Booking Summary" section (ship name, stateroom, embarkation/disembarkation \
+dates and ports) and the "Sailing Schedule" table (the day-by-day DATE / DESTINATION / ARRIVAL / \
+DEPARTURE table). IGNORE everything else — shore excursions, "Onshore Experiences" descriptions, the \
+day-by-day "Detailed Itinerary" narrative, arrival/luggage/insurance/emergency-contact instructions, \
+and general terms. Do NOT create separate items for individual shore excursions, tours, or activities.
+- Create ONE `accommodation` item per NIGHT of the cruise — one per calendar date from the \
+embarkation date up to but not including the disembarkation date — NOT one item for the whole \
+cruise. Every one of these items shares the same `name`: the ship's name from the Booking Summary \
+(e.g. "AmaKristina").
+- For each night, set `details.location` to whichever town the Sailing Schedule shows the ship as \
+"Overnight" at. Read the table literally:
+  - A date's row(s) may show the ship leaving its current town, then arriving at and being \
+"Overnight" in a new town later the same day — sometimes as two location lines under one date. Use \
+whichever town is marked "Overnight" as that night's location.
+  - If a date's row shows only a departure time (no "Overnight") and no further destination for that \
+date, the ship is cruising through the night to the following day's arrival town — set \
+`details.location` to "<next arrival town> (overnight sailing)" for that night.
+- Set `checkin`/`scheduled_at` to the EXPLICIT arrival or overnight time the schedule gives for that \
+town on that date (or the Booking Summary's check-in time, on embarkation night). Set `checkout` to \
+the explicit departure/arrival time given on the FOLLOWING calendar date's row (the final night's \
+checkout is the disembarkation time). If the schedule gives no time for one side, include just the \
+date — this is the one exception to "never estimate times" above, since these nightly records are \
+synthesized from the schedule rather than read as single fields.
+- If a "Docking Locations" section gives a pier/dock address for that night's town, include it in \
+`details.description`. This is a bonus, not required — omit `description` rather than guessing an \
+address that isn't in the document.
+
 The trip has these stops (match each item to the most likely one by location AND date):
 {json.dumps(stop_lines, indent=2)}
 
