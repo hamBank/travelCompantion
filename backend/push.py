@@ -59,14 +59,27 @@ class PushSendError(Exception):
 DEFAULT_TTL_SECONDS = 12 * 60 * 60  # 12 hours
 
 
-def send_push(subscription_info: dict, payload: dict, *, ttl: int = DEFAULT_TTL_SECONDS) -> None:
-    """Send one Web Push notification. Raises PushSendError on failure."""
+def send_push(subscription_info: dict, payload: dict, *, ttl: int = DEFAULT_TTL_SECONDS, urgent: bool = False) -> None:
+    """Send one Web Push notification. Raises PushSendError on failure.
+
+    urgent=True sets the RFC8030 Urgency header to "high" (standard, respected
+    by browsers/push services generally — affects delivery prioritization, e.g.
+    a push service may hold back low-urgency messages to save a device's
+    battery). It also sets Apple's native apns-priority: 10 as a best-effort
+    extra — Apple's web push gateway may or may not honor it, since standard
+    Web Push has no way to set true APNs "interruption-level" (Time-Sensitive/
+    Focus-bypass) — that field only exists in the native aps payload wrapper
+    that browsers construct internally, not something a payload/header can
+    reach via the public Web Push API.
+    """
     from pywebpush import webpush, WebPushException
     import json
 
     private_key = get_vapid_private_key()
     if not private_key:
         raise PushSendError("VAPID keys not configured", expired=False)
+
+    headers = {"Urgency": "high", "apns-priority": "10"} if urgent else None
 
     try:
         webpush(
@@ -75,6 +88,7 @@ def send_push(subscription_info: dict, payload: dict, *, ttl: int = DEFAULT_TTL_
             vapid_private_key=private_key,
             vapid_claims=vapid_claims_for(subscription_info.get("endpoint", "")),
             ttl=ttl,
+            headers=headers,
         )
     except WebPushException as e:
         status = getattr(e.response, "status_code", None) if e.response is not None else None

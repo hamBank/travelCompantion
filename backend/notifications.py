@@ -84,9 +84,9 @@ def _due_triggers(session: Session, now: datetime):
 def _notification_payload(item: ItineraryItem, kind: str, depart: datetime) -> dict:
     name = item.name or item.kind.value
     if kind == "checkin":
-        return {"title": "Check-in now open", "body": f"{name} — online check-in is open", "url": "/"}
+        return {"title": "Check-in now open", "body": f"{name} — online check-in is open", "url": "/", "urgent": True}
     when = depart.strftime("%H:%M")
-    return {"title": "Departure approaching", "body": f"{name} departs at {when}", "url": "/"}
+    return {"title": "Departure approaching", "body": f"{name} departs at {when}", "url": "/", "urgent": True}
 
 
 def _recipients(session: Session, trip_id: int) -> list[PushSubscription]:
@@ -110,7 +110,7 @@ def send_due_notifications(session: Session, *, now: Optional[datetime] = None, 
         for sub in _recipients(session, stop.trip_id):
             info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
             try:
-                sender(info, payload)
+                sender(info, payload, urgent=True)
             except PushSendError as e:
                 if e.expired:
                     session.delete(sub)

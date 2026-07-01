@@ -54,8 +54,8 @@ def _rail(session, stop, depart, name="Eurostar"):
 
 
 def _fake_sender(calls):
-    def sender(info, payload):
-        calls.append((info, payload))
+    def sender(info, payload, **kwargs):
+        calls.append((info, payload, kwargs))
     return sender
 
 
@@ -70,6 +70,16 @@ def test_flight_checkin_fires_when_window_open(session):
     assert n == 1
     assert len(calls) == 1
     assert "Check-in" in calls[0][1]["title"]
+
+
+def test_notifications_are_sent_as_urgent(session):
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"))
+
+    calls = []
+    send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert calls[0][2] == {"urgent": True}
 
 
 def test_flight_checkin_not_yet_due(session):
@@ -166,7 +176,7 @@ def test_expired_subscription_is_deleted(session):
     now = datetime(2026, 8, 1, 12, 0)
     _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"))
 
-    def expiring_sender(info, payload):
+    def expiring_sender(info, payload, **kwargs):
         raise PushSendError("gone", expired=True)
 
     send_due_notifications(session, now=now, sender=expiring_sender)

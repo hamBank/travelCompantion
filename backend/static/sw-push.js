@@ -5,12 +5,18 @@ self.addEventListener('push', (event) => {
   try { data = event.data ? event.data.json() : {} }
   catch { data = { title: 'Travel Companion', body: event.data ? event.data.text() : '' } }
 
-  const title = data.title || 'Travel Companion'
+  const urgent = !!data.urgent
+  const title = (urgent && data.title ? '⚠️ ' + data.title : (data.title || 'Travel Companion'))
   const options = {
     body: data.body || '',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     data: { url: data.url || '/' },
+    silent: false,   // explicit — play the default notification sound
+  }
+  if (urgent) {
+    options.requireInteraction = true   // stay visible until dismissed (where supported)
+    options.vibrate = [200, 100, 200, 100, 200]
   }
   event.waitUntil(self.registration.showNotification(title, options))
 })

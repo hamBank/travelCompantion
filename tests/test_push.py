@@ -55,6 +55,36 @@ def test_send_push_always_passes_a_nonzero_ttl(monkeypatch):
     assert calls[0]["ttl"] > 0
 
 
+def test_send_push_urgent_sets_priority_headers(monkeypatch):
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", push.generate_vapid_keypair()[0])
+    calls = []
+
+    def fake_webpush(**kwargs):
+        calls.append(kwargs)
+
+    import pywebpush
+    monkeypatch.setattr(pywebpush, "webpush", fake_webpush)
+
+    push.send_push({"endpoint": "https://example.com/x", "keys": {"p256dh": "a", "auth": "b"}}, {"title": "t"}, urgent=True)
+
+    assert calls[0]["headers"] == {"Urgency": "high", "apns-priority": "10"}
+
+
+def test_send_push_not_urgent_by_default_sends_no_extra_headers(monkeypatch):
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", push.generate_vapid_keypair()[0])
+    calls = []
+
+    def fake_webpush(**kwargs):
+        calls.append(kwargs)
+
+    import pywebpush
+    monkeypatch.setattr(pywebpush, "webpush", fake_webpush)
+
+    push.send_push({"endpoint": "https://example.com/x", "keys": {"p256dh": "a", "auth": "b"}}, {"title": "t"})
+
+    assert calls[0]["headers"] is None
+
+
 def test_send_push_without_vapid_keys_raises(monkeypatch):
     monkeypatch.delenv("VAPID_PRIVATE_KEY", raising=False)
     with pytest.raises(push.PushSendError) as exc:
