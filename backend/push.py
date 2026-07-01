@@ -51,7 +51,15 @@ class PushSendError(Exception):
         self.expired = expired
 
 
-def send_push(subscription_info: dict, payload: dict) -> None:
+# Default TTL (seconds) the push service should hold the message if the device
+# isn't reachable immediately. pywebpush/the Web Push spec default TTL to 0,
+# which means "deliver now or drop" — no retry. That silently loses
+# notifications for a phone that's asleep or between network checks, so we
+# always pass an explicit, generous TTL instead.
+DEFAULT_TTL_SECONDS = 12 * 60 * 60  # 12 hours
+
+
+def send_push(subscription_info: dict, payload: dict, *, ttl: int = DEFAULT_TTL_SECONDS) -> None:
     """Send one Web Push notification. Raises PushSendError on failure."""
     from pywebpush import webpush, WebPushException
     import json
@@ -66,6 +74,7 @@ def send_push(subscription_info: dict, payload: dict) -> None:
             data=json.dumps(payload),
             vapid_private_key=private_key,
             vapid_claims=vapid_claims_for(subscription_info.get("endpoint", "")),
+            ttl=ttl,
         )
     except WebPushException as e:
         status = getattr(e.response, "status_code", None) if e.response is not None else None

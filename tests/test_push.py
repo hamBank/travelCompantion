@@ -35,6 +35,26 @@ def test_private_key_accepted_by_py_vapid_and_public_key_matches():
     assert derived_b64 == pub
 
 
+def test_send_push_always_passes_a_nonzero_ttl(monkeypatch):
+    """TTL=0 (pywebpush's default) means 'deliver now or drop, no retry' — a push
+    service can silently discard the message if the device isn't reachable at
+    that exact instant. We must always request that the push service hold it."""
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", push.generate_vapid_keypair()[0])
+
+    calls = []
+
+    def fake_webpush(**kwargs):
+        calls.append(kwargs)
+
+    import pywebpush
+    monkeypatch.setattr(pywebpush, "webpush", fake_webpush)
+
+    push.send_push({"endpoint": "https://example.com/x", "keys": {"p256dh": "a", "auth": "b"}}, {"title": "t"})
+
+    assert len(calls) == 1
+    assert calls[0]["ttl"] > 0
+
+
 def test_send_push_without_vapid_keys_raises(monkeypatch):
     monkeypatch.delenv("VAPID_PRIVATE_KEY", raising=False)
     with pytest.raises(push.PushSendError) as exc:
