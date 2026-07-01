@@ -35,10 +35,15 @@ def _seed_trip(session, member_email="a@x.com"):
     return trip, stop
 
 
-def _flight(session, stop, depart, checkin_window="24h", name="QF1", depart_tz=None):
+def _flight(session, stop, depart, checkin_window="24h", name="QF1", depart_tz=None,
+            flight_number=None, destination=None):
     details = {"depart_time": depart, "checkin_window": checkin_window}
     if depart_tz:
         details["depart_tz"] = depart_tz
+    if flight_number:
+        details["flight_number"] = flight_number
+    if destination:
+        details["destination"] = destination
     item = ItineraryItem(stop_id=stop.id, kind=ItemKind.flight, name=name, details=details)
     session.add(item)
     session.commit()
@@ -46,11 +51,27 @@ def _flight(session, stop, depart, checkin_window="24h", name="QF1", depart_tz=N
     return item
 
 
-def _rail(session, stop, depart, name="Eurostar", depart_tz=None):
+def _rail(session, stop, depart, name="Eurostar", depart_tz=None,
+          train_number=None, destination=None):
     details = {"depart_time": depart}
     if depart_tz:
         details["depart_tz"] = depart_tz
+    if train_number:
+        details["train_number"] = train_number
+    if destination:
+        details["destination"] = destination
     item = ItineraryItem(stop_id=stop.id, kind=ItemKind.rail, name=name, details=details)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+def _transfer(session, stop, depart, name="Airport transfer", end_location=None):
+    details = {"depart_time": depart}
+    if end_location:
+        details["end_location"] = end_location
+    item = ItineraryItem(stop_id=stop.id, kind=ItemKind.transfer, name=name, details=details)
     session.add(item)
     session.commit()
     session.refresh(item)
@@ -279,3 +300,65 @@ def test_expired_subscription_is_deleted(session):
     send_due_notifications(session, now=now, sender=expiring_sender)
     remaining = session.exec(select(PushSubscription)).all()
     assert remaining == []
+
+
+def test_checkin_notification_includes_flight_number_and_destination(session):
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _flight(session, stop, (now + timedelta(hours=20)).isoformat(timespec="minutes"),
+            checkin_window="24h", name="Singapore → Helsinki",
+            flight_number="AY132", destination="Helsinki")
+
+    calls = []
+    send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    body = calls[0][1]["body"]
+    assert "AY132" in body
+    assert "Helsinki" in body
+    assert "08:00" in body  # depart time carried through, not just the check-in window
+
+
+def test_checkin_notification_omits_missing_flight_number_and_destination(session):
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _flight(session, stop, (now + timedelta(hours=20)).isoformat(timespec="minutes"), checkin_window="24h")
+
+    calls = []
+    send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert calls[0][1]["body"] == "QF1 at 08:00 — online check-in is open"
+
+
+def test_rail_departure_notification_includes_train_number_and_destination(session):
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"),
+          name="Eurostar", train_number="ES9018", destination="Paris")
+
+    calls = []
+    send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    body = calls[0][1]["body"]
+    assert "ES9018" in body
+    assert "Paris" in body
+    assert "14:00" in body
+
+
+def test_transfer_departure_notification_uses_end_location_as_destination(session):
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _transfer(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"),
+              name="Airport transfer", end_location="Charles de Gaulle Airport")
+
+    calls = []
+    send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    body = calls[0][1]["body"]
+    assert "Charles de Gaulle Airport" in body
+    assert "14:00" in body
+
+
+def test_departure_notification_falls_back_when_no_route_details(session):
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"), name="Eurostar")
+
+    calls = []
+    send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert calls[0][1]["body"] == "Eurostar departs at 14:00"

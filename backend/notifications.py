@@ -114,11 +114,24 @@ def _notification_payload(item: ItineraryItem, kind: str, depart_local: str) -> 
     """depart_local is the flight/train's own local departure time string
     (e.g. "2026-07-02T14:35") — shown as-is so the notification reads in the
     same local time the traveller sees in the app, not a UTC-shifted one."""
+    d = item.details or {}
     name = item.name or item.kind.value
-    if kind == "checkin":
-        return {"title": "Check-in now open", "body": f"{name} — online check-in is open", "url": "/", "urgent": True}
     when = str(depart_local)[11:16] if len(str(depart_local)) >= 16 else str(depart_local)
-    return {"title": "Departure approaching", "body": f"{name} departs at {when}", "url": "/", "urgent": True}
+    # Same field-name fallbacks used by the frontend (StopCard.jsx) so the
+    # notification and the in-app card agree on what "the flight/train number"
+    # and "the destination" are for each item kind.
+    number = d.get("flight_number") or d.get("train_number") or ""
+    destination = d.get("destination") or d.get("end_location") or ""
+
+    label = f"{name} ({number})" if number else name
+    if kind == "checkin":
+        route = f" to {destination}" if destination else ""
+        body = f"{label}{route} at {when} — online check-in is open"
+        return {"title": "Check-in now open", "body": body, "url": "/", "urgent": True}
+
+    route = f" to {destination}" if destination else ""
+    body = f"{label}{route} departs at {when}"
+    return {"title": "Departure approaching", "body": body, "url": "/", "urgent": True}
 
 
 def _recipients(session: Session, trip_id: int) -> list[PushSubscription]:
