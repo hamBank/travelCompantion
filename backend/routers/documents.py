@@ -196,25 +196,29 @@ dates and ports) and the "Sailing Schedule" table (the day-by-day DATE / DESTINA
 DEPARTURE table). IGNORE everything else — shore excursions, "Onshore Experiences" descriptions, the \
 day-by-day "Detailed Itinerary" narrative, arrival/luggage/insurance/emergency-contact instructions, \
 and general terms. Do NOT create separate items for individual shore excursions, tours, or activities.
-- Create ONE `accommodation` item per NIGHT of the cruise — one per calendar date from the \
-embarkation date up to but not including the disembarkation date — NOT one item for the whole \
-cruise. Every one of these items shares the same `name`: the ship's name from the Booking Summary \
+- Create ONE `accommodation` item per CONTIGUOUS overnight stay in one town — NOT one item for the \
+whole cruise, and NOT one item per calendar night when the ship stays in the SAME town for more than \
+one night (e.g. two nights docked at the disembarkation city). Start a new item only when the \
+overnight town changes from the previous night; merge consecutive same-town nights into a single item \
+spanning the full stay. Every item shares the same `name`: the ship's name from the Booking Summary \
 (e.g. "AmaKristina").
-- For each night, set `details.location` to whichever town the Sailing Schedule shows the ship as \
-"Overnight" at. Read the table literally:
+- Work out each night's overnight town by reading the Sailing Schedule table literally, night by \
+night:
   - A date's row(s) may show the ship leaving its current town, then arriving at and being \
 "Overnight" in a new town later the same day — sometimes as two location lines under one date. Use \
-whichever town is marked "Overnight" as that night's location.
+whichever town is marked "Overnight" as that night's town.
   - If a date's row shows only a departure time (no "Overnight") and no further destination for that \
-date, the ship is cruising through the night to the following day's arrival town — set \
-`details.location` to "<next arrival town> (overnight sailing)" for that night.
-- Set `checkin`/`scheduled_at` to the EXPLICIT arrival or overnight time the schedule gives for that \
-town on that date (or the Booking Summary's check-in time, on embarkation night). Set `checkout` to \
-the explicit departure/arrival time given on the FOLLOWING calendar date's row (the final night's \
-checkout is the disembarkation time). If the schedule gives no time for one side, include just the \
-date — this is the one exception to "never estimate times" above, since these nightly records are \
-synthesized from the schedule rather than read as single fields.
-- If a "Docking Locations" section gives a pier/dock address for that night's town, include it in \
+date, the ship is cruising through the night to the following day's arrival town — that night's town \
+is "<next arrival town> (overnight sailing)".
+- For each item, `details.location` is that (possibly multi-night) overnight town. Set \
+`checkin`/`scheduled_at` to the EXPLICIT arrival/overnight time the schedule gives for the FIRST \
+night of the stay (or the Booking Summary's check-in time, for the embarkation-night item). Set \
+`checkout` to the explicit departure/arrival time given for the day the ship FINALLY LEAVES that \
+town — i.e. the row after the LAST consecutive night at that same town, not after every individual \
+night (the final item's checkout is the disembarkation time). If the schedule gives no time for one \
+side, include just the date — this is the one exception to "never estimate times" above, since these \
+records are synthesized from the schedule rather than read as single fields.
+- If a "Docking Locations" section gives a pier/dock address for that item's town, include it in \
 `details.description`. This is a bonus, not required — omit `description` rather than guessing an \
 address that isn't in the document.
 
