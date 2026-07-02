@@ -96,7 +96,7 @@ def test_simplify_decimates_and_keeps_last_point():
 
 def test_build_overpass_query_includes_name_filter_when_given():
     q = rp.build_overpass_query((0, 0, 1, 1), river_name="Rhône")
-    assert 'waterway"="river"' in q
+    assert 'waterway"~"^(river|canal)$"' in q
     assert '"name"~"Rhône",i' in q
     assert "0,0,1,1" in q
 
@@ -203,6 +203,43 @@ def test_estimate_river_path_none_when_points_far_from_any_candidate():
         "10.0,10.0", "10.2,10.4", fetch_json=fake_fetch,
     )
     assert result is None
+
+
+def test_estimate_river_path_falls_back_to_broad_when_named_ways_dont_reach_endpoints():
+    """A named-filtered query can return ways that exist but are nowhere near
+    the requested points (e.g. a same-named tributary fragment elsewhere in
+    the bbox) — this must retry broad, not just when the named query is
+    literally empty."""
+    calls = []
+
+    def fake_fetch(query):
+        calls.append(query)
+        if '"name"~' in query:
+            return _overpass_response(_way((10.0, 10.0), (10.01, 10.01)))
+        return _overpass_response(*_two_leg_river())
+
+    result = rp.estimate_river_path(
+        "45.001,4.001", "45.199,4.399", river_name="Rhône", fetch_json=fake_fetch,
+    )
+    assert len(calls) == 2  # named attempt failed to connect, then broad fallback
+    assert result is not None
+    assert result["river_name_used"] is None
+
+
+def test_estimate_river_path_bridges_gap_beyond_strict_stitch_tolerance():
+    """Locks/weirs on a channelized river often split the waterway tag with a
+    gap wider than the strict stitch tolerance — the bridge-tolerance retry
+    pass should still connect the two legs into one path reaching both ends."""
+    way1 = [(45.000, 4.000), (45.054, 4.000)]      # ~6 km leg
+    way2 = [(45.063009, 4.000), (45.117, 4.000)]   # ~1 km gap, then another ~6 km leg
+
+    def fake_fetch(query):
+        return _overpass_response(_way(*way1), _way(*way2))
+
+    result = rp.estimate_river_path("45.000,4.000", "45.117,4.000", fetch_json=fake_fetch)
+    assert result is not None
+    assert rp.haversine_km(tuple(result["path"][0]), (45.000, 4.000)) < 1
+    assert rp.haversine_km(tuple(result["path"][-1]), (45.117, 4.000)) < 1
 
 
 def test_estimate_river_path_rejects_too_many_unnamed_ways():

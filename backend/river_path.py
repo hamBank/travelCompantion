@@ -19,6 +19,13 @@ import urllib.request
 
 MAX_STRAIGHT_LINE_KM = 300
 ENDPOINT_STITCH_TOLERANCE_KM = 0.3
+# Locks and weirs on channelized rivers (e.g. the barrages on the Rhône)
+# often split the `waterway=river` tag right at the structure, leaving a
+# gap wider than the standard stitch tolerance between otherwise-continuous
+# chains. Used only as a fallback pass when the strict tolerance fails to
+# produce a path reaching both endpoints, so it doesn't loosely join
+# unrelated waterways in the common case.
+BRIDGE_STITCH_TOLERANCE_KM = 2.0
 ORIGIN_DEST_SNAP_TOLERANCE_KM = 5
 MAX_WAYS = 400
 FINAL_SIMPLIFY_MAX_POINTS = 300
@@ -99,9 +106,13 @@ def build_overpass_query(bbox: tuple, river_name: str | None = None) -> str:
         name_filter = f'["name"~"{safe}",i]'
     else:
         name_filter = ""
+    # Also match waterway=canal: navigable rivers are frequently routed
+    # through diversion canals around locks/dams (e.g. the Rhône's
+    # "court-circuité" bypasses), which OSM tags separately from the
+    # natural riverbed even though a boat travels straight through them.
     return (
         f'[out:json][timeout:20];'
-        f'way["waterway"="river"]{name_filter}({bbox_str});'
+        f'way["waterway"~"^(river|canal)$"]{name_filter}({bbox_str});'
         f'out geom;'
     )
 
@@ -223,33 +234,43 @@ def estimate_river_path(
     pad_km = max(10.0, straight_km * 0.25)
     bbox = _bbox(a, b, pad_km)
 
-    query = build_overpass_query(bbox, river_name)
-    ways = _ways_from_response(fetch_json(query))
-    used_name = river_name if river_name else None
+    def build_path(ways):
+        """Try the strict stitch tolerance first, then a looser "bridge"
+        tolerance (for gaps at locks/weirs) only if that fails — returns the
+        simplified sub-path or None."""
+        for tolerance in (ENDPOINT_STITCH_TOLERANCE_KM, BRIDGE_STITCH_TOLERANCE_KM):
+            merged = _merge_ways(ways, tolerance)
+            if not merged:
+                continue
+            best = _pick_best_polyline(merged, a, b)
+            if best is None:
+                continue
+            pl, i_o, d_o, i_d, d_d = best
+            if d_o > ORIGIN_DEST_SNAP_TOLERANCE_KM or d_d > ORIGIN_DEST_SNAP_TOLERANCE_KM:
+                continue
+            sub = _simplify(_slice_between(pl, i_o, i_d))
+            if len(sub) >= 2:
+                return sub
+        return None
 
-    if not ways and river_name:
-        # Named query came up empty — retry broad (riskier, no name filter).
-        ways = _ways_from_response(fetch_json(build_overpass_query(bbox, None)))
+    sub, used_name = None, None
+    if river_name:
+        named_ways = _ways_from_response(fetch_json(build_overpass_query(bbox, river_name)))
+        sub = build_path(named_ways) if named_ways else None
+        if sub is not None:
+            used_name = river_name
+
+    if sub is None:
+        # No river name given, named query came up empty, or the named ways
+        # didn't stitch into a path reaching both endpoints — retry broad
+        # (riskier, no name filter).
+        broad_ways = _ways_from_response(fetch_json(build_overpass_query(bbox, None)))
+        if not river_name and len(broad_ways) > MAX_WAYS:
+            return None  # too ambiguous without a name to filter by
+        sub = build_path(broad_ways)
         used_name = None
 
-    if not ways:
-        return None
-    if not river_name and len(ways) > MAX_WAYS:
-        return None  # too ambiguous without a name to filter by
-
-    merged = _merge_ways(ways)
-    if not merged:
-        return None
-
-    best = _pick_best_polyline(merged, a, b)
-    if best is None:
-        return None
-    pl, i_o, d_o, i_d, d_d = best
-    if d_o > ORIGIN_DEST_SNAP_TOLERANCE_KM or d_d > ORIGIN_DEST_SNAP_TOLERANCE_KM:
-        return None
-
-    sub = _simplify(_slice_between(pl, i_o, i_d))
-    if len(sub) < 2:
+    if sub is None:
         return None
     dist_km = sum(haversine_km(sub[i], sub[i + 1]) for i in range(len(sub) - 1))
 
