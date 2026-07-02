@@ -43,3 +43,29 @@ def test_data_version_is_stable_without_writes(client):
     v1 = client.get("/health").json()["data_version"]
     v2 = client.get("/health").json()["data_version"]
     assert v1 == v2
+
+
+def test_weather_cache_write_does_not_bump_data_version(client, session):
+    """WeatherCache is a read-through cache, never part of any client-facing
+    payload (timeline responses don't embed weather) — a cache fill shouldn't
+    make every open trip's sync poller refetch for nothing."""
+    from backend.models import WeatherCache
+
+    v1 = client.get("/health").json()["data_version"]
+    session.add(WeatherCache(cache_key="v2,test,2026-01-01,2026-01-02", payload={}))
+    session.commit()
+    v2 = client.get("/health").json()["data_version"]
+    assert v2 == v1
+
+
+def test_mixed_write_with_weather_cache_still_bumps_data_version(client, session):
+    """A real trip-data change alongside a cache write must still count —
+    only an entirely-cache-only flush is skipped."""
+    from backend.models import WeatherCache, Trip
+
+    v1 = client.get("/health").json()["data_version"]
+    session.add(WeatherCache(cache_key="v2,test2,2026-01-01,2026-01-02", payload={}))
+    session.add(Trip(name="Mixed write trip"))
+    session.commit()
+    v2 = client.get("/health").json()["data_version"]
+    assert v2 > v1
