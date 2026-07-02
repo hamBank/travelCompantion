@@ -11,6 +11,7 @@ from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
 from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, Stop, StopRead, TripRole
 from ..river_path import estimate_river_path, NoPlausiblePath
+from ..metrics import record_external_call
 
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _GPX_DIR  = os.path.join(_APP_ROOT, 'uploads', 'gpx')
@@ -189,11 +190,14 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
             )
         body = r.json()
     except Exception as e:
+        record_external_call("aerodatabox", ok=False, error=str(e))
         raise HTTPException(status_code=502, detail=f"Flight API unreachable: {e}")
 
     if not r.is_success:
         msg = body.get("message") or body.get("detail") or f"API returned {r.status_code}"
+        record_external_call("aerodatabox", ok=False, error=msg)
         raise HTTPException(status_code=502, detail=msg)
+    record_external_call("aerodatabox", ok=True)
 
     flights = body if isinstance(body, list) else body.get("data", [])
     if not flights:
@@ -404,10 +408,13 @@ def check_rail(item_id: int, session: Session = Depends(get_session), user: dict
                 })
                 if loc_r.status_code == 503:
                     last_error = f"DB REST API unavailable ({host})"
+                    record_external_call("db_transport_rest", ok=False, error=last_error)
                     continue
                 if not loc_r.is_success or not loc_r.text:
                     last_error = f"Station lookup failed ({loc_r.status_code})"
+                    record_external_call("db_transport_rest", ok=False, error=last_error)
                     continue
+                record_external_call("db_transport_rest", ok=True)
                 locations = loc_r.json()
                 if not locations:
                     return {"found": False, "train_number": train_number, "checks": []}
@@ -417,14 +424,17 @@ def check_rail(item_id: int, session: Session = Depends(get_session), user: dict
                 dep_r = client.get(f"{host}/stops/{stop_id}/departures", params=dep_params)
                 if not dep_r.is_success or not dep_r.text:
                     last_error = f"Departures failed ({dep_r.status_code})"
+                    record_external_call("db_transport_rest", ok=False, error=last_error)
                     locations = None
                     continue
+                record_external_call("db_transport_rest", ok=True)
 
                 dep_body = dep_r.json()
                 break  # success — exit host loop
 
             except Exception as e:
                 last_error = str(e)
+                record_external_call("db_transport_rest", ok=False, error=last_error)
                 locations = None
                 continue
 
@@ -471,6 +481,7 @@ def check_rail(item_id: int, session: Session = Depends(get_session), user: dict
                     "stopovers": "true", "language": "en",
                 })
             if trip_r.is_success and trip_r.text:
+                record_external_call("db_transport_rest", ok=True)
                 trip_data   = trip_r.json().get("trip", {})
                 stopovers   = trip_data.get("stopovers", [])
                 dest_stored = (d.get("destination") or "").strip().upper()
@@ -486,8 +497,10 @@ def check_rail(item_id: int, session: Session = Depends(get_session), user: dict
                     arr_planned  = last.get("plannedArrival")
                     arr_platform = last.get("plannedArrivalPlatform") or last.get("arrivalPlatform")
                     dest_name    = (last.get("stop") or {}).get("name")
-        except Exception:
-            pass
+            else:
+                record_external_call("db_transport_rest", ok=False, error=f"status {trip_r.status_code}")
+        except Exception as e:
+            record_external_call("db_transport_rest", ok=False, error=str(e))
 
     results = [c for c in [
         chk("Origin",       "origin",          d.get("origin"),          stop_name),
@@ -516,10 +529,11 @@ def geocode(q: str):
         with httpx.Client(timeout=8, headers=_NOMINATIM_HEADERS) as client:
             r = client.get(_NOMINATIM, params={"q": q, "format": "json", "limit": 1})
             results = r.json()
+        record_external_call("nominatim", ok=True)
         if results:
             return {"lat": float(results[0]["lat"]), "lng": float(results[0]["lon"]), "display": results[0].get("display_name", q)}
-    except Exception:
-        pass
+    except Exception as e:
+        record_external_call("nominatim", ok=False, error=str(e))
     raise HTTPException(status_code=404, detail=f"Could not geocode: {q}")
 
 
@@ -532,13 +546,14 @@ def route_elevation(lat1: float, lng1: float, lat2: float, lng2: float):
             r = client.post(_TOPO_API, json={"locations": locations})
             r.raise_for_status()
             results = r.json().get("results", [])
+        record_external_call("opentopodata", ok=True)
         if len(results) >= 2 and all(res.get("elevation") is not None for res in results[:2]):
             return {
                 "start_elevation": results[0]["elevation"],
                 "end_elevation":   results[1]["elevation"],
             }
-    except Exception:
-        pass
+    except Exception as e:
+        record_external_call("opentopodata", ok=False, error=str(e))
     raise HTTPException(status_code=503, detail="Elevation lookup unavailable")
 
 
@@ -627,13 +642,15 @@ def _route_elevation_gain_loss(coords):
             r = client.post(_TOPO_API, json={"locations": locations})
             r.raise_for_status()
             eles = [res.get("elevation") for res in r.json().get("results", [])]
+        record_external_call("opentopodata", ok=True)
         eles = [e for e in eles if e is not None]
         if len(eles) < 2:
             return None, None
         gain = sum(max(0, eles[i] - eles[i - 1]) for i in range(1, len(eles)))
         loss = sum(max(0, eles[i - 1] - eles[i]) for i in range(1, len(eles)))
         return round(gain), round(loss)
-    except Exception:
+    except Exception as e:
+        record_external_call("opentopodata", ok=False, error=str(e))
         return None, None
 
 
@@ -671,9 +688,12 @@ def _fetch_route(points, mode):
             data = json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         detail = e.read().decode()[:300] if e.fp else str(e)
+        record_external_call("google_routes", ok=False, error=f"{e.code}: {detail}")
         raise HTTPException(status_code=502, detail=f"Routes API error {e.code}: {detail}")
     except Exception as e:
+        record_external_call("google_routes", ok=False, error=str(e))
         raise HTTPException(status_code=502, detail=f"Routes API request failed: {e}")
+    record_external_call("google_routes", ok=True)
 
     routes = data.get("routes") or []
     if not routes:
@@ -791,9 +811,12 @@ def river_map(item_id: int, session: Session = Depends(get_session), user: dict 
         detail = f"Static Maps request failed: {e.response.status_code} {e.response.reason_phrase}"
         if body:
             detail += f" — {body[:300]}"
+        record_external_call("google_static_maps", ok=False, error=detail)
         raise HTTPException(status_code=503, detail=detail)
     except Exception as e:
+        record_external_call("google_static_maps", ok=False, error=str(e))
         raise HTTPException(status_code=503, detail=f"Static Maps request failed: {e}")
+    record_external_call("google_static_maps", ok=True)
 
     etag = hashlib.sha256(json.dumps([path, start, end]).encode()).hexdigest()[:16]
     return Response(
@@ -819,23 +842,33 @@ def enrich_item(item_id: int, session: Session = Depends(get_session), user: dic
 
     with httpx.Client(timeout=8) as client:
         # 1. Find the place
-        search = client.get(f"{_PLACES_BASE}/findplacefromtext/json", params={
-            "input": query,
-            "inputtype": "textquery",
-            "fields": "place_id",
-            "key": _PLACES_KEY,
-        }).json()
+        try:
+            search = client.get(f"{_PLACES_BASE}/findplacefromtext/json", params={
+                "input": query,
+                "inputtype": "textquery",
+                "fields": "place_id",
+                "key": _PLACES_KEY,
+            }).json()
+        except Exception as e:
+            record_external_call("google_places", ok=False, error=str(e))
+            raise
+        record_external_call("google_places", ok=True)
         candidates = search.get("candidates", [])
         if not candidates:
             raise HTTPException(status_code=404, detail="Place not found")
 
         # 2. Get place details
         place_id = candidates[0]["place_id"]
-        det = client.get(f"{_PLACES_BASE}/details/json", params={
-            "place_id": place_id,
-            "fields": "name,formatted_address,formatted_phone_number,international_phone_number,website,editorial_summary",
-            "key": _PLACES_KEY,
-        }).json().get("result", {})
+        try:
+            det = client.get(f"{_PLACES_BASE}/details/json", params={
+                "place_id": place_id,
+                "fields": "name,formatted_address,formatted_phone_number,international_phone_number,website,editorial_summary",
+                "key": _PLACES_KEY,
+            }).json().get("result", {})
+        except Exception as e:
+            record_external_call("google_places", ok=False, error=str(e))
+            raise
+        record_external_call("google_places", ok=True)
 
     suggestions = {}
     if det.get("formatted_address"):
@@ -891,10 +924,15 @@ def _add_elevation_to_gpx(content: bytes) -> bytes:
 
         locs = "|".join(f"{pts[i].get('lat')},{pts[i].get('lon')}" for i in sample_idxs)
 
-        with httpx.Client(timeout=25) as client:
-            resp = client.post(_TOPO_API, json={"locations": locs})
-            resp.raise_for_status()
-            results = resp.json().get("results", [])
+        try:
+            with httpx.Client(timeout=25) as client:
+                resp = client.post(_TOPO_API, json={"locations": locs})
+                resp.raise_for_status()
+                results = resp.json().get("results", [])
+        except Exception as e:
+            record_external_call("opentopodata", ok=False, error=str(e))
+            raise
+        record_external_call("opentopodata", ok=True)
 
         raw_eles = [r.get("elevation") for r in results]
         ele_at = {sample_idxs[j]: raw_eles[j]
@@ -1137,9 +1175,12 @@ def _places_nearby_laundry(lat: float, lng: float, radius: int = 1000) -> list:
         with httpx.Client(timeout=10) as client:
             r = client.get(url, params=params)
             r.raise_for_status()
-            return r.json().get("results", [])
-    except Exception:
+            results = r.json().get("results", [])
+    except Exception as e:
+        record_external_call("google_places", ok=False, error=str(e))
         return []
+    record_external_call("google_places", ok=True)
+    return results
 
 
 def _places_detail(place_id: str) -> dict:
@@ -1154,9 +1195,12 @@ def _places_detail(place_id: str) -> dict:
         with httpx.Client(timeout=8) as client:
             r = client.get(url, params=params)
             r.raise_for_status()
-            return r.json().get("result", {})
-    except Exception:
+            result = r.json().get("result", {})
+    except Exception as e:
+        record_external_call("google_places", ok=False, error=str(e))
         return {}
+    record_external_call("google_places", ok=True)
+    return result
 
 
 def _nominatim_geocode(q: str) -> tuple | None:
@@ -1165,10 +1209,12 @@ def _nominatim_geocode(q: str) -> tuple | None:
         with httpx.Client(timeout=8, headers=_NOMINATIM_HEADERS) as client:
             r = client.get(_NOMINATIM, params={"q": q, "format": "json", "limit": 1})
             results = r.json()
-        if results:
-            return float(results[0]["lat"]), float(results[0]["lon"])
-    except Exception:
-        pass
+    except Exception as e:
+        record_external_call("nominatim", ok=False, error=str(e))
+        return None
+    record_external_call("nominatim", ok=True)
+    if results:
+        return float(results[0]["lat"]), float(results[0]["lon"])
     return None
 
 
@@ -1250,9 +1296,10 @@ def _claude_enhance_washing(entries: list, city: str = "") -> list:
         text = next((b.text for b in resp.content if b.type == "text"), "").strip()
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
         raw = json.loads(text)
+        record_external_call("anthropic", ok=True)
         _apply_claude_enhancements(entries, raw)
     except Exception as exc:
-        print(f"[wash-lookup] Claude enhancement skipped: {exc}")
+        record_external_call("anthropic", ok=False, error=str(exc))
         _apply_claude_enhancements(entries, [])
 
     return entries

@@ -17,6 +17,8 @@ import re
 import urllib.parse
 import urllib.request
 
+from .metrics import record_external_call
+
 MAX_STRAIGHT_LINE_KM = 300
 ENDPOINT_STITCH_TOLERANCE_KM = 0.3
 # Locks and weirs on channelized rivers (e.g. the barrages on the Rhône)
@@ -70,15 +72,26 @@ def _default_fetch_overpass(query: str) -> dict:
         data=urllib.parse.urlencode({"data": query}).encode(),
         headers={**_UA_HEADERS, "Content-Type": "application/x-www-form-urlencoded"},
     )
-    with urllib.request.urlopen(req, timeout=25) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            result = json.loads(resp.read())
+    except Exception as e:
+        record_external_call("overpass", ok=False, error=str(e))
+        raise
+    record_external_call("overpass", ok=True)
+    return result
 
 
 def _default_geocode(q: str):
     url = _NOMINATIM + "?" + urllib.parse.urlencode({"q": q, "format": "json", "limit": 1})
     req = urllib.request.Request(url, headers=_NOMINATIM_HEADERS)
-    with urllib.request.urlopen(req, timeout=8) as resp:
-        results = json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            results = json.loads(resp.read())
+    except Exception as e:
+        record_external_call("nominatim", ok=False, error=str(e))
+        raise
+    record_external_call("nominatim", ok=True)
     if not results:
         return None
     return float(results[0]["lat"]), float(results[0]["lon"])

@@ -182,8 +182,14 @@ async def currency_convert(amount: float, from_currency: str, to_currency: str):
     def _fetch():
         url = f"https://open.er-api.com/v6/latest/{from_currency}"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            return _json.loads(r.read().decode())
+        try:
+            with urllib.request.urlopen(req, timeout=8) as r:
+                result = _json.loads(r.read().decode())
+        except Exception as e:
+            _metrics.record_external_call("open_er_api", ok=False, error=str(e))
+            raise
+        _metrics.record_external_call("open_er_api", ok=True)
+        return result
 
     try:
         loop = asyncio.get_event_loop()

@@ -13,6 +13,8 @@ from typing import Optional
 
 from cryptography.hazmat.primitives.asymmetric import ec
 
+from .metrics import record_external_call
+
 
 def generate_vapid_keypair() -> tuple[str, str]:
     """Generate a fresh VAPID (private_b64, public_b64) pair — see module docstring for format."""
@@ -93,4 +95,6 @@ def send_push(subscription_info: dict, payload: dict, *, ttl: int = DEFAULT_TTL_
     except WebPushException as e:
         status = getattr(e.response, "status_code", None) if e.response is not None else None
         expired = status in (404, 410)
+        record_external_call("web_push", ok=False, error=str(e))
         raise PushSendError(str(e), expired=expired) from e
+    record_external_call("web_push", ok=True)

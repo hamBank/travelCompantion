@@ -22,6 +22,7 @@ from sqlmodel import Session, select
 _TIME_RE = re.compile(r'^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?$', re.IGNORECASE)
 
 from .models import Trip, Stop, ItineraryItem, StopStatus, ItemKind, ItemStatus
+from .metrics import record_external_call
 
 # Sheet names that contain tabular flight data (one row per flight, first row is headers)
 FLIGHT_SHEET_NAMES = frozenset({"flights", "flight"})
@@ -790,8 +791,13 @@ def _lookup_nominatim(name: str, city: str, country: str) -> dict:
     )
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "TravelCompanion/1.0"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            results = _json.loads(resp.read().decode())
+        try:
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                results = _json.loads(resp.read().decode())
+        except Exception as e:
+            record_external_call("nominatim", ok=False, error=str(e))
+            raise
+        record_external_call("nominatim", ok=True)
         if not results:
             return {}
         r = results[0]
@@ -819,8 +825,13 @@ def _lookup_places(name: str, city: str, country: str, api_key: str) -> dict:
         f"?query={_urlparse.quote(query)}&type=lodging&key={api_key}"
     )
     try:
-        with urllib.request.urlopen(search_url, timeout=8) as resp:
-            search_data = _json.loads(resp.read().decode())
+        try:
+            with urllib.request.urlopen(search_url, timeout=8) as resp:
+                search_data = _json.loads(resp.read().decode())
+        except Exception as e:
+            record_external_call("google_places", ok=False, error=str(e))
+            raise
+        record_external_call("google_places", ok=True)
         places = search_data.get("results", [])
         if not places:
             return {}
@@ -830,8 +841,13 @@ def _lookup_places(name: str, city: str, country: str, api_key: str) -> dict:
             "https://maps.googleapis.com/maps/api/place/details/json"
             f"?place_id={_urlparse.quote(place_id)}&fields={fields}&key={api_key}"
         )
-        with urllib.request.urlopen(detail_url, timeout=8) as resp:
-            detail_data = _json.loads(resp.read().decode())
+        try:
+            with urllib.request.urlopen(detail_url, timeout=8) as resp:
+                detail_data = _json.loads(resp.read().decode())
+        except Exception as e:
+            record_external_call("google_places", ok=False, error=str(e))
+            raise
+        record_external_call("google_places", ok=True)
         r = detail_data.get("result", {})
         geo = r.get("geometry", {}).get("location", {})
         return {

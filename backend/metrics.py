@@ -3,7 +3,34 @@
 HTTP metrics are registered automatically by prometheus-fastapi-instrumentator
 in main.py.  Everything below is application-level.
 """
+import logging
 from prometheus_client import Counter, Histogram
+
+_external_logger = logging.getLogger("travelcomp.external")
+
+# ── External (third-party) API calls ─────────────────────────────────────────
+# Every outbound call to a service we don't control — Overpass, Nominatim,
+# Google Maps (geocode/routes/elevation/static maps), AviationStack,
+# AeroDataBox, OpenTopoData, pywebpush — increments this so total-request and
+# error-rate can be graphed per service, without needing to reproduce a
+# one-off failure (e.g. an upstream 429) to know it happened.
+
+external_requests = Counter(
+    "travelcomp_external_requests_total",
+    "Outbound calls to third-party APIs",
+    ["service", "status"],   # status: success | error
+)
+
+
+def record_external_call(service: str, ok: bool, error: str = "") -> None:
+    """Call from a try/except (or finally, with `ok` computed beforehand)
+    around any outbound request to a third-party API. Always increments the
+    counter; only logs on failure, at warning level, so a specific incident
+    can be found in app.log without flooding it with routine successes."""
+    external_requests.labels(service=service, status="success" if ok else "error").inc()
+    if not ok:
+        _external_logger.warning("external call failed: service=%s error=%s", service, error)
+
 
 # ── Email ingestion ────────────────────────────────────────────────────────────
 
