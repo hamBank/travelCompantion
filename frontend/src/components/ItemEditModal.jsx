@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createItem, updateItem, enrichItem, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem, generateRiverPath } from '../api.js'
 import { setEditing } from '../editState.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
@@ -1563,6 +1563,15 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
   const [stops, setStops] = useState([])
   const [targetStop, setTargetStop] = useState(item.stop_id ?? (stopsProp?.[0]?.id ?? null))
 
+  // Snapshot the initial form state once, so any close attempt (backdrop
+  // click, ✕, Cancel) can warn before silently discarding real edits.
+  const initialSnapshot = useRef(JSON.stringify({ core, details, targetStop }))
+  function requestClose() {
+    const dirty = JSON.stringify({ core, details, targetStop }) !== initialSnapshot.current
+    if (dirty && !confirm('Discard unsaved changes?')) return
+    onClose()
+  }
+
   useEffect(() => {
     if (!isNew && item.id) getItemStops(item.id).then(setStops).catch(() => {})
   }, [item.id, isNew])
@@ -1716,7 +1725,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
     <div
       className="fixed inset-0 flex items-center justify-center z-50 p-4"
       style={{ background: 'var(--overlay)' }}
-      onClick={e => e.target === e.currentTarget && onClose()}
+      onClick={e => e.target === e.currentTarget && requestClose()}
     >
       <div
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border)', maxHeight: '90vh' }}
@@ -1761,7 +1770,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
           </select>
           <span style={{ color: 'var(--text)' }} className="flex-1 text-sm font-medium truncate">{core.name || item.name}</span>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             style={{ color: 'var(--text-faint)' }}
             className="hover:opacity-70 transition-opacity text-lg leading-none shrink-0"
           >
@@ -1882,7 +1891,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
               )}
               <div className="flex-1" />
               <button
-                onClick={onClose}
+                onClick={requestClose}
                 style={{ color: 'var(--text-faint)' }}
                 className="text-sm hover:opacity-70 transition-opacity"
               >
