@@ -210,6 +210,44 @@
       "targets": [
         { "expr": "increase(travelcomp_pending_decided_total{job=\"travelcomp\"}[24h])", "legendFormat": "{{decision}}", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" } }
       ]
+    },
+
+    { "type": "row", "title": "External APIs", "gridPos": { "x": 0, "y": 35, "w": 24, "h": 1 }, "id": 40, "collapsed": false },
+
+    {
+      "id": 41, "title": "Request rate by service", "type": "timeseries",
+      "gridPos": { "x": 0, "y": 36, "w": 8, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (service) (rate(travelcomp_external_requests_total{job=\"travelcomp\"}[5m]))", "legendFormat": "{{service}}", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" } }
+      ]
+    },
+
+    {
+      "id": 42, "title": "Error rate by service", "type": "timeseries",
+      "gridPos": { "x": 8, "y": 36, "w": 8, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (service) (rate(travelcomp_external_requests_total{job=\"travelcomp\",status=\"error\"}[5m])) / sum by (service) (rate(travelcomp_external_requests_total{job=\"travelcomp\"}[5m]))", "legendFormat": "{{service}}", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" } }
+      ]
+    },
+
+    {
+      "id": 43, "title": "Calls by service — 24 h", "type": "barchart",
+      "gridPos": { "x": 16, "y": 36, "w": 8, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
+        "overrides": [{ "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }]
+      },
+      "options": { "xField": "service", "barWidth": 0.7, "groupWidth": 0.7, "stacking": "normal", "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (service, status) (increase(travelcomp_external_requests_total{job=\"travelcomp\"}[24h]))", "legendFormat": "{{status}} / {{service}}", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" } }
+      ]
     }
 
   ]
