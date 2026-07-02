@@ -657,6 +657,11 @@ function RiverTransferBody({ item }) {
   return (
     <div className="space-y-0">
       {hasPath && <RiverMiniMap itemId={item.id} />}
+      {hasPath && d.river_path_approximate && (
+        <p style={{ color: 'var(--warning)' }} className="text-xs mb-3">
+          ⚠ No detected waterway route — showing a straight line between the two points.
+        </p>
+      )}
       {(d.start_location || d.end_location) && (
         <Row label="Route">{[d.start_location, d.end_location].filter(Boolean).join(' → ')}</Row>
       )}

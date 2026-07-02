@@ -47,7 +47,7 @@ _SKIP_DETAILS = {
     "converted_cost", "converted_amount_paid", "converted_currency",
     "gpx_filename", "original_gpx_name", "gpx_distance_m", "gpx_gain_m", "gpx_loss_m",
     "route_points", "maps_url", "important",
-    "river_path", "river_path_generated_at",
+    "river_path", "river_path_generated_at", "river_path_approximate",
 }
 
 _DATE_FORMATS = (

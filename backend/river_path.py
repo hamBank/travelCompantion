@@ -44,12 +44,12 @@ _NOMINATIM_HEADERS = _UA_HEADERS
 
 
 class NoPlausiblePath(Exception):
-    """Raised when no plausible river path could be assembled. The message is
-    a specific, actionable reason (which stage failed and why) rather than a
-    generic "not found" — OSM waterway data can be fragmented in enough
-    different ways (no data at all, unnamed and ambiguous, or found but too
-    far from one endpoint) that a single generic message isn't enough to
-    troubleshoot a real failure without server access."""
+    """Raised when a point can't be resolved to a location at all (bad
+    geocode) — there's nothing to fall back to in that case. Every other
+    "couldn't find a river route" failure mode instead falls back to a
+    straight line between the two points (see `estimate_river_path`'s
+    `approximate` flag) rather than raising, since a worse-but-present path
+    is more useful than a dead end once the points themselves are valid."""
 
 
 def haversine_km(a: tuple, b: tuple) -> float:
@@ -266,13 +266,15 @@ def estimate_river_path(
     origin: str, destination: str, river_name: str | None = None, *,
     fetch_json=None, geocode=None,
 ) -> dict:
-    """Return {"path": [[lat,lng],...], "distance_km": float, "river_name_used": str|None}.
+    """Return {"path": [[lat,lng],...], "distance_km": float,
+    "river_name_used": str|None, "approximate": bool}. `approximate` is True
+    when no connected waterway path could be assembled and `path` is just a
+    straight line between the two points instead.
 
     Raises ValueError for invalid input (points too far apart to plausibly be
-    a river transfer) — the caller maps that to a 400. Raises NoPlausiblePath,
-    with a specific reason, when geocoding or stitching didn't produce a
-    usable path — the caller maps that to a 404. Network/parsing failures
-    propagate as-is for the caller to map to a 503.
+    a river transfer) — the caller maps that to a 400. Raises NoPlausiblePath
+    when a point can't be geocoded at all — the caller maps that to a 404.
+    Network/parsing failures propagate as-is for the caller to map to a 503.
     """
     fetch_json = fetch_json or _default_fetch_overpass
     geocode = geocode or _default_geocode
@@ -363,36 +365,29 @@ def estimate_river_path(
             used_name = river_name
 
     broad_miss = None
+    ambiguous = False
     if sub is None:
         # No river name given, named query came up empty, or the named ways
         # didn't stitch into a path reaching both endpoints — retry broad
         # (riskier, no name filter).
         broad_ways = _ways_from_response(fetch_json(build_overpass_query(bbox, None)))
-        if not river_name and len(broad_ways) > MAX_WAYS:
-            raise NoPlausiblePath(
-                f"Found {len(broad_ways)} unnamed waterway segments near these points "
-                f"(limit {MAX_WAYS}) — too ambiguous without a river name, try providing one"
-            )
-        if broad_ways:
+        ambiguous = not river_name and len(broad_ways) > MAX_WAYS
+        if broad_ways and not ambiguous:
             sub, broad_miss = build_path(broad_ways)
-        if sub is None:
-            sub = try_bridge_reservoir(broad_miss)
+            if sub is None:
+                sub = try_bridge_reservoir(broad_miss)
         used_name = None
 
-    if sub is None:
-        miss = broad_miss or named_miss
-        if miss is None:
-            raise NoPlausiblePath(
-                f"No waterway data found near these points in OpenStreetMap "
-                f"(searched a ~{pad_km:.0f} km-padded area)"
-            )
-        d_o, d_d = miss["d_o"], miss["d_d"]
-        raise NoPlausiblePath(
-            f"Found waterway data but couldn't connect a path reaching both points — "
-            f"closest match was {d_o:.1f} km from the start and {d_d:.1f} km from the end "
-            f"(tolerance is {ORIGIN_DEST_SNAP_TOLERANCE_KM} km). The origin/destination may "
-            f"not be directly on a mapped waterway, or the river is fragmented in OSM here."
-        )
+    approximate = sub is None
+    if approximate:
+        # Waterway data doesn't connect the two points (missing OSM coverage,
+        # too fragmented to stitch, or too ambiguous to trust without a
+        # name) — fall back to a straight line between the two points rather
+        # than fail outright. Clearly worse than a real river route
+        # geographically, but guarantees something renders; `approximate`
+        # lets callers warn the user this isn't a detected waterway path.
+        sub = [a, b]
+        used_name = None
 
     dist_km = sum(haversine_km(sub[i], sub[i + 1]) for i in range(len(sub) - 1))
 
@@ -400,4 +395,5 @@ def estimate_river_path(
         "path": [[round(lat, 6), round(lng, 6)] for lat, lng in sub],
         "distance_km": round(dist_km, 1),
         "river_name_used": used_name,
+        "approximate": approximate,
     }

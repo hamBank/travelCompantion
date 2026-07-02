@@ -156,13 +156,28 @@ def test_river_path_400_when_points_too_far_apart(client: TestClient, monkeypatc
     assert r.status_code == 400
 
 
-def test_river_path_404_when_no_plausible_path(client: TestClient, monkeypatch):
+def test_river_path_404_when_point_cannot_be_geocoded(client: TestClient, monkeypatch):
     def raise_no_path(origin, destination, river_name=None):
-        raise items_mod.NoPlausiblePath("no waterway data found")
+        raise items_mod.NoPlausiblePath("Could not resolve 'A' to a location")
     monkeypatch.setattr(items_mod, "estimate_river_path", raise_no_path)
     r = client.post("/river-path", json={"points": ["A", "B"]})
     assert r.status_code == 404
-    assert "no waterway data found" in r.json()["detail"]
+    assert "Could not resolve" in r.json()["detail"]
+
+
+def test_river_path_200_with_approximate_flag_when_no_waterway_connects(client: TestClient, monkeypatch):
+    monkeypatch.setattr(
+        items_mod, "estimate_river_path",
+        lambda origin, destination, river_name=None: {
+            "path": [[45.0, 4.0], [45.5, 4.9]], "distance_km": 55.5,
+            "river_name_used": None, "approximate": True,
+        },
+    )
+    r = client.post("/river-path", json={"points": ["A", "B"]})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["approximate"] is True
+    assert data["path"] == [[45.0, 4.0], [45.5, 4.9]]
 
 
 def test_river_path_503_on_lookup_failure(client: TestClient, monkeypatch):

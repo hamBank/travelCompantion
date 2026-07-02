@@ -1299,6 +1299,11 @@ function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
             >
               {showMap ? '▲ Hide map' : '▼ Show map'}
             </button>
+            {d.river_path_approximate && (
+              <span style={{ color: 'var(--warning)' }} className="text-xs" title="No detected waterway route — this is a straight line between the two points">
+                ⚠ approximate
+              </span>
+            )}
             <div className="flex gap-2 ml-auto">
               {d.start_location && (
                 <a href={placeSearchUrl(d.start_location)} target="_blank" rel="noreferrer"

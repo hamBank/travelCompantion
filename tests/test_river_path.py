@@ -134,6 +134,7 @@ def test_estimate_river_path_happy_path_with_named_river():
     assert result["path"][0] == [45.0, 4.0] or rp.haversine_km(tuple(result["path"][0]), (45.001, 4.001)) < 1
     assert result["distance_km"] > 0
     assert result["river_name_used"] == "Rhône"
+    assert result["approximate"] is False
 
 
 def test_estimate_river_path_geocodes_place_names():
@@ -188,23 +189,24 @@ def test_estimate_river_path_falls_back_to_broad_query_when_named_empty():
     assert result["river_name_used"] is None  # broad fallback used, name not confirmed
 
 
-def test_estimate_river_path_raises_when_no_ways_found_at_all():
-    import pytest
-    with pytest.raises(rp.NoPlausiblePath, match="No waterway data found"):
-        rp.estimate_river_path(
-            "45.001,4.001", "45.199,4.399", river_name="Nonexistent River",
-            fetch_json=lambda q: _overpass_response(),
-        )
+def test_estimate_river_path_falls_back_to_straight_line_when_no_ways_found_at_all():
+    result = rp.estimate_river_path(
+        "45.001,4.001", "45.199,4.399", river_name="Nonexistent River",
+        fetch_json=lambda q: _overpass_response(),
+    )
+    assert result["approximate"] is True
+    assert result["path"] == [[45.001, 4.001], [45.199, 4.399]]
+    assert result["river_name_used"] is None
 
 
-def test_estimate_river_path_raises_when_points_far_from_any_candidate():
-    import pytest
+def test_estimate_river_path_falls_back_to_straight_line_when_points_far_from_any_candidate():
     # The river runs nowhere near the requested origin/destination.
     def fake_fetch(query):
         return _overpass_response(*_two_leg_river())
 
-    with pytest.raises(rp.NoPlausiblePath, match="couldn't connect"):
-        rp.estimate_river_path("10.0,10.0", "10.2,10.4", fetch_json=fake_fetch)
+    result = rp.estimate_river_path("10.0,10.0", "10.2,10.4", fetch_json=fake_fetch)
+    assert result["approximate"] is True
+    assert result["path"] == [[10.0, 10.0], [10.2, 10.4]]
 
 
 def test_estimate_river_path_falls_back_to_broad_when_named_ways_dont_reach_endpoints():
@@ -262,16 +264,15 @@ def test_estimate_river_path_accepts_town_center_offset_from_riverbank():
     assert result is not None
 
 
-def test_estimate_river_path_rejects_too_many_unnamed_ways():
-    import pytest
-
+def test_estimate_river_path_falls_back_to_straight_line_when_too_many_unnamed_ways():
     def fake_fetch(query):
         # Oversized ambiguous result with no name filter to narrow it down.
         ways = [_way((45.0 + i * 0.001, 4.0), (45.0 + i * 0.001, 4.001)) for i in range(rp.MAX_WAYS + 1)]
         return _overpass_response(*ways)
 
-    with pytest.raises(rp.NoPlausiblePath, match="too ambiguous"):
-        rp.estimate_river_path("45.001,4.001", "45.199,4.399", fetch_json=fake_fetch)
+    result = rp.estimate_river_path("45.001,4.001", "45.199,4.399", fetch_json=fake_fetch)
+    assert result["approximate"] is True
+    assert result["path"] == [[45.001, 4.001], [45.199, 4.399]]
 
 
 # ── natural=water reservoir bridging ─────────────────────────────────────────
@@ -325,8 +326,7 @@ def test_estimate_river_path_bridges_a_reservoir_polygon_gap():
     assert result["path"][-1] == [0.0, 0.7]
 
 
-def test_estimate_river_path_still_fails_when_no_reservoir_bridges_the_gap():
-    import pytest
+def test_estimate_river_path_falls_back_to_straight_line_when_no_reservoir_bridges_the_gap():
     line_way = [(0.0, 0.0), (0.0, 0.5)]
 
     def fake_fetch(query):
@@ -334,5 +334,6 @@ def test_estimate_river_path_still_fails_when_no_reservoir_bridges_the_gap():
             return _overpass_response()  # no polygon data at all
         return _overpass_response(_way(*line_way))
 
-    with pytest.raises(rp.NoPlausiblePath, match="couldn't connect"):
-        rp.estimate_river_path("0.0,0.0", "0.0,0.7", fetch_json=fake_fetch)
+    result = rp.estimate_river_path("0.0,0.0", "0.0,0.7", fetch_json=fake_fetch)
+    assert result["approximate"] is True
+    assert result["path"] == [[0.0, 0.0], [0.0, 0.7]]
