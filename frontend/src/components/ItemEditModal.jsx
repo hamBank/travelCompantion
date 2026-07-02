@@ -1121,6 +1121,7 @@ function RiverTransferForm({ core, details, setCore, setDetails }) {
     const next = { ...prev, [key]: val }
     if (prev.river_path?.length) {
       delete next.river_path
+      delete next.river_path_approximate
       delete next.river_path_generated_at
     }
     return next
@@ -1136,13 +1137,16 @@ function RiverTransferForm({ core, details, setCore, setDetails }) {
       setDetails(prev => ({
         ...prev,
         river_path: res.path,
+        river_path_approximate: res.approximate,
         river_path_generated_at: new Date().toISOString(),
         distance: prev.distance || (res.distance_km ? `~${res.distance_km.toFixed(1)} km` : prev.distance),
       }))
-      setPathMsg({
-        text: `Path generated (${res.path.length} points)${res.river_name_used ? ` along the ${res.river_name_used}` : ''}`,
-        color: 'var(--success)',
-      })
+      setPathMsg(res.approximate
+        ? { text: 'No river route found — using a straight line instead (approximate, not a detected waterway)', color: 'var(--warning)' }
+        : {
+            text: `Path generated (${res.path.length} points)${res.river_name_used ? ` along the ${res.river_name_used}` : ''}`,
+            color: 'var(--success)',
+          })
     } catch (e) {
       setPathMsg({ text: e.message || 'Could not generate a river path', color: 'var(--error)' })
     } finally {
