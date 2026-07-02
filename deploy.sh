@@ -225,6 +225,10 @@ if [[ -n "$PG_BOOT" ]] && command -v psql &>/dev/null; then
   if [[ "$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='travelcomp'")" != "1" ]]; then
     sudo -u postgres psql -c "CREATE DATABASE \"travelcomp\" OWNER \"travelcomp\";" >/dev/null
   fi
+  # CREATEDB lets the app role spin up throwaway scratch databases (e.g. to
+  # verify a Postgres-only migration path like ALTER TYPE ... ADD VALUE before
+  # it touches the real database) without needing root/sudo each time.
+  sudo -u postgres psql -c "ALTER ROLE \"travelcomp\" CREATEDB;" >/dev/null
   ok "Postgres role/database ready"
 fi
 
