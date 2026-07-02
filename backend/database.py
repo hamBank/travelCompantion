@@ -38,9 +38,19 @@ def get_data_version() -> int:
 
 @event.listens_for(_SASession, "after_flush")
 def _bump_data_version(session, flush_context):
-    if session.new or session.dirty or session.deleted:
-        global _DATA_VERSION
-        _DATA_VERSION += 1
+    changed = list(session.new) + list(session.dirty) + list(session.deleted)
+    if not changed:
+        return
+    # WeatherCache is a read-through cache, not trip data — a cache fill/miss
+    # doesn't belong in any client-facing payload (timeline responses never
+    # embed weather), so it shouldn't make every open trip's sync poller
+    # refetch. Only skip the bump when the flush is *entirely* cache writes;
+    # a real trip-data change alongside one still counts normally.
+    from .models import WeatherCache
+    if all(isinstance(obj, WeatherCache) for obj in changed):
+        return
+    global _DATA_VERSION
+    _DATA_VERSION += 1
 
 
 def get_session():
