@@ -1318,7 +1318,8 @@ function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
 
         {showMap && hasPath && (
           mapUrl
-            ? <img src={mapUrl} alt="Assumed river path" width="100%" style={{ display: 'block', width: '100%', height: 'auto' }} />
+            ? <img src={mapUrl} alt="Assumed river path"
+                style={{ display: 'block', width: '100%', height: '280px', objectFit: 'cover' }} />
             : <div style={{ color: 'var(--text-faint)' }} className="text-xs px-3 py-2">Loading map…</div>
         )}
       </div>
