@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { fetchGpxText, downloadGpx } from '../api.js'
+import { fetchGpxText, downloadGpx, fetchRiverMapBlob } from '../api.js'
 import CostDisplay from './CostDisplay.jsx'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
@@ -622,6 +622,59 @@ function HireBody({ item }) {
   )
 }
 
+function RiverMiniMap({ itemId }) {
+  const [mapUrl, setMapUrl] = useState(null)
+
+  useEffect(() => {
+    let objectUrl = null
+    let cancelled = false
+    fetchRiverMapBlob(itemId).then(blob => {
+      if (cancelled || !blob) return
+      objectUrl = URL.createObjectURL(blob)
+      setMapUrl(objectUrl)
+    })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [itemId])
+
+  if (!mapUrl) return null
+
+  return (
+    <div style={{ borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid var(--border)', margin: '0 0 1rem' }}>
+      <img src={mapUrl} alt="Assumed river path" style={{ display: 'block', width: '100%', height: 'auto' }} />
+    </div>
+  )
+}
+
+const RIVER_VEHICLE_ICON = { ferry: '⛴', boat: '🚤', riverboat: '🛶', 'water taxi': '🚤' }
+
+function RiverTransferBody({ item }) {
+  const d = item.details ?? {}
+  const hasPath = d.river_path?.length >= 2
+  const icon = RIVER_VEHICLE_ICON[d.vehicle_type?.toLowerCase()] ?? '⛴'
+  return (
+    <div className="space-y-0">
+      {hasPath && <RiverMiniMap itemId={item.id} />}
+      {(d.start_location || d.end_location) && (
+        <Row label="Route">{[d.start_location, d.end_location].filter(Boolean).join(' → ')}</Row>
+      )}
+      {d.vehicle_type && <Row label="Vessel">{icon} <span className="capitalize">{d.vehicle_type}</span></Row>}
+      {d.depart_time && <Row label="Departs">{fmtDateTime(d.depart_time)}</Row>}
+      {d.arrive_time && <Row label="Arrives">{fmtDateTime(d.arrive_time)}</Row>}
+      {(d.distance || d.duration) && (
+        <Row label="Stats">{[d.distance, d.duration].filter(Boolean).join('  ·  ')}</Row>
+      )}
+      {d.provider && <Row label="Provider">{d.provider}</Row>}
+      {d.booking_ref && <Row label="Booking ref">{d.booking_ref}</Row>}
+      {d.contact_phone && <Row label="Phone">{d.contact_phone}</Row>}
+      {d.cost_per_person && <Row label="Per person">{d.cost_per_person}</Row>}
+      {item.cost && <Row label="Cost"><CostDisplay item={item} /></Row>}
+    </div>
+  )
+}
+
 const KIND_COLOR = {
   activity:      'var(--kind-activity)',
   restaurant:    'var(--kind-restaurant)',
@@ -697,6 +750,7 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNa
           {item.kind === 'note'          && <NoteBody item={item} />}
           {item.kind === 'cycling'       && <CyclingBody item={item} />}
           {item.kind === 'hire'          && <HireBody item={item} />}
+          {item.kind === 'river_transfer' && <RiverTransferBody item={item} />}
           {/* Notes apply to every kind — shown only when filled (note items show it as their body). */}
           {item.kind !== 'note' && item.notes && <Row label="Notes">{item.notes}</Row>}
         </div>

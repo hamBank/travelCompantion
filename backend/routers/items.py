@@ -736,7 +736,7 @@ def river_path(req: RiverPathRequest, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=503, detail=f"River path lookup failed: {e}")
 
 
-_STATIC_MAPS_KEY = os.getenv("GOOGLE_STATIC_MAPS_API_KEY", "") or _PLACES_KEY
+_STATIC_MAPS_KEY = os.getenv("GOOGLE_STATIC_MAPS_API_KEY", "") or _ROUTES_KEY
 _STATIC_MAPS_API = "https://maps.googleapis.com/maps/api/staticmap"
 
 
@@ -781,6 +781,17 @@ def river_map(item_id: int, session: Session = Depends(get_session), user: dict 
         with httpx.Client(timeout=15) as client:
             resp = client.get(url)
             resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        # Google's Static Maps error responses are plain text/HTML explaining
+        # exactly why (key restricted to other APIs, API not enabled on the
+        # project, billing not enabled, etc.) — surface it instead of the
+        # generic httpx message so this doesn't need another guess-and-check
+        # round trip.
+        body = e.response.text.strip()
+        detail = f"Static Maps request failed: {e.response.status_code} {e.response.reason_phrase}"
+        if body:
+            detail += f" — {body[:300]}"
+        raise HTTPException(status_code=503, detail=detail)
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Static Maps request failed: {e}")
 
