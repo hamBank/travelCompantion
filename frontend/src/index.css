@@ -34,6 +34,7 @@
   --kind-rail:          #b4befe;
   --kind-walk:          #94e2d5;
   --kind-transfer:      #e8a87c;
+  --kind-river_transfer:#74c7ec;
   --kind-tour:          #f5c2e7;
   --kind-food:          #f2cdcd;
   --kind-purchase:      #eba0ac;
@@ -72,6 +73,7 @@
   --kind-rail:          #b7bdf8;
   --kind-walk:          #7dc4e4;
   --kind-transfer:      #e49e76;
+  --kind-river_transfer:#7dc4e4;
   --kind-tour:          #f5bde6;
   --kind-food:          #f0c6c6;
   --kind-purchase:      #e38393;
@@ -110,6 +112,7 @@
   --kind-rail:          #7287fd;
   --kind-walk:          #179299;
   --kind-transfer:      #cc7847;
+  --kind-river_transfer:#209fb5;
   --kind-tour:          #ea76cb;
   --kind-food:          #e64553;
   --kind-purchase:      #d20f39;
@@ -148,6 +151,7 @@
   --kind-rail:          #5e81ac;
   --kind-walk:          #8fbcbb;
   --kind-transfer:      #c9956c;
+  --kind-river_transfer:#4c9a8f;
   --kind-tour:          #d699b6;
   --kind-food:          #c9a9c2;
   --kind-purchase:      #bf616a;
@@ -186,6 +190,7 @@
   --kind-rail:          #3e8fb0;
   --kind-walk:          #56949f;
   --kind-transfer:      #e99f7a;
+  --kind-river_transfer:#9ccfd8;
   --kind-tour:          #f2b5a0;
   --kind-food:          #ebbcba;
   --kind-purchase:      #eb6f92;
@@ -224,6 +229,7 @@
   --kind-rail:          #818cf8;
   --kind-walk:          #34d399;
   --kind-transfer:      #f59e0b;
+  --kind-river_transfer:#2dd4bf;
   --kind-tour:          #f472b6;
   --kind-food:          #fda4af;
   --kind-purchase:      #ff6b6b;
@@ -262,6 +268,7 @@
   --kind-rail:          #5246c0;
   --kind-walk:          #1a7a6e;
   --kind-transfer:      #a35c1a;
+  --kind-river_transfer:#1f7a6c;
   --kind-tour:          #ad2d7c;
   --kind-food:          #a33030;
   --kind-purchase:      #8b2635;
@@ -300,6 +307,7 @@
   --kind-rail:          #8080f0;
   --kind-walk:          #60d8a8;
   --kind-transfer:      #e0a060;
+  --kind-river_transfer:#4fb0a5;
   --kind-tour:          #f080c0;
   --kind-food:          #f090a0;
   --kind-purchase:      #f07070;

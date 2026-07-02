@@ -346,3 +346,64 @@ def test_accommodation_same_booking_ref_different_checkin_not_deduped(client, se
     ]}
     pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
     assert len(pcs) == 2
+
+
+# ── river_transfer update-matching ───────────────────────────────────────────
+
+def test_matches_existing_river_transfer_by_booking_ref(client, session):
+    trip, stop = _trip_with_stop(client)
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "river_transfer", "name": "Ferry", "status": "pending",
+        "details": {"start_location": "Lyon", "end_location": "Valence",
+                    "depart_time": "2026-08-09T09:00", "booking_ref": "FER123"},
+    })
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
+    parsed = {"items": [
+        {"kind": "river_transfer", "name": "Ferry", "matched_stop_id": stop["id"], "confidence": "high",
+         "details": {"start_location": "Lyon", "end_location": "Valence",
+                     "depart_time": "2026-08-09T09:00", "booking_ref": "FER123",
+                     "provider": "Rhône Cruises"}},
+    ]}
+    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    assert len(pcs) == 1
+    assert pcs[0].op == "update"
+    assert pcs[0].diff["after"]["provider"] == "Rhône Cruises"
+
+
+def test_matches_existing_river_transfer_by_time_and_location_fallback(client, session):
+    """No booking_ref on either side — falls back to depart_time + start/end
+    location, mirroring the equivalent transfer-kind fallback."""
+    trip, stop = _trip_with_stop(client)
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "river_transfer", "name": "Ferry", "status": "pending",
+        "details": {"start_location": "Lyon", "end_location": "Valence",
+                    "depart_time": "2026-08-09T09:00"},
+    })
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
+    parsed = {"items": [
+        {"kind": "river_transfer", "name": "Ferry", "matched_stop_id": stop["id"], "confidence": "high",
+         "details": {"start_location": "Lyon", "end_location": "Valence",
+                     "depart_time": "2026-08-09T09:00", "duration": "3h 30m"}},
+    ]}
+    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    assert len(pcs) == 1
+    assert pcs[0].op == "update"
+    assert pcs[0].diff["after"]["duration"] == "3h 30m"
+
+
+def test_river_transfer_no_match_when_location_differs(client, session):
+    trip, stop = _trip_with_stop(client)
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "river_transfer", "name": "Ferry", "status": "pending",
+        "details": {"start_location": "Lyon", "end_location": "Valence",
+                    "depart_time": "2026-08-09T09:00"},
+    })
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
+    parsed = {"items": [
+        {"kind": "river_transfer", "name": "Ferry", "matched_stop_id": stop["id"],
+         "details": {"start_location": "Avignon", "end_location": "Arles",
+                     "depart_time": "2026-08-09T09:00"}},
+    ]}
+    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    assert len(pcs) == 1
+    assert pcs[0].op == "create"

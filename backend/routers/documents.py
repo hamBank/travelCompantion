@@ -84,6 +84,8 @@ _DETAIL_HINTS = {
               "omit sub-fields you cannot fill)",
     "accommodation": "location, checkin, checkout, booking_ref, contact_phone, contact_email, description",
     "transfer": "start_location, end_location, depart_time, arrive_time, duration, distance, provider, booking_ref",
+    "river_transfer": "start_location, end_location, depart_time, arrive_time, duration, distance, "
+                       "river_name, provider, booking_ref, contact_phone",
     "tour": "meeting_point, reservation_time, duration, description, contact_phone, booking_ref, "
             "participants (array of objects: {name, ticket}; one per person)",
     "activity": "location, description, duration, contact_phone, contact_email",
@@ -769,7 +771,7 @@ def _match_existing(session, trip_id, kind, details, all_stop_ids=None,
             if _datepart((it.details or {}).get("checkin")) == ci:
                 return it
 
-    elif kind in ("transfer", "restaurant", "tour", "show"):
+    elif kind in ("transfer", "river_transfer", "restaurant", "tour", "show"):
         # Primary: booking_ref (normalised — strip spaces/dashes)
         def norm_ref(v):
             return re.sub(r'[\s\-]', '', str(v or '')).upper()
@@ -782,14 +784,14 @@ def _match_existing(session, trip_id, kind, details, all_stop_ids=None,
                 if norm_ref((it.details or {}).get("booking_ref")) == ref:
                     return it
 
-        # Fallback for transfer: depart_time + start/end location
-        if kind == "transfer":
+        # Fallback for transfer/river_transfer: depart_time + start/end location
+        if kind in ("transfer", "river_transfer"):
             dt = _datepart(details.get("depart_time"))
             orig = norm(details.get("start_location") or details.get("origin") or "")
             dest = norm(details.get("end_location") or details.get("destination") or "")
             if dt and (orig or dest):
                 for it in items:
-                    if it.kind != "transfer":
+                    if it.kind != kind:
                         continue
                     d = it.details or {}
                     it_dt = _datepart(d.get("depart_time"))

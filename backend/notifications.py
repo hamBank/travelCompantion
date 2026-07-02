@@ -84,7 +84,7 @@ def _due_triggers(session: Session, now: datetime):
     logged yet, and isn't too stale to still be useful."""
     items = session.exec(
         select(ItineraryItem).where(
-            ItineraryItem.kind.in_([ItemKind.flight, ItemKind.rail, ItemKind.transfer])
+            ItineraryItem.kind.in_([ItemKind.flight, ItemKind.rail, ItemKind.transfer, ItemKind.river_transfer])
         )
     ).all()
     logged = {(row.item_id, row.kind) for row in session.exec(select(NotificationLog)).all()}
