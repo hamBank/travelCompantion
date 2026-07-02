@@ -106,6 +106,10 @@ function Field({ label, value, onChange, placeholder, type = 'text', min }) {
         min={minValue}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
+        // en-GB forces the native picker to render a 24-hour clock — the
+        // browser otherwise follows the OS locale, which for many users
+        // defaults to 12-hour AM/PM regardless of the page's own language.
+        lang={(type === 'datetime-local' || type === 'time') ? 'en-GB' : undefined}
         style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
         className="rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
       />
