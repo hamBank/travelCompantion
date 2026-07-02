@@ -121,3 +121,114 @@ def test_partial_update_preserves_other_fields(client: TestClient, stop):
     assert updated["link"] == "https://example.com"
     assert updated["cost"] == "free"
     assert updated["status"] == "done"
+
+
+# ── POST /river-path ─────────────────────────────────────────────────────────
+
+from backend.routers import items as items_mod
+
+
+def test_river_path_happy_path(client: TestClient, monkeypatch):
+    monkeypatch.setattr(
+        items_mod, "estimate_river_path",
+        lambda origin, destination, river_name=None: {
+            "path": [[45.0, 4.0], [45.1, 4.2]], "distance_km": 12.3, "river_name_used": "Rhône",
+        },
+    )
+    r = client.post("/river-path", json={"points": ["Lyon", "Valence"], "river_name": "Rhône"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["path"] == [[45.0, 4.0], [45.1, 4.2]]
+    assert data["distance_km"] == 12.3
+    assert data["river_name_used"] == "Rhône"
+
+
+def test_river_path_requires_exactly_two_points(client: TestClient):
+    r = client.post("/river-path", json={"points": ["Lyon"]})
+    assert r.status_code == 400
+
+
+def test_river_path_400_when_points_too_far_apart(client: TestClient, monkeypatch):
+    def raise_too_far(origin, destination, river_name=None):
+        raise ValueError("too far apart")
+    monkeypatch.setattr(items_mod, "estimate_river_path", raise_too_far)
+    r = client.post("/river-path", json={"points": ["A", "B"]})
+    assert r.status_code == 400
+
+
+def test_river_path_404_when_no_plausible_path(client: TestClient, monkeypatch):
+    monkeypatch.setattr(items_mod, "estimate_river_path", lambda o, d, river_name=None: None)
+    r = client.post("/river-path", json={"points": ["A", "B"]})
+    assert r.status_code == 404
+
+
+def test_river_path_503_on_lookup_failure(client: TestClient, monkeypatch):
+    def raise_error(origin, destination, river_name=None):
+        raise RuntimeError("Overpass is down")
+    monkeypatch.setattr(items_mod, "estimate_river_path", raise_error)
+    r = client.post("/river-path", json={"points": ["A", "B"]})
+    assert r.status_code == 503
+
+
+# ── GET /items/{item_id}/river-map ──────────────────────────────────────────
+
+def test_river_map_404_for_wrong_kind(client: TestClient, stop):
+    item = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "activity", "name": "Not a river transfer", "status": "pending",
+    }).json()
+    r = client.get(f"/items/{item['id']}/river-map")
+    assert r.status_code == 404
+
+
+def test_river_map_404_when_no_path_generated(client: TestClient, stop):
+    item = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "river_transfer", "name": "Ferry", "status": "pending",
+        "details": {"start_location": "Lyon", "end_location": "Valence"},
+    }).json()
+    r = client.get(f"/items/{item['id']}/river-map")
+    assert r.status_code == 404
+
+
+def test_river_map_503_when_key_not_configured(client: TestClient, stop, monkeypatch):
+    monkeypatch.setattr(items_mod, "_STATIC_MAPS_KEY", "")
+    item = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "river_transfer", "name": "Ferry", "status": "pending",
+        "details": {"start_location": "Lyon", "end_location": "Valence",
+                    "river_path": [[45.0, 4.0], [45.1, 4.2]]},
+    }).json()
+    r = client.get(f"/items/{item['id']}/river-map")
+    assert r.status_code == 503
+
+
+def test_river_map_happy_path(client: TestClient, stop, monkeypatch):
+    monkeypatch.setattr(items_mod, "_STATIC_MAPS_KEY", "test-key")
+    item = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "river_transfer", "name": "Ferry", "status": "pending",
+        "details": {"start_location": "Lyon", "end_location": "Valence",
+                    "river_path": [[45.0, 4.0], [45.1, 4.2]]},
+    }).json()
+
+    fake_png = b"\x89PNG\r\n\x1a\nfakebytes"
+
+    class FakeResponse:
+        content = fake_png
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url):
+            assert "maps.googleapis.com/maps/api/staticmap" in url
+            assert "key=test-key" in url
+            return FakeResponse()
+
+    monkeypatch.setattr(items_mod.httpx, "Client", FakeClient)
+
+    r = client.get(f"/items/{item['id']}/river-map")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content == fake_png
+    assert "ETag" in r.headers
+    assert "max-age" in r.headers["cache-control"]

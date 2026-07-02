@@ -39,7 +39,7 @@ _KIND_LABEL = {
     "cycling": "Cycling", "tour": "Guided Tour", "rail": "Rail", "restaurant": "Restaurant",
     "food": "Food & Drink", "purchase": "Purchase", "note": "Note",
     "accommodation": "Accommodation", "flight": "Flight", "show": "Show",
-    "hire": "Vehicle Hire",
+    "hire": "Vehicle Hire", "river_transfer": "River Transfer",
 }
 
 # Detail keys that are internal / not useful in a printout.
@@ -47,6 +47,7 @@ _SKIP_DETAILS = {
     "converted_cost", "converted_amount_paid", "converted_currency",
     "gpx_filename", "original_gpx_name", "gpx_distance_m", "gpx_gain_m", "gpx_loss_m",
     "route_points", "maps_url", "important",
+    "river_path", "river_path_generated_at",
 }
 
 _DATE_FORMATS = (
@@ -575,14 +576,14 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
         "activity":  "#89b4fa", "walk":     "#94e2d5", "transfer":  "#e8a87c",
         "cycling":   "#fab387", "tour":     "#f5c2e7", "rail":      "#b4befe",
         "restaurant":"#a6e3a1", "food":     "#f2cdcd", "purchase":  "#eba0ac",
-        "note":      "#f9e2af", "show":     "#d8a0f0",
+        "note":      "#f9e2af", "show":     "#d8a0f0", "river_transfer": "#74c7ec",
     }
     # Small unicode-safe text symbol that lives inside the icon circle.
     # All of these are in the WinAnsi / Latin-1 range that Helvetica handles.
     _KIND_SYMBOL = {
         "activity": "A", "walk": "W", "transfer": "T", "cycling": "C",
         "tour": "G", "rail": "R", "restaurant": "D", "food": "F",
-        "purchase": "P", "note": "N", "show": "S",
+        "purchase": "P", "note": "N", "show": "S", "river_transfer": "V",
     }
     # Per-kind: which detail keys to show, in order (rest are suppressed).
     _KIND_FIELDS = {
@@ -595,6 +596,8 @@ def build_trip_pdf(session: Session, trip_id: int) -> bytes:
                        "booking_ref", "contact_phone", "description"],
         "transfer":   ["scheduled_at", "start_location", "end_location",
                        "operator", "vehicle", "booking_ref", "contact_phone", "description"],
+        "river_transfer": ["depart_time", "arrive_time", "start_location", "end_location",
+                       "provider", "vehicle_type", "booking_ref", "contact_phone", "description"],
         "tour":       ["scheduled_at", "meeting_point", "duration", "operator",
                        "booking_ref", "contact_phone", "description"],
         "activity":   ["scheduled_at", "location", "duration", "operator",

@@ -152,6 +152,17 @@ export const routeDistance = (points, mode) =>
 export const routeToGpx = (id, points, mode) =>
   req(`/items/${id}/route-gpx`, { method: 'POST', body: JSON.stringify({ points, mode }) })
 
+export const generateRiverPath = (points, riverName) =>
+  req('/river-path', { method: 'POST', body: JSON.stringify({ points, river_name: riverName || null }) })
+
+export async function fetchRiverMapBlob(id) {
+  const token = getToken()
+  const r = await fetch(`/items/${id}/river-map`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  return r.ok ? r.blob() : null
+}
+
 export async function uploadGpx(id, file) {
   const token = getToken()
   const form = new FormData()

@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react'
-import { updateStopStatus, updateItemStatus, getWeather } from '../api.js'
+import { updateStopStatus, updateItemStatus, getWeather, fetchRiverMapBlob } from '../api.js'
 import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
@@ -172,16 +172,16 @@ function OffsetRow({ children }) {
 }
 
 // ── Connection / layover calculation ────────────────────────────────────────
-const TRANSPORT_KINDS = new Set(['flight', 'rail', 'transfer'])
+const TRANSPORT_KINDS = new Set(['flight', 'rail', 'transfer', 'river_transfer'])
 
 function _arriveStr(item) {
   const d = item.details || {}
-  return (item.kind === 'flight' || item.kind === 'rail') ? (d.arrive_time || null) : null
+  return (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') ? (d.arrive_time || null) : null
 }
 
 function _departStr(item) {
   const d = item.details || {}
-  return (item.kind === 'flight' || item.kind === 'rail') ? (d.depart_time || null) : (item.scheduled_at || null)
+  return (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') ? (d.depart_time || null) : (item.scheduled_at || null)
 }
 
 function _connectionLocation(item) {
@@ -189,6 +189,7 @@ function _connectionLocation(item) {
   if (item.kind === 'flight') { const c = d.destination; return c ? (airportName(c) || c) : null }
   if (item.kind === 'rail')     return d.destination || null
   if (item.kind === 'transfer') return d.end_location || null
+  if (item.kind === 'river_transfer') return d.end_location || null
   return null
 }
 
@@ -264,7 +265,7 @@ export function computeCrossStopLayover(fromStop, toStop) {
 // UTC start-time for any item (for layover calculations)
 function _itemStartMs(item) {
   const d = item.details || {}
-  if (item.kind === 'flight' || item.kind === 'rail')
+  if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer')
     return toUtcMs(d.depart_time, d.depart_tz)
   if (item.kind === 'accommodation')
     return toUtcMs(d.checkin || item.scheduled_at, null)
@@ -454,6 +455,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             if (item.kind === 'cycling')       return <CyclingCard {...props} />
             if (item.kind === 'walk')          return <WalkCard {...props} />
             if (item.kind === 'transfer')      return <TransferCard {...props} />
+            if (item.kind === 'river_transfer') return <RiverTransferCard {...props} />
             if (item.kind === 'tour')          return <TourCard {...props} />
             if (item.kind === 'note')          return <NoteCard {...props} />
             if (item.kind === 'activity')      return <ActivityCard {...props} />
@@ -545,6 +547,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               if (item.kind === 'cycling')       return <CyclingCard {...props} />
               if (item.kind === 'walk')          return <WalkCard {...props} />
               if (item.kind === 'transfer')      return <TransferCard {...props} />
+              if (item.kind === 'river_transfer') return <RiverTransferCard {...props} />
               if (item.kind === 'tour')          return <TourCard {...props} />
               if (item.kind === 'note')          return <NoteCard {...props} />
               if (item.kind === 'activity')      return <ActivityCard {...props} />
@@ -1185,6 +1188,138 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
             loading="lazy"
             referrerPolicy="no-referrer-when-downgrade"
           />
+        )}
+      </div>
+
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showEdit && (
+        <ItemEditModal
+          item={item}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated); setShowEdit(false) }}
+          onClose={() => setShowEdit(false)}
+          onDeleted={onItemDeleted}
+        />
+      )}
+    </>
+  )
+}
+
+const RIVER_VEHICLE_ICONS = { ferry: '⛴', boat: '🚤', riverboat: '🛶', 'water taxi': '🚤' }
+
+function placeSearchUrl(place) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`
+}
+
+function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
+  const [item, setItem] = useState(initial)
+  const [showEdit, setShowEdit] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
+  const [showMap, setShowMap] = useState(false)
+  const [mapUrl, setMapUrl] = useState(null)
+  const d = item.details ?? {}
+  const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
+  const vehicleIcon = RIVER_VEHICLE_ICONS[d.vehicle_type] ?? '⛴'
+  const hasPath = d.river_path?.length >= 2
+
+  useEffect(() => {
+    if (!showMap || !hasPath) return
+    let objectUrl = null
+    let cancelled = false
+    fetchRiverMapBlob(item.id).then(blob => {
+      if (cancelled || !blob) return
+      objectUrl = URL.createObjectURL(blob)
+      setMapUrl(objectUrl)
+    })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      setMapUrl(null)
+    }
+  }, [showMap, hasPath, item.id])
+
+  return (
+    <>
+      <div
+        style={{
+          background: 'color-mix(in srgb, var(--kind-river_transfer) 6%, var(--surface-2))',
+          border: '1px solid color-mix(in srgb, var(--kind-river_transfer) 35%, transparent)',
+          borderRadius: '0.5rem',
+          overflow: 'hidden',
+        }}
+      >
+        <div className="relative group">
+          <button
+            onClick={() => setShowDetail(true)}
+            className="w-full text-left hover:opacity-80 transition-opacity"
+            style={{ padding: '0.75rem' }}
+          >
+            <div className="flex items-start gap-2.5">
+              <CardIcon item={item} icon={vehicleIcon} color="var(--kind-river_transfer)" setItem={setItem} onItemSaved={onItemSaved} />
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{item.name}</span>
+                  {d.vehicle_type && (
+                    <span style={{ color: 'var(--kind-river_transfer)' }} className="text-xs shrink-0 opacity-80 capitalize">{d.vehicle_type}</span>
+                  )}
+                </div>
+                {route && (
+                  <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">{route}</div>
+                )}
+                {(d.depart_time || d.arrive_time) && (
+                  <div style={{ color: 'var(--text-muted)' }} className="text-xs">
+                    {[d.depart_time && fmtDateTime(d.depart_time),
+                      d.arrive_time && fmtDateTime(d.arrive_time)]
+                      .filter(Boolean).join(' → ')}
+                    {d.duration && <span style={{ color: 'var(--text-faint)' }}> · {d.duration}</span>}
+                  </div>
+                )}
+                {(item.cost || d.distance || d.provider || d.booking_ref) && (
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap items-baseline">
+                    {d.distance   && <span>↔ {d.distance}</span>}
+                    {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
+                    {d.provider   && <span>via {d.provider}</span>}
+                    {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+          </button>
+          <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
+        </div>
+
+        {hasPath && (
+          <div
+            className="flex items-center gap-3 px-3 py-1.5"
+            style={{ borderTop: '1px solid color-mix(in srgb, var(--kind-river_transfer) 20%, transparent)' }}
+          >
+            <button
+              onClick={() => setShowMap(m => !m)}
+              style={{ color: 'var(--kind-river_transfer)' }}
+              className="text-xs hover:opacity-70 transition-opacity"
+            >
+              {showMap ? '▲ Hide map' : '▼ Show map'}
+            </button>
+            <div className="flex gap-2 ml-auto">
+              {d.start_location && (
+                <a href={placeSearchUrl(d.start_location)} target="_blank" rel="noreferrer"
+                  style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70 transition-opacity">
+                  Start ↗
+                </a>
+              )}
+              {d.end_location && (
+                <a href={placeSearchUrl(d.end_location)} target="_blank" rel="noreferrer"
+                  style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70 transition-opacity">
+                  End ↗
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showMap && hasPath && (
+          mapUrl
+            ? <img src={mapUrl} alt="Assumed river path" width="100%" style={{ display: 'block', width: '100%', height: 'auto' }} />
+            : <div style={{ color: 'var(--text-faint)' }} className="text-xs px-3 py-2">Loading map…</div>
         )}
       </div>
 

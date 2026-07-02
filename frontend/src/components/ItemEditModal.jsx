@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { createItem, updateItem, enrichItem, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem } from '../api.js'
+import { createItem, updateItem, enrichItem, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem, generateRiverPath } from '../api.js'
 import { setEditing } from '../editState.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
@@ -1096,6 +1096,119 @@ function TransferForm({ core, details, setCore, setDetails }) {
   )
 }
 
+const RIVER_VEHICLE_TYPES = ['ferry', 'boat', 'riverboat', 'water taxi']
+
+function RiverTransferForm({ core, details, setCore, setDetails }) {
+  const [pathMsg, setPathMsg] = useState(null)
+  const [generating, setGenerating] = useState(false)
+  const d = key => details[key] ?? ''
+  const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
+  // Changing a time recomputes duration live, same as RailForm.
+  const setTimed = (key, val) => setDetails(prev => {
+    const next = { ...prev, [key]: val }
+    const dur = fmtDurationMin(durationBetween(next.depart_time, next.arrive_time))
+    if (dur) next.duration = dur
+    return next
+  })
+  // A stale path silently showing the wrong route is worse than no map at
+  // all — clear the generated path if the user edits the endpoints or river
+  // name after one was already generated.
+  const setLocation = (key, val) => setDetails(prev => {
+    const next = { ...prev, [key]: val }
+    if (prev.river_path?.length) {
+      delete next.river_path
+      delete next.river_path_generated_at
+    }
+    return next
+  })
+  const vehicle = d('vehicle_type')
+
+  async function handleGeneratePath() {
+    if (!d('start_location') || !d('end_location')) return
+    setGenerating(true)
+    setPathMsg({ text: 'Estimating river path…', color: 'var(--text-faint)' })
+    try {
+      const res = await generateRiverPath([d('start_location'), d('end_location')], d('river_name'))
+      setDetails(prev => ({
+        ...prev,
+        river_path: res.path,
+        river_path_generated_at: new Date().toISOString(),
+        distance: prev.distance || (res.distance_km ? `~${res.distance_km.toFixed(1)} km` : prev.distance),
+      }))
+      setPathMsg({
+        text: `Path generated (${res.path.length} points)${res.river_name_used ? ` along the ${res.river_name_used}` : ''}`,
+        color: 'var(--success)',
+      })
+    } catch (e) {
+      setPathMsg({ text: e.message || 'Could not generate a river path', color: 'var(--error)' })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Field label="Description" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Lyon to Valence" />
+
+      <div className="flex flex-col gap-1.5">
+        <label style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Vessel</label>
+        <div className="flex gap-2 flex-wrap">
+          {RIVER_VEHICLE_TYPES.map(v => (
+            <button key={v} type="button" onClick={() => setD('vehicle_type', vehicle === v ? '' : v)}
+              style={{
+                color: vehicle === v ? 'var(--kind-river_transfer)' : 'var(--text-faint)',
+                border: `1px solid ${vehicle === v ? 'var(--kind-river_transfer)' : 'var(--border)'}`,
+                background: vehicle === v ? 'color-mix(in srgb, var(--kind-river_transfer) 12%, transparent)' : 'transparent',
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors">
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <SectionBox label="Schedule">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Departs" type="datetime-local" value={d('depart_time')} onChange={v => setTimed('depart_time', v)} />
+          <Field label="Arrives" type="datetime-local" value={d('arrive_time')} onChange={v => setTimed('arrive_time', v)} min={d('depart_time')} />
+        </div>
+      </SectionBox>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="From" value={d('start_location')} onChange={v => setLocation('start_location', v)} placeholder="Lyon" />
+        <Field label="To"   value={d('end_location')}   onChange={v => setLocation('end_location', v)}   placeholder="Valence" />
+      </div>
+      <Field label="River name (optional)" value={d('river_name')} onChange={v => setLocation('river_name', v)} placeholder="Rhône" />
+
+      <div>
+        <button
+          type="button"
+          onClick={handleGeneratePath}
+          disabled={generating || !d('start_location') || !d('end_location')}
+          title={!d('start_location') || !d('end_location') ? 'Add start and end first' : undefined}
+          style={{ color: 'var(--kind-river_transfer)', border: '1px solid color-mix(in srgb, var(--kind-river_transfer) 35%, transparent)', background: 'color-mix(in srgb, var(--kind-river_transfer) 8%, transparent)' }}
+          className="px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+        >
+          {generating ? 'Generating…' : 'Generate river path'}
+        </button>
+        {pathMsg && <p className="text-xs mt-1" style={{ color: pathMsg.color }}>{pathMsg.text}</p>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Distance" value={d('distance')} onChange={v => setD('distance', v)} placeholder="45 km" />
+        <Field label="Duration" value={d('duration')} onChange={v => setD('duration', v)} placeholder="3h 30m" />
+      </div>
+      <Field label="Per person" value={d('cost_per_person')} onChange={v => setD('cost_per_person', v)} placeholder="€30" />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Booking ref" value={d('booking_ref')} onChange={v => setD('booking_ref', v)} placeholder="CONF123" />
+        <Field label="Provider"    value={d('provider')}    onChange={v => setD('provider', v)}    placeholder="Rhône Cruises" />
+      </div>
+      <Field label="Phone" value={d('contact_phone')} onChange={v => setD('contact_phone', v)} placeholder="+33 ..." />
+      <TextArea label="Notes" value={core.notes} onChange={v => setCore(c => ({ ...c, notes: v }))} placeholder="Meet at the dock, arrive 20 min early…" />
+    </div>
+  )
+}
+
 function RailForm({ core, details, setCore, setDetails }) {
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
@@ -1569,9 +1682,9 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
   // check-out earlier than the check-in is contradictory data and is treated the
   // same way, so it never makes a stay look like it ended before the stop began.
   const stopForCheck = stops.find(s => s.id === targetStop)
-  const isTransit = core.kind === 'flight' || core.kind === 'rail' || core.kind === 'transfer'
+  const isTransit = core.kind === 'flight' || core.kind === 'rail' || core.kind === 'transfer' || core.kind === 'river_transfer'
   const spanStart =
-    (core.kind === 'flight' || core.kind === 'rail') ? details.depart_time
+    (core.kind === 'flight' || core.kind === 'rail' || core.kind === 'river_transfer') ? details.depart_time
     : core.kind === 'accommodation' ? (details.checkin || core.scheduled_at)
     : core.scheduled_at
   const accomCheckout =
@@ -1678,6 +1791,8 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
             <WalkForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'transfer' ? (
             <TransferForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
+          ) : core.kind === 'river_transfer' ? (
+            <RiverTransferForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'tour' ? (
             <TourForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'cycling' ? (

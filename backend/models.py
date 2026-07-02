@@ -27,6 +27,7 @@ class ItemKind(str, Enum):
     purchase = "purchase"
     show = "show"
     hire = "hire"
+    river_transfer = "river_transfer"
 
 
 class ItemStatus(str, Enum):

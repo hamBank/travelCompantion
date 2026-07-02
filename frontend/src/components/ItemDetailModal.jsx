@@ -629,6 +629,7 @@ const KIND_COLOR = {
   accommodation: 'var(--kind-accommodation)',
   cycling:       'var(--kind-cycling)',
   hire:          'var(--kind-hire)',
+  river_transfer:'var(--kind-river_transfer)',
 }
 
 export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNavModal = false }) {

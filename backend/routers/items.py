@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 from sqlalchemy import nullslast, func
 from sqlalchemy.orm.attributes import flag_modified
-from typing import List
-import os, io, math, time, re, json, urllib.request, urllib.error, xml.etree.ElementTree as ET, httpx
+from typing import List, Optional
+import os, io, math, time, re, json, hashlib, urllib.request, urllib.error, urllib.parse, xml.etree.ElementTree as ET, httpx
 from pydantic import BaseModel
 from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
 from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, Stop, StopRead, TripRole
+from ..river_path import estimate_river_path
 
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _GPX_DIR  = os.path.join(_APP_ROOT, 'uploads', 'gpx')
@@ -586,6 +587,29 @@ def _decode_polyline(s):
     return coords
 
 
+def _encode_polyline(coords):
+    """Encode a list of (lat, lng) into a Google encoded polyline string
+    (inverse of _decode_polyline) — used to keep the river-map Static Maps
+    request compact regardless of how many points the path has."""
+    def _encode_value(v):
+        v = ~(v << 1) if v < 0 else (v << 1)
+        chunks = []
+        while v >= 0x20:
+            chunks.append((v & 0x1f) | 0x20)
+            v >>= 5
+        chunks.append(v)
+        return ''.join(chr(c + 63) for c in chunks)
+
+    out = []
+    prev_lat = prev_lng = 0
+    for lat, lng in coords:
+        lat_i, lng_i = round(lat * 1e5), round(lng * 1e5)
+        out.append(_encode_value(lat_i - prev_lat))
+        out.append(_encode_value(lng_i - prev_lng))
+        prev_lat, prev_lng = lat_i, lng_i
+    return ''.join(out)
+
+
 def _route_elevation_gain_loss(coords):
     """Sample a decoded route and compute total ascent/descent via OpenTopoData.
     Best-effort — returns (gain_m, loss_m) or (None, None) on any failure."""
@@ -686,6 +710,90 @@ def route_distance(req: RouteDistanceRequest, user: dict = Depends(get_current_u
         "elevation_gain_text": f"{gain_m} m" if gain_m is not None else None,
         "elevation_loss_text": f"{loss_m} m" if loss_m is not None else None,
     }
+
+
+class RiverPathRequest(BaseModel):
+    points: List[str]
+    river_name: Optional[str] = None
+
+
+@router.post("/river-path")
+def river_path(req: RiverPathRequest, user: dict = Depends(get_current_user)):
+    """Best-effort "assumed path down the river" between two points, stitched
+    from OpenStreetMap waterway geometry (free, no key). Item-agnostic, like
+    /geocode and /route-distance — the "Generate river path" button lives in
+    the edit form, which may be a not-yet-saved new item.
+    """
+    if len(req.points) != 2:
+        raise HTTPException(status_code=400, detail="Need exactly an origin and a destination")
+    try:
+        result = estimate_river_path(req.points[0], req.points[1], req.river_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"River path lookup failed: {e}")
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Could not find a plausible river path between these points — try providing the river name",
+        )
+    return result
+
+
+_STATIC_MAPS_KEY = os.getenv("GOOGLE_STATIC_MAPS_API_KEY", "") or _PLACES_KEY
+_STATIC_MAPS_API = "https://maps.googleapis.com/maps/api/staticmap"
+
+
+@router.get("/items/{item_id}/river-map")
+def river_map(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Proxy a Google Static Maps image showing the item's stored river_path,
+    so the Google API key never reaches the frontend (same convention as
+    every other Google API usage in this app — /geocode, /route-distance).
+
+    Item-scoped (reads the stored details rather than accepting arbitrary
+    path/point query params) so this can't be hammered with arbitrary huge
+    payloads against a billed API by anyone who isn't at least a trip viewer.
+    """
+    require_item_role(session, user, item_id, TripRole.viewer)
+    item = session.get(ItineraryItem, item_id)
+    if not item or item.kind != "river_transfer":
+        raise HTTPException(status_code=404, detail="River transfer item not found")
+    details = item.details or {}
+    path = details.get("river_path") or []
+    if len(path) < 2:
+        raise HTTPException(status_code=404, detail="No river path generated for this item yet")
+    if not _STATIC_MAPS_KEY:
+        raise HTTPException(status_code=503, detail="Static Maps not configured (set GOOGLE_STATIC_MAPS_API_KEY)")
+
+    encoded = _encode_polyline([(p[0], p[1]) for p in path])
+    params = {
+        "size": "640x400",
+        "maptype": "roadmap",
+        "path": f"color:0x1f7a6cff|weight:4|enc:{encoded}",
+        "key": _STATIC_MAPS_KEY,
+    }
+    start = details.get("start_location")
+    end = details.get("end_location")
+    query_parts = [urllib.parse.urlencode(params)]
+    if start:
+        query_parts.append(urllib.parse.urlencode({"markers": f"color:green|label:A|{start}"}))
+    if end:
+        query_parts.append(urllib.parse.urlencode({"markers": f"color:red|label:B|{end}"}))
+    url = f"{_STATIC_MAPS_API}?{'&'.join(query_parts)}"
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Static Maps request failed: {e}")
+
+    etag = hashlib.sha256(json.dumps([path, start, end]).encode()).hexdigest()[:16]
+    return Response(
+        content=resp.content,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=86400", "ETag": etag},
+    )
 
 
 @router.get("/items/{item_id}/enrich")
