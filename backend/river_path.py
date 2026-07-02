@@ -26,7 +26,11 @@ ENDPOINT_STITCH_TOLERANCE_KM = 0.3
 # produce a path reaching both endpoints, so it doesn't loosely join
 # unrelated waterways in the common case.
 BRIDGE_STITCH_TOLERANCE_KM = 2.0
-ORIGIN_DEST_SNAP_TOLERANCE_KM = 5
+# A geocoded place name resolves to a town/city center, which for a river
+# town can be a couple of km from the actual quay or navigable channel used
+# by a boat — confirmed against a real near-miss (5.7 km from one endpoint,
+# 2.9 km from the other) that a 5 km tolerance rejected outright.
+ORIGIN_DEST_SNAP_TOLERANCE_KM = 8
 MAX_WAYS = 400
 FINAL_SIMPLIFY_MAX_POINTS = 300
 

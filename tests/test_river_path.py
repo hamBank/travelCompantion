@@ -231,17 +231,35 @@ def test_estimate_river_path_falls_back_to_broad_when_named_ways_dont_reach_endp
 def test_estimate_river_path_bridges_gap_beyond_strict_stitch_tolerance():
     """Locks/weirs on a channelized river often split the waterway tag with a
     gap wider than the strict stitch tolerance — the bridge-tolerance retry
-    pass should still connect the two legs into one path reaching both ends."""
-    way1 = [(45.000, 4.000), (45.054, 4.000)]      # ~6 km leg
-    way2 = [(45.063009, 4.000), (45.117, 4.000)]   # ~1 km gap, then another ~6 km leg
+    pass should still connect the two legs into one path reaching both ends.
+    Each leg is long enough (~9 km) that neither one alone satisfies the
+    origin/destination snap tolerance (8 km) on its own — otherwise the
+    strict pass would "succeed" early with a truncated, unbridged chain."""
+    way1 = [(45.000, 4.000), (45.081081, 4.000)]    # ~9 km leg
+    way2 = [(45.090090, 4.000), (45.171081, 4.000)]  # ~1 km gap, then another ~9 km leg
 
     def fake_fetch(query):
         return _overpass_response(_way(*way1), _way(*way2))
 
-    result = rp.estimate_river_path("45.000,4.000", "45.117,4.000", fetch_json=fake_fetch)
+    result = rp.estimate_river_path("45.000,4.000", "45.171081,4.000", fetch_json=fake_fetch)
     assert result is not None
     assert rp.haversine_km(tuple(result["path"][0]), (45.000, 4.000)) < 1
-    assert rp.haversine_km(tuple(result["path"][-1]), (45.117, 4.000)) < 1
+    assert rp.haversine_km(tuple(result["path"][-1]), (45.171081, 4.000)) < 1
+
+
+def test_estimate_river_path_accepts_town_center_offset_from_riverbank():
+    """A geocoded town center can be several km from the actual quay/channel
+    — regression test for a real-world near miss (5.7 km from one endpoint,
+    2.9 km from the other) that the old 5 km snap tolerance rejected."""
+    river = [(45.000, 4.000), (45.100, 4.000)]
+
+    def fake_fetch(query):
+        return _overpass_response(_way(*river))
+
+    origin = "45.000,4.0726"       # ~5.7 km east of the river's start
+    destination = "45.100,4.0369"  # ~2.9 km east of the river's end
+    result = rp.estimate_river_path(origin, destination, fetch_json=fake_fetch)
+    assert result is not None
 
 
 def test_estimate_river_path_rejects_too_many_unnamed_ways():
