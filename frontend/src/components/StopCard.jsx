@@ -60,7 +60,7 @@ export function toUtcMs(dt, tz) {
 
 export function itemDateKey(item) {
   let dt
-  if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
+  if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') dt = item.details?.depart_time
   else if (item.kind === 'accommodation') dt = item.details?.checkin || item.scheduled_at
   else dt = item.scheduled_at
   if (!dt) return null
@@ -69,7 +69,7 @@ export function itemDateKey(item) {
 
 export function itemTimeStr(item) {
   let dt
-  if (item.kind === 'flight' || item.kind === 'rail') dt = item.details?.depart_time
+  if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') dt = item.details?.depart_time
   else if (item.kind === 'accommodation') dt = item.details?.checkin || item.scheduled_at
   else dt = item.scheduled_at
   if (!dt || !String(dt).includes('T')) return ''
@@ -82,7 +82,7 @@ export function itemTimeStr(item) {
 }
 
 function itemTz(item) {
-  if (item.kind === 'flight' || item.kind === 'rail') return item.details?.depart_tz || ''
+  if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') return item.details?.depart_tz || ''
   return ''
 }
 
@@ -387,7 +387,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
 
   const sortKey = item => {
     const d = item.details || {}
-    if (item.kind === 'flight' || item.kind === 'rail')
+    if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer')
       return toUtcMs(d.depart_time, d.depart_tz) ?? Infinity
     if (item.kind === 'accommodation') {
       const checkin = toUtcMs(d.checkin || item.scheduled_at, null) ?? Infinity

@@ -25,7 +25,11 @@ FINAL_SIMPLIFY_MAX_POINTS = 300
 
 _OVERPASS = "https://overpass-api.de/api/interpreter"
 _NOMINATIM = "https://nominatim.openstreetmap.org/search"
-_NOMINATIM_HEADERS = {"User-Agent": "TravelCompanion/1.0 (personal travel planner)"}
+# Both services front their API with a CDN that rejects the default urllib
+# User-Agent ("Python-urllib/3.x") as bot traffic (406 Not Acceptable) —
+# Nominatim's usage policy requires a real one anyway, so share it.
+_UA_HEADERS = {"User-Agent": "TravelCompanion/1.0 (personal travel planner)"}
+_NOMINATIM_HEADERS = _UA_HEADERS
 
 
 def haversine_km(a: tuple, b: tuple) -> float:
@@ -44,7 +48,7 @@ def _default_fetch_overpass(query: str) -> dict:
     req = urllib.request.Request(
         _OVERPASS,
         data=urllib.parse.urlencode({"data": query}).encode(),
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={**_UA_HEADERS, "Content-Type": "application/x-www-form-urlencoded"},
     )
     with urllib.request.urlopen(req, timeout=25) as resp:
         return json.loads(resp.read())
