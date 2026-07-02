@@ -39,6 +39,15 @@ _UA_HEADERS = {"User-Agent": "TravelCompanion/1.0 (personal travel planner)"}
 _NOMINATIM_HEADERS = _UA_HEADERS
 
 
+class NoPlausiblePath(Exception):
+    """Raised when no plausible river path could be assembled. The message is
+    a specific, actionable reason (which stage failed and why) rather than a
+    generic "not found" — OSM waterway data can be fragmented in enough
+    different ways (no data at all, unnamed and ambiguous, or found but too
+    far from one endpoint) that a single generic message isn't enough to
+    troubleshoot a real failure without server access."""
+
+
 def haversine_km(a: tuple, b: tuple) -> float:
     """Great-circle distance in km between two (lat, lng) points."""
     r = 6371.0
@@ -206,15 +215,14 @@ def _simplify(points: list, max_points: int = FINAL_SIMPLIFY_MAX_POINTS) -> list
 def estimate_river_path(
     origin: str, destination: str, river_name: str | None = None, *,
     fetch_json=None, geocode=None,
-) -> dict | None:
-    """Return {"path": [[lat,lng],...], "distance_km": float, "river_name_used": str|None}
-    or None if no plausible river path could be found between the two points.
+) -> dict:
+    """Return {"path": [[lat,lng],...], "distance_km": float, "river_name_used": str|None}.
 
     Raises ValueError for invalid input (points too far apart to plausibly be
-    a river transfer) — the caller maps that to a 400. A None return means
-    "geocoding or stitching didn't produce a usable path" — the caller maps
-    that to a 404. Network/parsing failures propagate as-is for the caller
-    to map to a 503.
+    a river transfer) — the caller maps that to a 400. Raises NoPlausiblePath,
+    with a specific reason, when geocoding or stitching didn't produce a
+    usable path — the caller maps that to a 404. Network/parsing failures
+    propagate as-is for the caller to map to a 503.
     """
     fetch_json = fetch_json or _default_fetch_overpass
     geocode = geocode or _default_geocode
@@ -222,7 +230,8 @@ def estimate_river_path(
     a = _parse_point(origin, geocode)
     b = _parse_point(destination, geocode)
     if a is None or b is None:
-        return None
+        bad = origin if a is None else destination
+        raise NoPlausiblePath(f"Could not resolve '{bad}' to a location")
 
     straight_km = haversine_km(a, b)
     if straight_km > MAX_STRAIGHT_LINE_KM:
@@ -236,8 +245,11 @@ def estimate_river_path(
 
     def build_path(ways):
         """Try the strict stitch tolerance first, then a looser "bridge"
-        tolerance (for gaps at locks/weirs) only if that fails — returns the
-        simplified sub-path or None."""
+        tolerance (for gaps at locks/weirs) only if that fails. Returns
+        (sub_path, None) on success, or (None, (d_o, d_d)) with the closest
+        miss seen across both passes, or (None, None) if no candidate chain
+        was produced at all."""
+        closest = None
         for tolerance in (ENDPOINT_STITCH_TOLERANCE_KM, BRIDGE_STITCH_TOLERANCE_KM):
             merged = _merge_ways(ways, tolerance)
             if not merged:
@@ -246,32 +258,54 @@ def estimate_river_path(
             if best is None:
                 continue
             pl, i_o, d_o, i_d, d_d = best
+            if closest is None or (d_o + d_d) < (closest[0] + closest[1]):
+                closest = (d_o, d_d)
             if d_o > ORIGIN_DEST_SNAP_TOLERANCE_KM or d_d > ORIGIN_DEST_SNAP_TOLERANCE_KM:
                 continue
             sub = _simplify(_slice_between(pl, i_o, i_d))
             if len(sub) >= 2:
-                return sub
-        return None
+                return sub, None
+        return None, closest
 
     sub, used_name = None, None
+    named_miss = None
     if river_name:
         named_ways = _ways_from_response(fetch_json(build_overpass_query(bbox, river_name)))
-        sub = build_path(named_ways) if named_ways else None
+        if named_ways:
+            sub, named_miss = build_path(named_ways)
         if sub is not None:
             used_name = river_name
 
+    broad_miss = None
     if sub is None:
         # No river name given, named query came up empty, or the named ways
         # didn't stitch into a path reaching both endpoints — retry broad
         # (riskier, no name filter).
         broad_ways = _ways_from_response(fetch_json(build_overpass_query(bbox, None)))
         if not river_name and len(broad_ways) > MAX_WAYS:
-            return None  # too ambiguous without a name to filter by
-        sub = build_path(broad_ways)
+            raise NoPlausiblePath(
+                f"Found {len(broad_ways)} unnamed waterway segments near these points "
+                f"(limit {MAX_WAYS}) — too ambiguous without a river name, try providing one"
+            )
+        if broad_ways:
+            sub, broad_miss = build_path(broad_ways)
         used_name = None
 
     if sub is None:
-        return None
+        miss = broad_miss or named_miss
+        if miss is None:
+            raise NoPlausiblePath(
+                f"No waterway data found near these points in OpenStreetMap "
+                f"(searched a ~{pad_km:.0f} km-padded area)"
+            )
+        d_o, d_d = miss
+        raise NoPlausiblePath(
+            f"Found waterway data but couldn't connect a path reaching both points — "
+            f"closest match was {d_o:.1f} km from the start and {d_d:.1f} km from the end "
+            f"(tolerance is {ORIGIN_DEST_SNAP_TOLERANCE_KM} km). The origin/destination may "
+            f"not be directly on a mapped waterway, or the river is fragmented in OSM here."
+        )
+
     dist_km = sum(haversine_km(sub[i], sub[i + 1]) for i in range(len(sub) - 1))
 
     return {

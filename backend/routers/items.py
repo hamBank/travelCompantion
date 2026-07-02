@@ -10,7 +10,7 @@ from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
 from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, Stop, StopRead, TripRole
-from ..river_path import estimate_river_path
+from ..river_path import estimate_river_path, NoPlausiblePath
 
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _GPX_DIR  = os.path.join(_APP_ROOT, 'uploads', 'gpx')
@@ -727,17 +727,13 @@ def river_path(req: RiverPathRequest, user: dict = Depends(get_current_user)):
     if len(req.points) != 2:
         raise HTTPException(status_code=400, detail="Need exactly an origin and a destination")
     try:
-        result = estimate_river_path(req.points[0], req.points[1], req.river_name)
+        return estimate_river_path(req.points[0], req.points[1], req.river_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except NoPlausiblePath as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"River path lookup failed: {e}")
-    if result is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Could not find a plausible river path between these points — try providing the river name",
-        )
-    return result
 
 
 _STATIC_MAPS_KEY = os.getenv("GOOGLE_STATIC_MAPS_API_KEY", "") or _PLACES_KEY

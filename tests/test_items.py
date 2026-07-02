@@ -157,9 +157,12 @@ def test_river_path_400_when_points_too_far_apart(client: TestClient, monkeypatc
 
 
 def test_river_path_404_when_no_plausible_path(client: TestClient, monkeypatch):
-    monkeypatch.setattr(items_mod, "estimate_river_path", lambda o, d, river_name=None: None)
+    def raise_no_path(origin, destination, river_name=None):
+        raise items_mod.NoPlausiblePath("no waterway data found")
+    monkeypatch.setattr(items_mod, "estimate_river_path", raise_no_path)
     r = client.post("/river-path", json={"points": ["A", "B"]})
     assert r.status_code == 404
+    assert "no waterway data found" in r.json()["detail"]
 
 
 def test_river_path_503_on_lookup_failure(client: TestClient, monkeypatch):
