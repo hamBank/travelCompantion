@@ -45,7 +45,7 @@ def _parse_checkin_window(s) -> Optional[float]:
 
 def _local_to_utc(dt_str, tz) -> Optional[datetime]:
     """Convert a stored local wall-clock datetime + timezone to a naive UTC
-    datetime (naive throughout, matching this module's datetime.utcnow() use).
+    datetime (naive throughout, matching this module's naive-UTC `now` convention).
 
     Mirrors frontend/src/components/StopCard.jsx:toUtcMs exactly — same fixed-
     offset ("GMT+8", "+08:00") and IANA zone name ("Europe/Helsinki") parsing —
@@ -158,7 +158,7 @@ def _recipients(session: Session, trip_id: int) -> list[PushSubscription]:
 def send_due_notifications(session: Session, *, now: Optional[datetime] = None, sender=send_push) -> int:
     """Send every due (item, kind) trigger to all of that trip's subscribed
     devices, logging each so it's never sent twice. Returns triggers processed."""
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     processed = 0
     for item, kind, depart in list(_due_triggers(session, now)):
         stop = session.get(Stop, item.stop_id)

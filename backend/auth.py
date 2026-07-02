@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
@@ -44,7 +44,7 @@ def create_jwt(user: dict) -> str:
         "sub":     user["email"],
         "name":    user.get("name", ""),
         "picture": user.get("picture", ""),
-        "exp":     datetime.utcnow() + timedelta(days=JWT_EXPIRE_DAYS),
+        "exp":     datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=JWT_EXPIRE_DAYS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 

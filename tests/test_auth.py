@@ -1,6 +1,6 @@
 """Unit + endpoint tests for backend/auth.py and backend/routers/auth_router.py."""
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
@@ -37,8 +37,8 @@ def test_create_jwt_expiry_is_jwt_expire_days_out(monkeypatch):
     monkeypatch.setattr(auth, "JWT_EXPIRE_DAYS", 30)
     token = auth.create_jwt({"email": "a@example.com"})
     payload = jwt.decode(token, auth.JWT_SECRET, algorithms=[auth.JWT_ALGORITHM])
-    exp = datetime.utcfromtimestamp(payload["exp"])
-    delta = exp - datetime.utcnow()
+    exp = datetime.fromtimestamp(payload["exp"], timezone.utc).replace(tzinfo=None)
+    delta = exp - datetime.now(timezone.utc).replace(tzinfo=None)
     assert timedelta(days=29) < delta <= timedelta(days=30)
 
 
@@ -74,7 +74,7 @@ def test_get_current_user_accepts_valid_token(monkeypatch):
 
 def test_get_current_user_rejects_expired_token(monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
-    payload = {"sub": "user@example.com", "exp": datetime.utcnow() - timedelta(days=1)}
+    payload = {"sub": "user@example.com", "exp": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)}
     expired = jwt.encode(payload, auth.JWT_SECRET, algorithm=auth.JWT_ALGORITHM)
     with pytest.raises(HTTPException) as exc:
         auth.get_current_user(credentials=_bearer(expired))
@@ -83,7 +83,7 @@ def test_get_current_user_rejects_expired_token(monkeypatch):
 
 def test_get_current_user_rejects_token_signed_with_wrong_secret(monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
-    payload = {"sub": "user@example.com", "exp": datetime.utcnow() + timedelta(days=1)}
+    payload = {"sub": "user@example.com", "exp": datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1)}
     tampered = jwt.encode(payload, "not-the-real-secret", algorithm=auth.JWT_ALGORITHM)
     with pytest.raises(HTTPException) as exc:
         auth.get_current_user(credentials=_bearer(tampered))

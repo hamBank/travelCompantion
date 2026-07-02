@@ -5,7 +5,7 @@ writing items directly. A logged-in editor reviews each one and applies it —
 applying routes through the same item create/update logic the normal endpoints
 use, so trip permissions are always enforced at apply time.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -174,7 +174,7 @@ def apply_pending(
         session.add(item)
 
     pc.status = PendingStatus.applied
-    pc.decided_at = datetime.utcnow()
+    pc.decided_at = datetime.now(timezone.utc).replace(tzinfo=None)
     pc.decided_by = user["email"].lower()
     session.add(pc)
     session.commit()
@@ -200,7 +200,7 @@ def discard_pending(
     pc = _owned(session, user, pc_id)
     if pc.status == PendingStatus.pending:
         pc.status = PendingStatus.discarded
-        pc.decided_at = datetime.utcnow()
+        pc.decided_at = datetime.now(timezone.utc).replace(tzinfo=None)
         pc.decided_by = user["email"].lower()
         session.add(pc)
         session.commit()

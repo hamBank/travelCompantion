@@ -5,7 +5,7 @@ coordinates are missing (e.g. a home stop that was never geocoded). Cache keys
 are rounded coords, or `q:<name>` when geocoding, so repeated day-header renders
 share an entry and we don't hammer Open-Meteo / Nominatim.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -44,7 +44,7 @@ def weather_lookup(
         raise HTTPException(status_code=400, detail="Provide lat/lng or q")
 
     cached = session.get(WeatherCache, key)
-    if cached and (datetime.utcnow() - cached.fetched_at) < CACHE_TTL:
+    if cached and (datetime.now(timezone.utc).replace(tzinfo=None) - cached.fetched_at) < CACHE_TTL:
         return {"weather": cached.payload, "cached": True}
 
     # Resolve coordinates: use given ones, else geocode the place name.
@@ -56,7 +56,7 @@ def weather_lookup(
 
     if cached:
         cached.payload = data
-        cached.fetched_at = datetime.utcnow()
+        cached.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
         session.add(cached)
     else:
         session.add(WeatherCache(cache_key=key, payload=data))

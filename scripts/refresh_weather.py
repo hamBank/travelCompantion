@@ -12,7 +12,7 @@ Run via cron with DATABASE_URL set (Postgres in prod):
         && .venv/bin/python scripts/refresh_weather.py
 """
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -48,7 +48,7 @@ def _upsert(session, key, data):
     row = session.get(WeatherCache, key)
     if row:
         row.payload = data
-        row.fetched_at = datetime.utcnow()
+        row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
     else:
         row = WeatherCache(cache_key=key, payload=data)
     session.add(row)
@@ -106,7 +106,7 @@ def refresh_all(session: Session, *, get_weather=_get_weather, geocode=_geocode)
             data = get_weather(resolved[0], resolved[1], start, end) if resolved else {}
         if data:
             row.payload = data
-            row.fetched_at = datetime.utcnow()
+            row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
             session.add(row)
             refreshed += 1
     session.commit()
@@ -116,7 +116,7 @@ def refresh_all(session: Session, *, get_weather=_get_weather, geocode=_geocode)
 def main() -> None:
     with Session(engine) as session:
         n = warm_stops(session)
-    print(f"{datetime.utcnow():%F %T} warmed weather for {n} stop{'' if n == 1 else 's'}")
+    print(f"{datetime.now(timezone.utc):%F %T} warmed weather for {n} stop{'' if n == 1 else 's'}")
 
 
 if __name__ == "__main__":
