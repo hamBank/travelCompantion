@@ -130,6 +130,22 @@ def build_overpass_query(bbox: tuple, river_name: str | None = None) -> str:
     )
 
 
+def build_water_polygon_query(bbox: tuple) -> str:
+    """Large impounded stretches behind a dam (e.g. the Rhône's CNR
+    reservoirs) are frequently mapped as a natural=water polygon rather than
+    a continuous waterway line, since hydrologically they're closer to a
+    lake than a river — invisible to build_overpass_query's line-only
+    query. Used only as a fallback bridge when the line-based path can't
+    reach both endpoints."""
+    south, west, north, east = bbox
+    bbox_str = f"{south},{west},{north},{east}"
+    return (
+        f'[out:json][timeout:20];'
+        f'way["natural"="water"]({bbox_str});'
+        f'out geom;'
+    )
+
+
 def _ways_from_response(resp: dict) -> list[list[tuple]]:
     ways = []
     for el in (resp or {}).get("elements", []):
@@ -140,6 +156,36 @@ def _ways_from_response(resp: dict) -> list[list[tuple]]:
         if len(pts) >= 2:
             ways.append(pts)
     return ways
+
+
+def _polygon_ways_from_response(resp: dict) -> list[list[tuple]]:
+    """Like _ways_from_response, but only closed rings (first point == last
+    point) — the shape natural=water polygons take."""
+    rings = []
+    for el in (resp or {}).get("elements", []):
+        if el.get("type") != "way":
+            continue
+        geom = el.get("geometry") or []
+        pts = [(g["lat"], g["lon"]) for g in geom if "lat" in g and "lon" in g]
+        if len(pts) >= 4 and pts[0] == pts[-1]:
+            rings.append(pts)
+    return rings
+
+
+def _ring_arc(ring: list, i0: int, i1: int) -> list:
+    """Shorter of the two arcs between indices i0 and i1 on a closed ring
+    (ring[0] == ring[-1]), going from i0 to i1. A real detour around an
+    island is rare over these short bridging distances, so "shorter by
+    point count" is a reasonable proxy for "the correct way across"."""
+    core = ring[:-1]
+    n = len(core)
+    if n == 0:
+        return []
+    fwd_len = (i1 - i0) % n
+    forward = [core[(i0 + k) % n] for k in range(fwd_len + 1)]
+    bwd_len = (i0 - i1) % n
+    backward = [core[(i0 - k) % n] for k in range(bwd_len + 1)]
+    return forward if len(forward) <= len(backward) else backward
 
 
 def _merge_ways(ways: list, tolerance_km: float = ENDPOINT_STITCH_TOLERANCE_KM) -> list:
@@ -250,9 +296,10 @@ def estimate_river_path(
     def build_path(ways):
         """Try the strict stitch tolerance first, then a looser "bridge"
         tolerance (for gaps at locks/weirs) only if that fails. Returns
-        (sub_path, None) on success, or (None, (d_o, d_d)) with the closest
-        miss seen across both passes, or (None, None) if no candidate chain
-        was produced at all."""
+        (sub_path, None) on success, or (None, miss) where miss is a dict
+        with the closest candidate seen across both passes (polyline plus
+        snap indices/distances, enough to attempt a reservoir bridge), or
+        (None, None) if no candidate chain was produced at all."""
         closest = None
         for tolerance in (ENDPOINT_STITCH_TOLERANCE_KM, BRIDGE_STITCH_TOLERANCE_KM):
             merged = _merge_ways(ways, tolerance)
@@ -262,8 +309,8 @@ def estimate_river_path(
             if best is None:
                 continue
             pl, i_o, d_o, i_d, d_d = best
-            if closest is None or (d_o + d_d) < (closest[0] + closest[1]):
-                closest = (d_o, d_d)
+            if closest is None or (d_o + d_d) < (closest["d_o"] + closest["d_d"]):
+                closest = {"pl": pl, "i_o": i_o, "d_o": d_o, "i_d": i_d, "d_d": d_d}
             if d_o > ORIGIN_DEST_SNAP_TOLERANCE_KM or d_d > ORIGIN_DEST_SNAP_TOLERANCE_KM:
                 continue
             sub = _simplify(_slice_between(pl, i_o, i_d))
@@ -271,12 +318,47 @@ def estimate_river_path(
                 return sub, None
         return None, closest
 
+    def try_bridge_reservoir(miss):
+        """When the line-based path reaches one endpoint but dangles well
+        short of the other, see if a natural=water polygon (a dammed/
+        impounded stretch OSM maps as a lake rather than a river line)
+        covers the remaining gap. Only attempted when exactly one end is
+        within tolerance — a miss on both ends isn't a single-reservoir
+        gap and isn't a good candidate for this heuristic."""
+        if miss is None:
+            return None
+        pl, i_o, d_o, i_d, d_d = miss["pl"], miss["i_o"], miss["d_o"], miss["i_d"], miss["d_d"]
+        if d_o <= ORIGIN_DEST_SNAP_TOLERANCE_KM and d_d > ORIGIN_DEST_SNAP_TOLERANCE_KM:
+            gap_point, target_point, gap_index, at_end = pl[i_d], b, i_d, "dest"
+        elif d_d <= ORIGIN_DEST_SNAP_TOLERANCE_KM and d_o > ORIGIN_DEST_SNAP_TOLERANCE_KM:
+            gap_point, target_point, gap_index, at_end = pl[i_o], a, i_o, "origin"
+        else:
+            return None
+        rings = _polygon_ways_from_response(fetch_json(build_water_polygon_query(bbox)))
+        for ring in rings:
+            i_gap, d_gap = _nearest_index(ring, gap_point)
+            i_target, d_target = _nearest_index(ring, target_point)
+            if d_gap > BRIDGE_STITCH_TOLERANCE_KM or d_target > ORIGIN_DEST_SNAP_TOLERANCE_KM:
+                continue
+            arc = _ring_arc(ring, i_gap, i_target)  # gap -> target
+            if len(arc) < 2:
+                continue
+            if at_end == "dest":
+                sub = pl[:gap_index + 1] + arc[1:]
+            else:
+                sub = list(reversed(arc))[:-1] + pl[gap_index:]
+            if len(sub) >= 2:
+                return _simplify(sub)
+        return None
+
     sub, used_name = None, None
     named_miss = None
     if river_name:
         named_ways = _ways_from_response(fetch_json(build_overpass_query(bbox, river_name)))
         if named_ways:
             sub, named_miss = build_path(named_ways)
+        if sub is None:
+            sub = try_bridge_reservoir(named_miss)
         if sub is not None:
             used_name = river_name
 
@@ -293,6 +375,8 @@ def estimate_river_path(
             )
         if broad_ways:
             sub, broad_miss = build_path(broad_ways)
+        if sub is None:
+            sub = try_bridge_reservoir(broad_miss)
         used_name = None
 
     if sub is None:
@@ -302,7 +386,7 @@ def estimate_river_path(
                 f"No waterway data found near these points in OpenStreetMap "
                 f"(searched a ~{pad_km:.0f} km-padded area)"
             )
-        d_o, d_d = miss
+        d_o, d_d = miss["d_o"], miss["d_d"]
         raise NoPlausiblePath(
             f"Found waterway data but couldn't connect a path reaching both points — "
             f"closest match was {d_o:.1f} km from the start and {d_d:.1f} km from the end "

@@ -272,3 +272,67 @@ def test_estimate_river_path_rejects_too_many_unnamed_ways():
 
     with pytest.raises(rp.NoPlausiblePath, match="too ambiguous"):
         rp.estimate_river_path("45.001,4.001", "45.199,4.399", fetch_json=fake_fetch)
+
+
+# ── natural=water reservoir bridging ─────────────────────────────────────────
+
+def test_build_water_polygon_query_has_no_name_filter():
+    q = rp.build_water_polygon_query((0, 0, 1, 1))
+    assert '"natural"="water"' in q
+    assert '"name"~' not in q
+    assert "0,0,1,1" in q
+
+
+def test_polygon_ways_from_response_filters_to_closed_rings():
+    open_way = _way((0, 0), (0, 1), (0, 2))
+    closed_ring = _way((1, 1), (1, 2), (2, 2), (1, 1))
+    rings = rp._polygon_ways_from_response(_overpass_response(open_way, closed_ring))
+    assert len(rings) == 1
+    assert rings[0][0] == rings[0][-1] == (1, 1)
+
+
+def test_ring_arc_picks_the_shorter_direction():
+    # A square ring; going 0->1 the short way is a single edge, the long way is three.
+    ring = [(0, 0), (0, 1), (1, 1), (1, 0), (0, 0)]
+    assert rp._ring_arc(ring, 0, 1) == [(0, 0), (0, 1)]
+    assert rp._ring_arc(ring, 1, 0) == [(0, 1), (0, 0)]
+
+
+def test_ring_arc_wraps_around_when_that_is_shorter():
+    ring = [(0, 0), (0, 1), (1, 1), (1, 0), (0, 0)]
+    # From index 3 to index 0: forward wraps immediately (1 step); backward is 3 steps.
+    assert rp._ring_arc(ring, 3, 0) == [(1, 0), (0, 0)]
+
+
+def test_estimate_river_path_bridges_a_reservoir_polygon_gap():
+    """Reproduces a real report: a dammed/impounded stretch of river is
+    mapped as a natural=water lake polygon rather than a waterway line, so
+    the line-only search reaches one endpoint but dangles ~20km short of
+    the other. A nearby water polygon should bridge the gap."""
+    line_way = [(0.0, 0.0), (0.0, 0.5)]
+    # A small diamond-shaped "reservoir" spanning from the line's dangling
+    # end to the actual destination.
+    reservoir = [(0.0, 0.5), (0.01, 0.6), (0.0, 0.7), (-0.01, 0.6), (0.0, 0.5)]
+
+    def fake_fetch(query):
+        if '"natural"="water"' in query:
+            return _overpass_response(_way(*reservoir))
+        return _overpass_response(_way(*line_way))
+
+    result = rp.estimate_river_path("0.0,0.0", "0.0,0.7", fetch_json=fake_fetch)
+    assert result is not None
+    assert result["path"][0] == [0.0, 0.0]
+    assert result["path"][-1] == [0.0, 0.7]
+
+
+def test_estimate_river_path_still_fails_when_no_reservoir_bridges_the_gap():
+    import pytest
+    line_way = [(0.0, 0.0), (0.0, 0.5)]
+
+    def fake_fetch(query):
+        if '"natural"="water"' in query:
+            return _overpass_response()  # no polygon data at all
+        return _overpass_response(_way(*line_way))
+
+    with pytest.raises(rp.NoPlausiblePath, match="couldn't connect"):
+        rp.estimate_river_path("0.0,0.0", "0.0,0.7", fetch_json=fake_fetch)
