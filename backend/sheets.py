@@ -3,6 +3,8 @@ import io
 import pathlib
 from datetime import datetime, timedelta
 
+from .metrics import record_external_call
+
 # Google Sheets serial dates count days from this epoch (1899-12-30).
 _SHEETS_EPOCH = datetime(1899, 12, 30)
 
@@ -85,7 +87,9 @@ def _get_credentials():
         try:
             creds.refresh(Request())
         except Exception as e:
+            record_external_call("google_oauth", ok=False, error=str(e))
             raise RuntimeError(f"Google token expired and refresh failed — re-authenticate: {e}")
+        record_external_call("google_oauth", ok=True)
         TOKEN_PATH.write_text(creds.to_json())
         return creds
 
@@ -151,6 +155,7 @@ def fetch_sheets() -> dict[str, str]:
             fields="sheets(properties.title,data.rowData.values("
                    "formattedValue,effectiveValue,effectiveFormat.numberFormat.type))",
         ).execute()
+        record_external_call("google_sheets", ok=True)
 
         for sheet in resp.get("sheets", []):
             name = sheet["properties"]["title"]
@@ -161,6 +166,7 @@ def fetch_sheets() -> dict[str, str]:
             rows = [[_cell_to_str(c) for c in (rd.get("values") or [])] for rd in row_data]
             results[name] = _rows_to_csv(rows)
     except Exception as e:
+        record_external_call("google_sheets", ok=False, error=str(e))
         errors.append(f"grid read: {e}")
         # Fall back to the old formatted-string fetch so import never hard-breaks.
         for name in wanted:
@@ -171,8 +177,10 @@ def fetch_sheets() -> dict[str, str]:
                     valueRenderOption="FORMATTED_VALUE",
                     dateTimeRenderOption="FORMATTED_STRING",
                 ).execute()
+                record_external_call("google_sheets", ok=True)
                 results[name] = _rows_to_csv(resp.get("values", []))
             except Exception as e2:
+                record_external_call("google_sheets", ok=False, error=str(e2))
                 if len(errors) < 3:
                     errors.append(f"{name}: {e2}")
                 results[name] = ""

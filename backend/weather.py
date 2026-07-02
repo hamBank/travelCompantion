@@ -17,6 +17,8 @@ from collections import Counter
 from datetime import date, timedelta
 from statistics import mean
 
+from .metrics import record_external_call
+
 # WMO weather codes → (emoji, description). Mirrors the legacy desktop app.
 WMO_ICONS = {
     0: ("☀", "Clear"),
@@ -68,8 +70,14 @@ def _icon_for(code: int) -> tuple[str, str]:
 
 
 def _fetch_json(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=10) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            result = json.loads(resp.read())
+    except Exception as e:
+        record_external_call("open_meteo", ok=False, error=str(e))
+        raise
+    record_external_call("open_meteo", ok=True)
+    return result
 
 
 def _fetch_geocode(q: str):
@@ -78,8 +86,14 @@ def _fetch_geocode(q: str):
         {"q": q, "format": "json", "limit": 1}
     )
     req = urllib.request.Request(url, headers={"User-Agent": "travel-companion/1.0"})
-    with urllib.request.urlopen(req, timeout=8) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            result = json.loads(resp.read())
+    except Exception as e:
+        record_external_call("nominatim", ok=False, error=str(e))
+        raise
+    record_external_call("nominatim", ok=True)
+    return result
 
 
 def geocode(q: str, *, fetch=_fetch_geocode):

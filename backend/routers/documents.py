@@ -293,7 +293,7 @@ def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> di
     max_tokens = min(8000 + n_docs * 4000, 32000)
 
     import time
-    from ..metrics import record_claude_usage
+    from ..metrics import record_claude_usage, record_external_call
     _t0 = time.monotonic()
     try:
         # Use streaming — required by the SDK when max_tokens is large enough that
@@ -305,11 +305,14 @@ def _call_claude(prompt: str, pdf_b64s: list | None, doc_text: str | None) -> di
         ) as stream:
             resp = stream.get_final_message()
         record_claude_usage(getattr(resp, "usage", None), time.monotonic() - _t0)
+        record_external_call("anthropic", ok=True)
     except anthropic.APIStatusError as e:
         record_claude_usage(None, time.monotonic() - _t0, status="error")
+        record_external_call("anthropic", ok=False, error=str(e))
         raise HTTPException(status_code=502, detail=f"Claude API error: {e.message}")
     except Exception as e:
         record_claude_usage(None, time.monotonic() - _t0, status="error")
+        record_external_call("anthropic", ok=False, error=str(e))
         raise HTTPException(status_code=502, detail=f"Claude request failed: {e}")
 
     if resp.stop_reason == "refusal":

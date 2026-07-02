@@ -1,5 +1,11 @@
 """Tests for backend/river_path.py — Overpass-based river path estimation
 with mocked network (no real Overpass/Nominatim calls)."""
+import json
+import urllib.error
+import urllib.request
+
+import pytest
+
 from backend import river_path as rp
 
 
@@ -337,3 +343,70 @@ def test_estimate_river_path_falls_back_to_straight_line_when_no_reservoir_bridg
     result = rp.estimate_river_path("0.0,0.0", "0.0,0.7", fetch_json=fake_fetch)
     assert result["approximate"] is True
     assert result["path"] == [[0.0, 0.0], [0.0, 0.7]]
+
+
+# ── external-call metrics (default network functions) ───────────────────────
+
+class _FakeUrlResponse:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def test_default_fetch_overpass_records_success(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rp, "record_external_call", lambda *a, **k: calls.append((a, k)))
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: _FakeUrlResponse(b'{"elements": []}'))
+
+    result = rp._default_fetch_overpass("fake query")
+    assert result == {"elements": []}
+    assert calls == [(("overpass",), {"ok": True})]
+
+
+def test_default_fetch_overpass_records_failure_and_reraises(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rp, "record_external_call", lambda *a, **k: calls.append((a, k)))
+
+    def raise_429(req, timeout=None):
+        raise urllib.error.HTTPError("url", 429, "Too Many Requests", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", raise_429)
+
+    with pytest.raises(urllib.error.HTTPError):
+        rp._default_fetch_overpass("fake query")
+    assert len(calls) == 1
+    assert calls[0][0] == ("overpass",)
+    assert calls[0][1]["ok"] is False
+
+
+def test_default_geocode_records_success(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rp, "record_external_call", lambda *a, **k: calls.append((a, k)))
+    body = json.dumps([{"lat": "45.0", "lon": "4.0"}]).encode()
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: _FakeUrlResponse(body))
+
+    result = rp._default_geocode("Lyon")
+    assert result == (45.0, 4.0)
+    assert calls == [(("nominatim",), {"ok": True})]
+
+
+def test_default_geocode_records_failure_and_reraises(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rp, "record_external_call", lambda *a, **k: calls.append((a, k)))
+
+    def raise_error(req, timeout=None):
+        raise OSError("network unreachable")
+
+    monkeypatch.setattr(urllib.request, "urlopen", raise_error)
+
+    with pytest.raises(OSError):
+        rp._default_geocode("Lyon")
+    assert calls == [(("nominatim",), {"ok": False, "error": "network unreachable"})]
