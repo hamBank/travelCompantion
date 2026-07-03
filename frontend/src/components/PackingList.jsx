@@ -253,14 +253,14 @@ function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, onEdit, canEdi
         value={it.bag_id ?? ''} onChange={e => onPatch(it.id, { bag_id: e.target.value ? Number(e.target.value) : null })}
         title="Move to bag"
         style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-faint)', fontSize: '0.7rem' }}
-        className="rounded px-1 py-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+        className="edit-btn rounded px-1 py-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
       >
         <option value="">No bag</option>
         {bags.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
       </select>
       {editable && (
         <button onClick={() => onEdit(it)} style={{ color: 'var(--text-faint)' }}
-                className="text-xs shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity" title="Edit">✎</button>
+                className="edit-btn text-xs shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity" title="Edit">✎</button>
       )}
     </div>
   )

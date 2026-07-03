@@ -61,4 +61,20 @@ describe('PackingList', () => {
     fireEvent.click(socksCb)
     await waitFor(() => expect(api.updatePackItem).toHaveBeenCalledWith(10, { packed_count: 5 }))
   })
+
+  it('marks the hover-reveal edit and move-to-bag controls with edit-btn, so the app-wide touch-device CSS forces them visible', async () => {
+    // Regression: these relied only on group-hover/focus, which a touchscreen
+    // can never trigger — every other hover-reveal control in the app opts
+    // into the `@media (hover: none) { .edit-btn { opacity: 1 } }` override
+    // via this class; PackingList's controls didn't, so they stayed
+    // permanently invisible on touch devices like an iPhone.
+    render(<PackingList tripId={9} userEmail="me@x.com" canEdit />)
+    await screen.findByText('Socks')
+    const editButtons = screen.getAllByTitle('Edit')
+    expect(editButtons.length).toBeGreaterThan(0)
+    for (const btn of editButtons) expect(btn).toHaveClass('edit-btn')
+    const moveSelects = screen.getAllByTitle('Move to bag')
+    expect(moveSelects.length).toBeGreaterThan(0)
+    for (const sel of moveSelects) expect(sel).toHaveClass('edit-btn')
+  })
 })
