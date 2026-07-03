@@ -131,7 +131,8 @@ export const moveItem = (id, stopId) =>
 export const updateItemStatus = (id, status) => updateItem(id, { status })
 export const updateStopStatus = (id, status) => updateStop(id, { status })
 
-export const enrichItem    = (id)   => req(`/items/${id}/enrich`)
+export const enrichPlace   = (stopId, { kind, name, location = '' }) =>
+  req(`/stops/${stopId}/enrich?${new URLSearchParams({ kind, name, ...(location ? { location } : {}) })}`)
 export const washLookup    = (id, address = '') => req(
   `/items/${id}/wash-lookup${address ? '?address=' + encodeURIComponent(address) : ''}`,
   { method: 'POST' }
@@ -158,6 +159,14 @@ export const generateRiverPath = (points, riverName) =>
 export async function fetchRiverMapBlob(id) {
   const token = getToken()
   const r = await fetch(`/items/${id}/river-map`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  return r.ok ? r.blob() : null
+}
+
+export async function fetchGpxMapBlob(id) {
+  const token = getToken()
+  const r = await fetch(`/items/${id}/gpx-map`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   return r.ok ? r.blob() : null

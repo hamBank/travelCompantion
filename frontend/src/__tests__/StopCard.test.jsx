@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, walkRouteSource } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -53,6 +53,64 @@ describe('itemDateKey', () => {
   it('returns null when no datetime', () => {
     const item = { kind: 'note', details: {}, scheduled_at: null }
     expect(itemDateKey(item)).toBeNull()
+  })
+})
+
+// ── itemSortKey ──────────────────────────────────────────────────────────────
+
+describe('itemSortKey', () => {
+  it('orders same-day items by local wall-clock time, ignoring a flight tz offset', () => {
+    // Regression: a Singapore (GMT+8) flight departing 21:35 was previously
+    // shifted to 13:35 "UTC" for sorting, landing it between two same-day
+    // naive-local items (13:00 and 14:00) instead of after both.
+    const satay   = { kind: 'restaurant', details: {}, scheduled_at: '2026-07-24T13:00' }
+    const gardens = { kind: 'activity',   details: {}, scheduled_at: '2026-07-24T14:00' }
+    const flight  = { kind: 'flight', scheduled_at: null,
+      details: { depart_time: '2026-07-24T21:35', depart_tz: 'GMT+8' } }
+    const ordered = [flight, gardens, satay].sort((a, b) => itemSortKey(a) - itemSortKey(b))
+    expect(ordered).toEqual([satay, gardens, flight])
+  })
+})
+
+// ── walkRouteSource ──────────────────────────────────────────────────────────
+
+describe('walkRouteSource', () => {
+  it('prefers the recorded GPX track over recomputing directions between waypoints', () => {
+    const result = walkRouteSource({
+      gpx_route: [[41.9, 12.5], [41.901, 12.501]],
+      route_points: ['Start St, Rome', 'Mid Point, Rome', 'End Ave, Rome'],
+    })
+    expect(result.hasGpxRoute).toBe(true)
+    expect(result.embedUrl).toBeNull()
+  })
+
+  it('falls back to a Directions embed built from route_points when there is no GPX track', () => {
+    const result = walkRouteSource({
+      route_points: ['Start St, Rome', 'Mid Point, Rome', 'End Ave, Rome'],
+    })
+    expect(result.hasGpxRoute).toBe(false)
+    expect(result.embedUrl).toContain('output=embed')
+  })
+
+  it('falls back to start/end location strings when there are no route_points either', () => {
+    const result = walkRouteSource({ start_location: 'Rome A', end_location: 'Rome B' })
+    expect(result.hasGpxRoute).toBe(false)
+    expect(result.embedUrl).toContain('output=embed')
+  })
+
+  it('returns no map source at all when details are empty', () => {
+    const result = walkRouteSource({})
+    expect(result.hasGpxRoute).toBe(false)
+    expect(result.embedUrl).toBeNull()
+    expect(result.mapsLink).toBeNull()
+  })
+
+  it('prefers the stored maps_url for the "Open in Maps" link even with a GPX track', () => {
+    const result = walkRouteSource({
+      gpx_route: [[41.9, 12.5], [41.901, 12.501]],
+      maps_url: 'https://maps.google.com/original',
+    })
+    expect(result.mapsLink).toBe('https://maps.google.com/original')
   })
 })
 

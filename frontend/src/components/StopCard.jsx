@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react'
-import { updateStopStatus, updateItemStatus, getWeather, fetchRiverMapBlob } from '../api.js'
+import { updateStopStatus, updateItemStatus, getWeather, fetchRiverMapBlob, fetchGpxMapBlob } from '../api.js'
 import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
@@ -272,6 +272,32 @@ function _itemStartMs(item) {
   return toUtcMs(item.scheduled_at, null)
 }
 
+// Sort key for a stop's own item timeline (visual ordering within one place).
+// Every item here shares the stop's location, so times compare as local
+// wall-clock — unlike _itemStartMs, a flight's depart_time is NOT shifted by
+// its tz, or it would be compared against a different reference frame than
+// the naive scheduled_at used by every other kind and sort out of place.
+export function itemSortKey(item) {
+  const d = item.details || {}
+  if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer')
+    return toUtcMs(d.depart_time, null) ?? Infinity
+  if (item.kind === 'accommodation') {
+    const checkin = toUtcMs(d.checkin || item.scheduled_at, null) ?? Infinity
+    if (!d.bag_drop) return checkin
+    // Project bag-drop time-of-day onto the check-in date so a bag drop on
+    // a prior day (e.g. Sat drop → Sun check-in) still sorts within the
+    // check-in day's timeline rather than before all same-day items.
+    const checkinDate = (d.checkin || item.scheduled_at || '').slice(0, 10)
+    const bagTime     = String(d.bag_drop).slice(11)   // "HH:MM…"
+    if (checkinDate && bagTime) {
+      const projected = toUtcMs(`${checkinDate}T${bagTime}`, null) ?? Infinity
+      return Math.min(projected, checkin)
+    }
+    return Math.min(toUtcMs(d.bag_drop, null) ?? Infinity, checkin)
+  }
+  return toUtcMs(item.scheduled_at, null) ?? Infinity
+}
+
 export function computeLayovers(sortedItems) {
   // Sort ALL items by UTC start time — connection ends at next item of any kind
   const all = sortedItems
@@ -385,26 +411,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     .filter(i => i.status !== 'done' || !hideCompleted)
     .filter(i => !kindFilter || i.kind === kindFilter)
 
-  const sortKey = item => {
-    const d = item.details || {}
-    if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer')
-      return toUtcMs(d.depart_time, d.depart_tz) ?? Infinity
-    if (item.kind === 'accommodation') {
-      const checkin = toUtcMs(d.checkin || item.scheduled_at, null) ?? Infinity
-      if (!d.bag_drop) return checkin
-      // Project bag-drop time-of-day onto the check-in date so a bag drop on
-      // a prior day (e.g. Sat drop → Sun check-in) still sorts within the
-      // check-in day's timeline rather than before all same-day items.
-      const checkinDate = (d.checkin || item.scheduled_at || '').slice(0, 10)
-      const bagTime     = String(d.bag_drop).slice(11)   // "HH:MM…"
-      if (checkinDate && bagTime) {
-        const projected = toUtcMs(`${checkinDate}T${bagTime}`, null) ?? Infinity
-        return Math.min(projected, checkin)
-      }
-      return Math.min(toUtcMs(d.bag_drop, null) ?? Infinity, checkin)
-    }
-    return toUtcMs(item.scheduled_at, null) ?? Infinity
-  }
   // Important notes are pinned to the very top of the stop; everything else flows
   // chronologically (by check-in / arrival). Food & purchases stay grouped.
   const isImportant = i => i.kind === 'note' && i.details?.important
@@ -413,7 +419,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     .sort((a, b) => {
       const ia = isImportant(a) ? 0 : 1, ib = isImportant(b) ? 0 : 1
       if (ia !== ib) return ia - ib
-      return sortKey(a) - sortKey(b)
+      return itemSortKey(a) - itemSortKey(b)
     })
   const foodItems = visibleItems.filter(i => i.kind === 'food')
   const purchaseItems = visibleItems.filter(i => i.kind === 'purchase')
@@ -911,21 +917,50 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
+// Which map source a walk card should use. A recorded/generated GPX track
+// (gpx_route) is the literal path, so it's preferred over recomputing a
+// Directions-API route between named waypoints — which can diverge from
+// what was actually walked. embedUrl is only built as a fallback when there's
+// no GPX track to trace.
+export function walkRouteSource(details) {
+  const d = details ?? {}
+  const hasGpxRoute = d.gpx_route?.length >= 2
+  // Full ordered route (incl. intermediate waypoints) when available, else start/end.
+  const routePts = d.route_points?.length >= 2 ? d.route_points : [d.start_location, d.end_location].filter(Boolean)
+  const embedUrl = !hasGpxRoute && routePts.length ? buildMapsUrl(routePts, 'w', true) : null
+  // Link for "Open in Maps" — prefer the stored original URL (preserves all waypoints)
+  const mapsLink = d.maps_url || (routePts.length ? buildMapsUrl(routePts, 'w', false) : null)
+  return { hasGpxRoute, embedUrl, mapsLink }
+}
+
 function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [showMap, setShowMap] = useState(false)
+  const [gpxMapUrl, setGpxMapUrl] = useState(null)
   const d = item.details ?? {}
   const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
   const timeStr = fmtDayTime(item.scheduled_at)
   const hideTime = useHideTime()
 
-  // Full ordered route (incl. intermediate waypoints) when available, else start/end.
-  const routePts = d.route_points?.length >= 2 ? d.route_points : [d.start_location, d.end_location].filter(Boolean)
-  const embedUrl = routePts.length ? buildMapsUrl(routePts, 'w', true) : null
-  // Link for "Open in Maps" — prefer the stored original URL (preserves all waypoints)
-  const mapsLink = d.maps_url || (routePts.length ? buildMapsUrl(routePts, 'w', false) : null)
+  const { hasGpxRoute, embedUrl, mapsLink } = walkRouteSource(d)
+
+  useEffect(() => {
+    if (!showMap || !hasGpxRoute) return
+    let objectUrl = null
+    let cancelled = false
+    fetchGpxMapBlob(item.id).then(blob => {
+      if (cancelled || !blob) return
+      objectUrl = URL.createObjectURL(blob)
+      setGpxMapUrl(objectUrl)
+    })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      setGpxMapUrl(null)
+    }
+  }, [showMap, hasGpxRoute, item.id])
 
   return (
     <>
@@ -974,8 +1009,8 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
           <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
         </div>
 
-        {/* Map controls — only when we have location data */}
-        {embedUrl && (
+        {/* Map controls — only when we have location or GPX-track data */}
+        {(embedUrl || hasGpxRoute) && (
           <div
             className="flex items-center gap-3 px-3 py-1.5"
             style={{ borderTop: '1px solid color-mix(in srgb, var(--kind-walk) 20%, transparent)' }}
@@ -1001,7 +1036,15 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
           </div>
         )}
 
-        {/* Embedded map iframe */}
+        {/* Traced GPX track (the literal recorded path) when available */}
+        {showMap && hasGpxRoute && (
+          gpxMapUrl
+            ? <img src={gpxMapUrl} alt="Recorded route"
+                style={{ display: 'block', width: '100%', height: '280px', objectFit: 'contain', background: 'transparent' }} />
+            : <div style={{ color: 'var(--text-faint)' }} className="text-xs px-3 py-2">Loading map…</div>
+        )}
+
+        {/* Embedded Directions map — fallback when no GPX track is stored */}
         {showMap && embedUrl && (
           <iframe
             src={embedUrl}

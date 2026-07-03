@@ -130,7 +130,9 @@ status, parse_error?, item_count`
 - **restaurant:** `location, reservation_time, booking_status, booking_ref, contact_phone`
 - **walk/cycling:** `start_location, end_location, distance, elevation_gain,
   elevation_loss, duration, difficulty, surface_type, maps_url, gpx_filename,
-  original_gpx_name`, walk also `description`
+  original_gpx_name, gpx_route` (decimated [lat,lng] track from the uploaded/
+  generated GPX — the walk card traces this via `/items/{id}/gpx-map` instead
+  of a Directions-embed when present), walk also `description`
 - **transfer:** `start_location, end_location, vehicle_type, distance, duration,
   provider, booking_ref, maps_url`
 - **tour:** `tour_type, meeting_point, duration, operator, booking_ref, cost_per_person`
@@ -194,10 +196,12 @@ See **PERMISSIONS.md** for the full role/sharing design. In brief: per-trip role
 Trips:   GET/POST /trips/ ; GET/PATCH/DELETE /trips/{id} ; GET /trips/{id}/timeline
 Stops:   GET/POST /trips/{id}/stops ; GET/PATCH/DELETE /stops/{id} ; PATCH /stops/{id}/reorder
 Items:   GET/POST /stops/{id}/items ; GET/PATCH/DELETE /items/{id}
-         GET /items/{id}/enrich          (Google Places autofill)
+         GET /stops/{id}/enrich?kind=&name=&location=  (Google Places autofill; works pre-save)
          GET /items/{id}/flight-check    (AviationStack)
          GET /items/{id}/rail-check
          POST/GET /items/{id}/gpx        (upload / download GPX)
+         GET /items/{id}/gpx-map         (Static Maps image tracing details.gpx_route)
+         GET /items/{id}/river-map       (Static Maps image tracing details.river_path)
          GET /flights/airline-lookup?iata=
          GET /geocode?q= ; GET /route-elevation?lat1=&lng1=&lat2=&lng2=
 Import:  POST /import/sheets ; /import/sheets/flights/{trip_id} ; …backfill endpoints

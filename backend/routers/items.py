@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
-from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, Stop, StopRead, TripRole
+from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, ItemKind, Stop, StopRead, TripRole
 from ..river_path import estimate_river_path, NoPlausiblePath
 from ..metrics import record_external_call
 
@@ -760,24 +760,10 @@ _STATIC_MAPS_KEY = os.getenv("GOOGLE_STATIC_MAPS_API_KEY", "") or _ROUTES_KEY
 _STATIC_MAPS_API = "https://maps.googleapis.com/maps/api/staticmap"
 
 
-@router.get("/items/{item_id}/river-map")
-def river_map(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
-    """Proxy a Google Static Maps image showing the item's stored river_path,
-    so the Google API key never reaches the frontend (same convention as
-    every other Google API usage in this app — /geocode, /route-distance).
-
-    Item-scoped (reads the stored details rather than accepting arbitrary
-    path/point query params) so this can't be hammered with arbitrary huge
-    payloads against a billed API by anyone who isn't at least a trip viewer.
-    """
-    require_item_role(session, user, item_id, TripRole.viewer)
-    item = session.get(ItineraryItem, item_id)
-    if not item or item.kind != "river_transfer":
-        raise HTTPException(status_code=404, detail="River transfer item not found")
-    details = item.details or {}
-    path = details.get("river_path") or []
-    if len(path) < 2:
-        raise HTTPException(status_code=404, detail="No river path generated for this item yet")
+def _static_map_png(path: list, start: Optional[str], end: Optional[str], color: str = "0x1f7a6cff") -> Response:
+    """Proxy a Google Static Maps image tracing `path`, so the Google API key
+    never reaches the frontend (same convention as every other Google API
+    usage in this app — /geocode, /route-distance)."""
     if not _STATIC_MAPS_KEY:
         raise HTTPException(status_code=503, detail="Static Maps not configured (set GOOGLE_STATIC_MAPS_API_KEY)")
 
@@ -785,11 +771,9 @@ def river_map(item_id: int, session: Session = Depends(get_session), user: dict 
     params = {
         "size": "640x400",
         "maptype": "roadmap",
-        "path": f"color:0x1f7a6cff|weight:4|enc:{encoded}",
+        "path": f"color:{color}|weight:4|enc:{encoded}",
         "key": _STATIC_MAPS_KEY,
     }
-    start = details.get("start_location")
-    end = details.get("end_location")
     query_parts = [urllib.parse.urlencode(params)]
     if start:
         query_parts.append(urllib.parse.urlencode({"markers": f"color:green|label:A|{start}"}))
@@ -826,19 +810,60 @@ def river_map(item_id: int, session: Session = Depends(get_session), user: dict 
     )
 
 
-@router.get("/items/{item_id}/enrich")
-def enrich_item(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
-    require_item_role(session, user, item_id, TripRole.editor)
+@router.get("/items/{item_id}/river-map")
+def river_map(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Item-scoped (reads the stored details rather than accepting arbitrary
+    path/point query params) so this can't be hammered with arbitrary huge
+    payloads against a billed API by anyone who isn't at least a trip viewer.
+    """
+    require_item_role(session, user, item_id, TripRole.viewer)
+    item = session.get(ItineraryItem, item_id)
+    if not item or item.kind != "river_transfer":
+        raise HTTPException(status_code=404, detail="River transfer item not found")
+    details = item.details or {}
+    path = details.get("river_path") or []
+    if len(path) < 2:
+        raise HTTPException(status_code=404, detail="No river path generated for this item yet")
+    return _static_map_png(path, details.get("start_location"), details.get("end_location"))
+
+
+@router.get("/items/{item_id}/gpx-map")
+def gpx_map(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Proxy a Static Maps image tracing the item's actual recorded/generated
+    GPX track (details.gpx_route) — the literal path, unlike the Directions-
+    embed the card falls back to, which recomputes a route between named
+    waypoints and can diverge from what was actually walked or ridden."""
+    require_item_role(session, user, item_id, TripRole.viewer)
+    item = session.get(ItineraryItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    details = item.details or {}
+    path = details.get("gpx_route") or []
+    if len(path) < 2:
+        raise HTTPException(status_code=404, detail="No GPX route stored for this item yet")
+    return _static_map_png(path, details.get("start_location"), details.get("end_location"), color="0x2563ebff")
+
+
+_ENRICHABLE_KINDS = {ItemKind.accommodation, ItemKind.restaurant, ItemKind.activity, ItemKind.show, ItemKind.tour}
+
+
+@router.get("/stops/{stop_id}/enrich")
+def enrich_place(
+    stop_id: int, kind: ItemKind, name: str, location: str = "",
+    session: Session = Depends(get_session), user: dict = Depends(get_current_user),
+):
+    """Google Places autofill from in-progress form fields — works before the
+    item is saved (no item_id needed), so filling doesn't require a
+    save/reload/fill round trip."""
+    require_stop_role(session, user, stop_id, TripRole.editor)
     if not _PLACES_KEY:
         raise HTTPException(status_code=503, detail="Google Places API not configured")
-    item = session.get(ItineraryItem, item_id)
-    if not item or item.kind not in ("accommodation", "restaurant", "activity"):
-        raise HTTPException(status_code=404, detail="Item not found or not enrichable")
+    if kind not in _ENRICHABLE_KINDS:
+        raise HTTPException(status_code=400, detail="Item kind is not enrichable")
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="Name is required")
 
-    details = item.details or {}
-    query = item.name
-    if details.get("location"):
-        query += " " + details["location"]
+    query = name if not location.strip() else f"{name} {location}"
 
     with httpx.Client(timeout=8) as client:
         # 1. Find the place
@@ -982,6 +1007,16 @@ def _haversine(lat1, lon1, lat2, lon2):
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlam/2)**2
     return R * 2 * math.asin(math.sqrt(a))
 
+def _decimate_coords(coords: list, max_points: int = 300) -> list:
+    """Evenly sample down to at most max_points, always keeping the first and
+    last point, so a long recorded track stays a reasonable Static Maps URL
+    size without distorting its overall shape."""
+    if len(coords) <= max_points:
+        return coords
+    step = (len(coords) - 1) / (max_points - 1)
+    return [coords[round(i * step)] for i in range(max_points)]
+
+
 def _extract_gpx_stats(content: bytes) -> dict:
     try:
         root = ET.fromstring(content)
@@ -997,6 +1032,7 @@ def _extract_gpx_stats(content: bytes) -> dict:
             coords.append((lat, lon, ele))
         if len(coords) < 2:
             return {}
+        gpx_route = [[lat, lon] for lat, lon, _ in _decimate_coords(coords)]
         dist = sum(_haversine(coords[i][0], coords[i][1], coords[i+1][0], coords[i+1][1])
                    for i in range(len(coords)-1))
         gain = loss = 0.0
@@ -1005,7 +1041,7 @@ def _extract_gpx_stats(content: bytes) -> dict:
                 d = coords[i][2] - coords[i-1][2]
                 if d > 0: gain += d
                 else: loss += abs(d)
-        stats = {'gpx_distance_m': round(dist), 'gpx_gain_m': round(gain), 'gpx_loss_m': round(loss)}
+        stats = {'gpx_distance_m': round(dist), 'gpx_gain_m': round(gain), 'gpx_loss_m': round(loss), 'gpx_route': gpx_route}
         if dist >= 1000:
             stats['distance'] = f"{dist/1000:.1f} km"
         else:
@@ -1043,6 +1079,7 @@ async def upload_gpx(item_id: int, file: UploadFile = File(...), session: Sessio
     details['gpx_distance_m'] = stats.get('gpx_distance_m')
     details['gpx_gain_m']     = stats.get('gpx_gain_m')
     details['gpx_loss_m']     = stats.get('gpx_loss_m')
+    details['gpx_route']      = stats.get('gpx_route')
     item.details = details
     session.add(item)
     session.commit()
@@ -1097,6 +1134,7 @@ def route_to_gpx(item_id: int, req: RouteGpxRequest, session: Session = Depends(
     details['gpx_distance_m'] = stats.get('gpx_distance_m')
     details['gpx_gain_m']     = stats.get('gpx_gain_m')
     details['gpx_loss_m']     = stats.get('gpx_loss_m')
+    details['gpx_route']      = stats.get('gpx_route')
     item.details = details
     session.add(item)
     session.commit()

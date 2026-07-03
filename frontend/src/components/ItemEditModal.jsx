@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { createItem, updateItem, enrichItem, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem, generateRiverPath } from '../api.js'
+import { createItem, updateItem, enrichPlace, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem, generateRiverPath } from '../api.js'
 import { setEditing } from '../editState.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
@@ -251,16 +251,16 @@ function PassengerEditor({ details, setDetails, kind }) {
   )
 }
 
-function AutoFillButton({ enriching, enrichMsg, onClick }) {
+function AutoFillButton({ enriching, enrichMsg, onClick, disabled = false }) {
   return (
     <div className="flex flex-col items-end gap-1">
       <button
         type="button"
         onClick={onClick}
-        disabled={enriching}
+        disabled={enriching || disabled}
         style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
         className="shrink-0 px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
-        title="Auto-fill empty fields from Google Places"
+        title={disabled ? 'Enter a name first' : 'Auto-fill empty fields from Google Places'}
       >
         {enriching ? '…' : 'Auto-fill'}
       </button>
@@ -271,7 +271,7 @@ function AutoFillButton({ enriching, enrichMsg, onClick }) {
   )
 }
 
-function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
+function AccommodationForm({ itemId, stopId, core, details, setCore, setDetails }) {
   const [enriching, setEnriching] = useState(false)
   const [enrichMsg, setEnrichMsg] = useState(null)
   const [washing, setWashing] = useState(false)
@@ -280,11 +280,11 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
 
   async function autoFill() {
-    if (enriching) return
+    if (enriching || !core.name.trim()) return
     setEnriching(true)
     setEnrichMsg(null)
     try {
-      const suggestions = await enrichItem(itemId)
+      const suggestions = await enrichPlace(stopId, { kind: 'accommodation', name: core.name, location: details.location })
       let filled = 0
       if (suggestions.location && !details.location) { setD('location', suggestions.location); filled++ }
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
@@ -306,7 +306,7 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
         <div className="flex-1">
           <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Hotel Roma" />
         </div>
-        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
+        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} disabled={!core.name.trim()} />
       </div>
       <Field label="Location / Address" value={d('location')} onChange={v => setD('location', v)} placeholder="Via Nazionale 7, Rome" />
       <div className="grid grid-cols-2 gap-3">
@@ -368,7 +368,7 @@ function AccommodationForm({ itemId, core, details, setCore, setDetails }) {
 
 const BOOKING_STATUS = ['planned', 'booked', 'confirmed']
 
-function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
+function RestaurantForm({ itemId, stopId, core, details, setCore, setDetails }) {
   const [enriching, setEnriching] = useState(false)
   const [enrichMsg, setEnrichMsg] = useState(null)
   const d = key => details[key] ?? ''
@@ -399,11 +399,11 @@ function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
   }
 
   async function autoFill() {
-    if (enriching) return
+    if (enriching || !core.name.trim()) return
     setEnriching(true)
     setEnrichMsg(null)
     try {
-      const suggestions = await enrichItem(itemId)
+      const suggestions = await enrichPlace(stopId, { kind: 'restaurant', name: core.name, location: details.location })
       let filled = 0
       if (suggestions.location && !details.location) { setD('location', suggestions.location); filled++ }
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
@@ -424,7 +424,7 @@ function RestaurantForm({ itemId, core, details, setCore, setDetails }) {
         <div className="flex-1">
           <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Trattoria da Mario" />
         </div>
-        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
+        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} disabled={!core.name.trim()} />
       </div>
       <Field label="Address" value={d('location')} onChange={v => setD('location', v)} placeholder="Via della Croce 3, Rome" />
       <div className="grid grid-cols-2 gap-3">
@@ -584,18 +584,18 @@ function FlightForm({ core, details, setCore, setDetails }) {
   )
 }
 
-function ActivityForm({ itemId, core, details, setCore, setDetails }) {
+function ActivityForm({ itemId, stopId, core, details, setCore, setDetails }) {
   const [enriching, setEnriching] = useState(false)
   const [enrichMsg, setEnrichMsg] = useState(null)
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
 
   async function autoFill() {
-    if (enriching) return
+    if (enriching || !core.name.trim()) return
     setEnriching(true)
     setEnrichMsg(null)
     try {
-      const suggestions = await enrichItem(itemId)
+      const suggestions = await enrichPlace(stopId, { kind: 'activity', name: core.name, location: details.location })
       let filled = 0
       if (suggestions.location && !details.location) { setD('location', suggestions.location); filled++ }
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
@@ -617,7 +617,7 @@ function ActivityForm({ itemId, core, details, setCore, setDetails }) {
         <div className="flex-1">
           <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Activity name" />
         </div>
-        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
+        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} disabled={!core.name.trim()} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Date & time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
@@ -632,17 +632,17 @@ function ActivityForm({ itemId, core, details, setCore, setDetails }) {
   )
 }
 
-function ShowForm({ itemId, core, details, setCore, setDetails }) {
+function ShowForm({ itemId, stopId, core, details, setCore, setDetails }) {
   const [enriching, setEnriching] = useState(false)
   const [enrichMsg, setEnrichMsg] = useState(null)
   const d = key => details[key] ?? ''
   const setD = (key, val) => setDetails(prev => ({ ...prev, [key]: val }))
 
   async function autoFill() {
-    if (enriching) return
+    if (enriching || !core.name.trim()) return
     setEnriching(true); setEnrichMsg(null)
     try {
-      const suggestions = await enrichItem(itemId)
+      const suggestions = await enrichPlace(stopId, { kind: 'show', name: core.name, location: details.location })
       let filled = 0
       if (suggestions.location && !details.location) { setD('location', suggestions.location); filled++ }
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
@@ -664,7 +664,7 @@ function ShowForm({ itemId, core, details, setCore, setDetails }) {
         <div className="flex-1">
           <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Show / performance name" />
         </div>
-        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
+        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} disabled={!core.name.trim()} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Start time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
@@ -914,7 +914,7 @@ function WalkForm({ itemId, core, details, setCore, setDetails }) {
 
 const TOUR_TYPES = ['private', 'small group', 'large group', 'self-guided']
 
-function TourForm({ itemId, core, details, setCore, setDetails }) {
+function TourForm({ itemId, stopId, core, details, setCore, setDetails }) {
   const [enriching, setEnriching] = useState(false)
   const [enrichMsg, setEnrichMsg] = useState(null)
   const d = key => details[key] ?? ''
@@ -922,10 +922,10 @@ function TourForm({ itemId, core, details, setCore, setDetails }) {
   const tourType = d('tour_type')
 
   async function autoFill() {
-    if (enriching) return
+    if (enriching || !core.name.trim()) return
     setEnriching(true); setEnrichMsg(null)
     try {
-      const suggestions = await enrichItem(itemId)
+      const suggestions = await enrichPlace(stopId, { kind: 'tour', name: core.name, location: details.meeting_point })
       let filled = 0
       if (suggestions.location && !details.meeting_point) { setD('meeting_point', suggestions.location); filled++ }
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
@@ -946,7 +946,7 @@ function TourForm({ itemId, core, details, setCore, setDetails }) {
         <div className="flex-1">
           <Field label="Name" value={core.name} onChange={v => setCore(c => ({ ...c, name: v }))} placeholder="Vatican Museums Tour" />
         </div>
-        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} />
+        <AutoFillButton enriching={enriching} enrichMsg={enrichMsg} onClick={autoFill} disabled={!core.name.trim()} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Date & time" type="datetime-local" value={core.scheduled_at ?? ''} onChange={v => setCore(c => ({ ...c, scheduled_at: v || null }))} />
@@ -1797,13 +1797,13 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
             </div>
           )}
           {core.kind === 'accommodation' ? (
-            <AccommodationForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+            <AccommodationForm itemId={item.id} stopId={targetStop ?? item.stop_id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'restaurant' ? (
-            <RestaurantForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+            <RestaurantForm itemId={item.id} stopId={targetStop ?? item.stop_id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'show' ? (
-            <ShowForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+            <ShowForm itemId={item.id} stopId={targetStop ?? item.stop_id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'activity' ? (
-            <ActivityForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+            <ActivityForm itemId={item.id} stopId={targetStop ?? item.stop_id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'walk' ? (
             <WalkForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'transfer' ? (
@@ -1811,7 +1811,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
           ) : core.kind === 'river_transfer' ? (
             <RiverTransferForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'tour' ? (
-            <TourForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+            <TourForm itemId={item.id} stopId={targetStop ?? item.stop_id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'cycling' ? (
             <CyclingForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'rail' ? (
