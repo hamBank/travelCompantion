@@ -1074,8 +1074,8 @@ async def upload_gpx(item_id: int, file: UploadFile = File(...), session: Sessio
     details['original_gpx_name'] = file.filename or 'route.gpx'
     stats = _extract_gpx_stats(content)
     for key in ('distance', 'elevation_gain', 'elevation_loss'):
-        if stats.get(key) and not details.get(key):
-            details[key] = stats[key]
+        if stats.get(key):
+            details[key] = stats[key]  # a (re-)uploaded track — overwrite
     details['gpx_distance_m'] = stats.get('gpx_distance_m')
     details['gpx_gain_m']     = stats.get('gpx_gain_m')
     details['gpx_loss_m']     = stats.get('gpx_loss_m')

@@ -19,6 +19,18 @@ _GPX_WITH_ELEVATION = (
     '</trkseg></trk></gpx>'
 ).encode()
 
+# A longer, hillier track — used to prove a re-upload overwrites the
+# displayed distance/elevation, not just gpx_route.
+_GPX_LONGER_WITH_MORE_ELEVATION = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">'
+    '<trk><name>Hill loop</name><trkseg>'
+    '<trkpt lat="41.9000" lon="12.5000"><ele>10</ele></trkpt>'
+    '<trkpt lat="41.9200" lon="12.5200"><ele>150</ele></trkpt>'
+    '<trkpt lat="41.9400" lon="12.5400"><ele>60</ele></trkpt>'
+    '</trkseg></trk></gpx>'
+).encode()
+
 
 @pytest.fixture(autouse=True)
 def isolate_gpx_dir(monkeypatch, tmp_path):
@@ -72,6 +84,25 @@ def test_upload_gpx_stores_gpx_route(client, session, walk_item):
     assert r.status_code == 200
     route = r.json()["details"]["gpx_route"]
     assert route == [[41.9, 12.5], [41.901, 12.501], [41.902, 12.502]]
+
+
+def test_reuploading_gpx_overwrites_distance_and_elevation(client, session, walk_item):
+    first = client.post(
+        f"/items/{walk_item['id']}/gpx",
+        files={"file": ("trail.gpx", io.BytesIO(_GPX_WITH_ELEVATION), "application/gpx+xml")},
+    ).json()["details"]
+
+    second = client.post(
+        f"/items/{walk_item['id']}/gpx",
+        files={"file": ("hill.gpx", io.BytesIO(_GPX_LONGER_WITH_MORE_ELEVATION), "application/gpx+xml")},
+    ).json()["details"]
+
+    # A second, different upload must overwrite the displayed stats — not
+    # just gpx_route — or a re-import to fix/replace a track would silently
+    # keep showing the old numbers.
+    assert second["distance"] != first["distance"]
+    assert second["elevation_gain"] != first["elevation_gain"]
+    assert second["gpx_route"] != first["gpx_route"]
 
 
 def test_gpx_map_404_when_no_route_stored(client, session, walk_item):
