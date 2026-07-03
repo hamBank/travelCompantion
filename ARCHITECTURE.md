@@ -215,8 +215,8 @@ Pending: GET /pending[?trip_id=N]        (list PendingChanges, includes null-tri
 System:  POST /deploy (GitHub webhook, HMAC) ; GET /health ; GET /currency/convert
 ```
 
-External services: Google Places (`GOOGLE_PLACES_API_KEY`), AviationStack
-(`AVIATIONSTACK_KEY`), open.er-api.com (currency, no key), OpenStreetMap tiles +
+External services: Google Places (`GOOGLE_PLACES_API_KEY`), AeroDataBox
+(`AERODATABOX_KEY`), open.er-api.com (currency, no key), OpenStreetMap tiles +
 OpenTopoData (GPX map/elevation, client-side), Google Sheets OAuth,
 Anthropic Claude API (`ANTHROPIC_API_KEY`, email parsing).
 

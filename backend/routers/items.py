@@ -158,7 +158,6 @@ _PLACES_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 _ROUTES_KEY = os.getenv("GOOGLE_ROUTE_API_KEY", "") or _PLACES_KEY
 _PLACES_BASE = "https://maps.googleapis.com/maps/api/place"
 
-_AVIATIONSTACK_KEY = os.getenv("AVIATIONSTACK_KEY", "")
 _AERODATABOX_KEY   = os.getenv("AERODATABOX_KEY", "")
 
 @router.get("/items/{item_id}/flight-check")
