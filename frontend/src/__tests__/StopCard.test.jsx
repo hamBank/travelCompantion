@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, walkRouteSource } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -72,11 +72,11 @@ describe('itemSortKey', () => {
   })
 })
 
-// ── walkRouteSource ──────────────────────────────────────────────────────────
+// ── routeMapSource ──────────────────────────────────────────────────────────
 
-describe('walkRouteSource', () => {
+describe('routeMapSource', () => {
   it('prefers the recorded GPX track over recomputing directions between waypoints', () => {
-    const result = walkRouteSource({
+    const result = routeMapSource({
       gpx_route: [[41.9, 12.5], [41.901, 12.501]],
       route_points: ['Start St, Rome', 'Mid Point, Rome', 'End Ave, Rome'],
     })
@@ -85,7 +85,7 @@ describe('walkRouteSource', () => {
   })
 
   it('falls back to a Directions embed built from route_points when there is no GPX track', () => {
-    const result = walkRouteSource({
+    const result = routeMapSource({
       route_points: ['Start St, Rome', 'Mid Point, Rome', 'End Ave, Rome'],
     })
     expect(result.hasGpxRoute).toBe(false)
@@ -93,24 +93,38 @@ describe('walkRouteSource', () => {
   })
 
   it('falls back to start/end location strings when there are no route_points either', () => {
-    const result = walkRouteSource({ start_location: 'Rome A', end_location: 'Rome B' })
+    const result = routeMapSource({ start_location: 'Rome A', end_location: 'Rome B' })
     expect(result.hasGpxRoute).toBe(false)
     expect(result.embedUrl).toContain('output=embed')
   })
 
   it('returns no map source at all when details are empty', () => {
-    const result = walkRouteSource({})
+    const result = routeMapSource({})
     expect(result.hasGpxRoute).toBe(false)
     expect(result.embedUrl).toBeNull()
     expect(result.mapsLink).toBeNull()
   })
 
   it('prefers the stored maps_url for the "Open in Maps" link even with a GPX track', () => {
-    const result = walkRouteSource({
+    const result = routeMapSource({
       gpx_route: [[41.9, 12.5], [41.901, 12.501]],
       maps_url: 'https://maps.google.com/original',
     })
     expect(result.mapsLink).toBe('https://maps.google.com/original')
+  })
+
+  it('uses the bicycling dirflg for the fallback embed when mode is "b" (cycling card)', () => {
+    const result = routeMapSource({ start_location: 'Rome A', end_location: 'Rome B' }, 'b')
+    expect(result.embedUrl).toContain('dirflg=b')
+  })
+
+  it('still prefers a GPX track over Directions for cycling too', () => {
+    const result = routeMapSource({
+      gpx_route: [[41.9, 12.5], [41.901, 12.501]],
+      start_location: 'Rome A', end_location: 'Rome B',
+    }, 'b')
+    expect(result.hasGpxRoute).toBe(true)
+    expect(result.embedUrl).toBeNull()
   })
 })
 

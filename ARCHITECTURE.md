@@ -131,8 +131,8 @@ status, parse_error?, item_count`
 - **walk/cycling:** `start_location, end_location, distance, elevation_gain,
   elevation_loss, duration, difficulty, surface_type, maps_url, gpx_filename,
   original_gpx_name, gpx_route` (decimated [lat,lng] track from the uploaded/
-  generated GPX — the walk card traces this via `/items/{id}/gpx-map` instead
-  of a Directions-embed when present), walk also `description`
+  generated GPX — both cards trace this via `/items/{id}/gpx-map` instead of
+  a Directions-embed when present), walk also `description`
 - **transfer:** `start_location, end_location, vehicle_type, distance, duration,
   provider, booking_ref, maps_url`
 - **tour:** `tour_type, meeting_point, duration, operator, booking_ref, cost_per_person`

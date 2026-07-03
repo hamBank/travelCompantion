@@ -917,19 +917,20 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-// Which map source a walk card should use. A recorded/generated GPX track
-// (gpx_route) is the literal path, so it's preferred over recomputing a
-// Directions-API route between named waypoints — which can diverge from
-// what was actually walked. embedUrl is only built as a fallback when there's
-// no GPX track to trace.
-export function walkRouteSource(details) {
+// Which map source a walk/cycling card should use. A recorded/generated GPX
+// track (gpx_route) is the literal path, so it's preferred over recomputing a
+// Directions-API route between named waypoints — which can diverge from what
+// was actually walked or ridden. embedUrl is only built as a fallback when
+// there's no GPX track to trace. `mode` is the Google dirflg for that
+// fallback embed ('w' walking, 'b' bicycling).
+export function routeMapSource(details, mode = 'w') {
   const d = details ?? {}
   const hasGpxRoute = d.gpx_route?.length >= 2
   // Full ordered route (incl. intermediate waypoints) when available, else start/end.
   const routePts = d.route_points?.length >= 2 ? d.route_points : [d.start_location, d.end_location].filter(Boolean)
-  const embedUrl = !hasGpxRoute && routePts.length ? buildMapsUrl(routePts, 'w', true) : null
+  const embedUrl = !hasGpxRoute && routePts.length ? buildMapsUrl(routePts, mode, true) : null
   // Link for "Open in Maps" — prefer the stored original URL (preserves all waypoints)
-  const mapsLink = d.maps_url || (routePts.length ? buildMapsUrl(routePts, 'w', false) : null)
+  const mapsLink = d.maps_url || (routePts.length ? buildMapsUrl(routePts, mode, false) : null)
   return { hasGpxRoute, embedUrl, mapsLink }
 }
 
@@ -944,7 +945,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
   const timeStr = fmtDayTime(item.scheduled_at)
   const hideTime = useHideTime()
 
-  const { hasGpxRoute, embedUrl, mapsLink } = walkRouteSource(d)
+  const { hasGpxRoute, embedUrl, mapsLink } = routeMapSource(d)
 
   useEffect(() => {
     if (!showMap || !hasGpxRoute) return
@@ -1389,48 +1390,120 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [showMap, setShowMap] = useState(false)
+  const [gpxMapUrl, setGpxMapUrl] = useState(null)
   const d = item.details ?? {}
   const timeStr = fmtDayTime(item.scheduled_at)
   const hideTime = useHideTime()
 
+  const { hasGpxRoute, embedUrl, mapsLink } = routeMapSource(d, 'b')
+
+  useEffect(() => {
+    if (!showMap || !hasGpxRoute) return
+    let objectUrl = null
+    let cancelled = false
+    fetchGpxMapBlob(item.id).then(blob => {
+      if (cancelled || !blob) return
+      objectUrl = URL.createObjectURL(blob)
+      setGpxMapUrl(objectUrl)
+    })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      setGpxMapUrl(null)
+    }
+  }, [showMap, hasGpxRoute, item.id])
+
   return (
     <>
-      <div className="relative group">
-        <button
-          onClick={() => setShowDetail(true)}
-          className="w-full text-left hover:opacity-80 transition-opacity"
-          style={{
-            background: 'color-mix(in srgb, var(--kind-cycling) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-cycling) 35%, transparent)',
-            borderRadius: '0.5rem',
-            padding: '0.75rem',
-          }}
-        >
-          <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="🚴" color="var(--kind-cycling)" setItem={setItem} onItemSaved={onItemSaved} />
-            <div className="flex-1 min-w-0 space-y-1">
-              <div className="font-medium text-sm truncate">{item.name}</div>
-              {(d.start_location || d.end_location) && (
-                <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">
-                  {[d.start_location, d.end_location].filter(Boolean).join(' → ')}
-                </div>
-              )}
-              {item.cost && !isFullyPaid(item) && (
-                <div className="text-xs"><CostDisplay item={item} compact /></div>
-              )}
-              {(!hideTime && timeStr || d.distance || d.elevation_gain || d.elevation_loss || d.surface_type) && (
-                <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
-                  {!hideTime && timeStr && <span style={{ color: 'var(--text-muted)' }}>{timeStr}</span>}
-                  {d.distance       && <span>{d.distance}</span>}
-                  {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
-                  {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
-                  {d.surface_type   && <span className="capitalize">{d.surface_type}</span>}
-                </div>
-              )}
+      <div
+        style={{
+          background: 'color-mix(in srgb, var(--kind-cycling) 6%, var(--surface-2))',
+          border: '1px solid color-mix(in srgb, var(--kind-cycling) 35%, transparent)',
+          borderRadius: '0.5rem',
+          overflow: 'hidden',
+        }}
+      >
+        <div className="relative group">
+          <button
+            onClick={() => setShowDetail(true)}
+            className="w-full text-left hover:opacity-80 transition-opacity"
+            style={{ padding: '0.75rem' }}
+          >
+            <div className="flex items-start gap-2.5">
+              <CardIcon item={item} icon="🚴" color="var(--kind-cycling)" setItem={setItem} onItemSaved={onItemSaved} />
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="font-medium text-sm truncate">{item.name}</div>
+                {(d.start_location || d.end_location) && (
+                  <div style={{ color: 'var(--text-muted)' }} className="text-xs truncate">
+                    {[d.start_location, d.end_location].filter(Boolean).join(' → ')}
+                  </div>
+                )}
+                {item.cost && !isFullyPaid(item) && (
+                  <div className="text-xs"><CostDisplay item={item} compact /></div>
+                )}
+                {(!hideTime && timeStr || d.distance || d.elevation_gain || d.elevation_loss || d.surface_type) && (
+                  <div style={{ color: 'var(--text-faint)' }} className="text-xs flex gap-3 flex-wrap">
+                    {!hideTime && timeStr && <span style={{ color: 'var(--text-muted)' }}>{timeStr}</span>}
+                    {d.distance       && <span>{d.distance}</span>}
+                    {d.elevation_gain && <span>↑ {d.elevation_gain}</span>}
+                    {d.elevation_loss && <span>↓ {d.elevation_loss}</span>}
+                    {d.surface_type   && <span className="capitalize">{d.surface_type}</span>}
+                  </div>
+                )}
+              </div>
             </div>
+          </button>
+          <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
+        </div>
+
+        {/* Map controls — only when we have location or GPX-track data */}
+        {(embedUrl || hasGpxRoute) && (
+          <div
+            className="flex items-center gap-3 px-3 py-1.5"
+            style={{ borderTop: '1px solid color-mix(in srgb, var(--kind-cycling) 20%, transparent)' }}
+          >
+            <button
+              onClick={() => setShowMap(m => !m)}
+              style={{ color: 'var(--kind-cycling)' }}
+              className="text-xs hover:opacity-70 transition-opacity"
+            >
+              {showMap ? '▲ Hide map' : '▼ Show map'}
+            </button>
+            {mapsLink && (
+              <a
+                href={mapsLink}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: 'var(--text-faint)' }}
+                className="text-xs hover:opacity-70 transition-opacity ml-auto"
+              >
+                Open in Maps ↗
+              </a>
+            )}
           </div>
-        </button>
-        <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
+        )}
+
+        {/* Traced GPX track (the literal recorded/generated path) when available */}
+        {showMap && hasGpxRoute && (
+          gpxMapUrl
+            ? <img src={gpxMapUrl} alt="Recorded route"
+                style={{ display: 'block', width: '100%', height: '280px', objectFit: 'contain', background: 'transparent' }} />
+            : <div style={{ color: 'var(--text-faint)' }} className="text-xs px-3 py-2">Loading map…</div>
+        )}
+
+        {/* Embedded Directions map — fallback when no GPX track is stored */}
+        {showMap && embedUrl && (
+          <iframe
+            src={embedUrl}
+            title="Route map"
+            width="100%"
+            height="280"
+            style={{ border: 'none', display: 'block' }}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        )}
       </div>
       {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
