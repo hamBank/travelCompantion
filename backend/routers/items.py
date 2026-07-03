@@ -247,6 +247,18 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
     dep_local = dep.get("scheduledTime", {}).get("local")
     arr_local = arr.get("scheduledTime", {}).get("local")
 
+    # AeroDataBox reports the great-circle distance between the actual airport
+    # coordinates — real-world flown distance, not a line we'd draw ourselves
+    # between two guessed points. Prefer miles to match this app's other
+    # flight-distance entry (placeholder "5,759 mi"); fall back to km.
+    gcd = live.get("greatCircleDistance") or {}
+    if gcd.get("mile") is not None:
+        distance_live = f"{round(gcd['mile']):,} mi"
+    elif gcd.get("km") is not None:
+        distance_live = f"{round(gcd['km']):,} km"
+    else:
+        distance_live = None
+
     results = [c for c in [
         chk("Origin",       "origin",          d.get("origin"),          dep.get("airport", {}).get("iata")),
         chk("Destination",  "destination",     d.get("destination"),     arr.get("airport", {}).get("iata")),
@@ -260,6 +272,7 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
         chk("Arr terminal", "arrive_terminal", d.get("arrive_terminal"), arr.get("terminal")),
         chk("Arr gate",     "arrive_gate",     d.get("arrive_gate"),     arr.get("gate")),
         chk("Arr timezone", "arrive_tz",       d.get("arrive_tz"),       tz_from_local(arr_local)),
+        chk("Distance",     "distance",        d.get("distance"),        distance_live),
     ] if c]
 
     return {

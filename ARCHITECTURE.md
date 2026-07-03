@@ -197,7 +197,7 @@ Trips:   GET/POST /trips/ ; GET/PATCH/DELETE /trips/{id} ; GET /trips/{id}/timel
 Stops:   GET/POST /trips/{id}/stops ; GET/PATCH/DELETE /stops/{id} ; PATCH /stops/{id}/reorder
 Items:   GET/POST /stops/{id}/items ; GET/PATCH/DELETE /items/{id}
          GET /stops/{id}/enrich?kind=&name=&location=  (Google Places autofill; works pre-save)
-         GET /items/{id}/flight-check    (AviationStack)
+         GET /items/{id}/flight-check    (AeroDataBox; also checks Distance via greatCircleDistance)
          GET /items/{id}/rail-check
          POST/GET /items/{id}/gpx        (upload / download GPX)
          GET /items/{id}/gpx-map         (Static Maps image tracing details.gpx_route)
