@@ -77,4 +77,21 @@ describe('PackingList', () => {
     expect(moveSelects.length).toBeGreaterThan(0)
     for (const sel of moveSelects) expect(sel).toHaveClass('edit-btn')
   })
+
+  it('only reserves the counts/shared columns\' fixed width on wider screens, and floors the name width, so long rows don\'t squeeze the item name to invisible on a phone', async () => {
+    // Regression: those columns used to reserve 5rem/4.5rem via inline style
+    // unconditionally, even empty — on a narrow viewport that alone could
+    // squeeze the name span (flex-1, was min-w-0) down to zero width.
+    render(<PackingList tripId={9} userEmail="me@x.com" canEdit />)
+    const name = await screen.findByText('Socks')
+    expect(name).toHaveClass('min-w-[2.5rem]')
+    expect(name).not.toHaveClass('min-w-0')
+
+    const countsCol = name.nextElementSibling
+    expect(countsCol.className).toContain('sm:w-20')
+    expect(countsCol.className).not.toMatch(/(?<!sm:)\bw-20\b/)
+
+    const sharedCol = countsCol.nextElementSibling
+    expect(sharedCol.className).toContain(`sm:w-[4.5rem]`)
+  })
 })

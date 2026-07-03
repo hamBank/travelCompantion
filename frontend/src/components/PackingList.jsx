@@ -225,15 +225,17 @@ function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, onEdit, canEdi
       className="flex items-center gap-2 py-1.5 group"
       style={shared ? { borderLeft: '2px solid var(--accent)', paddingLeft: '0.5rem' } : { paddingLeft: 'calc(0.5rem + 2px)' }}
     >
-      <input type="checkbox" checked={packed} onChange={() => onToggle(it)} />
+      <input type="checkbox" checked={packed} onChange={() => onToggle(it)} className="shrink-0" />
       <span
-        className="text-sm flex-1 min-w-0 truncate"
+        className="text-sm flex-1 min-w-[2.5rem] truncate"
         style={{ color: packed ? 'var(--text-faint)' : 'var(--text)' }}
       >
         {it.name}
       </span>
-      {/* Fixed-width counts column so steppers line up across rows */}
-      <div className="shrink-0 flex items-center justify-end gap-1" style={{ width: '5rem', color: 'var(--text-faint)' }}>
+      {/* Fixed-width counts column so steppers line up across rows — but only
+          reserved on wider screens; on a phone that empty reservation was
+          eating enough width to squeeze the name above down to nothing. */}
+      <div className="shrink-0 flex items-center justify-end gap-1 sm:w-20" style={{ color: 'var(--text-faint)' }}>
         {it.quantity > 1 && (
           <>
             <button onClick={() => onStep(it, -1)} className="text-xs hover:opacity-70 px-1" title="Pack one less">−</button>
@@ -242,8 +244,8 @@ function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, onEdit, canEdi
           </>
         )}
       </div>
-      {/* Fixed-width shared column to the right of the counts */}
-      <div className="shrink-0 flex justify-start" style={{ width: '4.5rem' }}>
+      {/* Fixed-width shared column to the right of the counts — same mobile caveat as above */}
+      <div className="shrink-0 flex justify-start sm:w-[4.5rem]">
         {shared && (
           <span style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', fontSize: '0.6rem' }}
                 className="px-1.5 py-0.5 rounded uppercase tracking-wide font-medium">Shared</span>
