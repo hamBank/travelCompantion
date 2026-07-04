@@ -37,7 +37,7 @@ export default function TripTimeline({ tripId, onStats, onStops, filterDate = nu
   useEffect(() => {
     if (!tripId) return
 
-    function doRefresh() { pendingRefresh.current = false; load(true) }
+    function doRefresh() { pendingRefresh.current = false; load({ background: true }) }
 
     // When edit modal closes, flush any queued refresh
     const unsub = onEditChange(editing => {
@@ -87,25 +87,28 @@ export default function TripTimeline({ tripId, onStats, onStops, filterDate = nu
     }
   }, [timeline, onStats, onStops])
 
-  async function load(silent = false) {
-    if (!silent) setLoading(true)
+  // `background` skips the loading spinner (keeps the current view on screen
+  // while fresh data comes in). `remount` force-recreates every StopCard via a
+  // key bump — needed when data changed on another device (stale local edit
+  // state could otherwise linger), but NOT wanted for a save that originated
+  // in this same tab: that would reset each StopCard's open/closed state and
+  // jump the scroll position, which is exactly the jarring reload this is
+  // meant to avoid.
+  async function load({ background = false, remount = background } = {}) {
+    if (!background) setLoading(true)
     try {
-      const tl = silent
-        ? await getTripTimeline(tripId, { sync: Date.now() })  // cache-bust query param for silent refreshes
+      const tl = background
+        ? await getTripTimeline(tripId, { sync: Date.now() })  // cache-bust query param for background refreshes
         : await getTripTimeline(tripId)
       setTimeline(tl)
-
-      // Force component remount for silent refreshes by changing key
-      if (silent) {
-        setRenderKey(k => k + 1)
-      }
+      if (remount) setRenderKey(k => k + 1)
       // Legacy accommodation backfill — editors only (timeline also lazy-migrates).
       if (canEdit(tl.role)) { try { await backfillAccommodations(tripId) } catch (_) {} }
       try { const w = await getDateWarnings(tripId); setWarnings(w.warnings ?? []) } catch (_) {}
       try { const p = await getPending(tripId); setPendingCount(p.length) } catch (_) {}
     }
-    catch (e) { if (!silent) setError(e.message) }
-    finally { if (!silent) setLoading(false) }
+    catch (e) { if (!background) setError(e.message) }
+    finally { if (!background) setLoading(false) }
   }
 
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading timeline…</p>
@@ -267,7 +270,8 @@ export default function TripTimeline({ tripId, onStats, onStops, filterDate = nu
 
         <div className="space-y-1.5">
           {visibleStops.map((stop, i) => (
-            <StopCard key={`${stop.id}-${renderKey}`} stop={stop} index={i} onUpdate={load}
+            <StopCard key={`${stop.id}-${renderKey}`} stop={stop} index={i}
+              onUpdate={() => load({ background: true, remount: false })}
               inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames}
               inboundConnection={inboundConnections[stop.id] ?? null}
               skipDays={skipDaysByStop[stop.id] ?? null} />
