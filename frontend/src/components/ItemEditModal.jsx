@@ -1733,7 +1733,6 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
     <div
       className="fixed inset-0 flex items-center justify-center z-50 p-4"
       style={{ background: 'var(--overlay)' }}
-      onClick={e => e.target === e.currentTarget && requestClose()}
     >
       <div
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border)', maxHeight: '90vh' }}

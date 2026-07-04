@@ -22,6 +22,22 @@ import ItemEditModal from '../components/ItemEditModal.jsx'
 
 beforeEach(() => vi.clearAllMocks())
 
+describe('ItemEditModal backdrop click', () => {
+  it('does not close the modal when clicking outside it', () => {
+    const onClose = vi.fn()
+    const { container } = render(
+      <ItemEditModal
+        item={{ stop_id: 7, kind: 'activity', name: '', details: {} }}
+        isNew
+        onSave={() => {}}
+        onClose={onClose}
+      />
+    )
+    fireEvent.click(container.querySelector('.fixed.inset-0'))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
 describe('ItemEditModal restaurant Auto-fill', () => {
   it('disables Auto-fill when the name is blank, regardless of saved state', () => {
     render(
