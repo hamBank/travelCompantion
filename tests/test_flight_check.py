@@ -25,11 +25,15 @@ def flight_item(client):
 
 
 class FakeResponse:
-    def __init__(self, data, status_code=200):
+    def __init__(self, data=None, status_code=200, text=None, reason_phrase="Error"):
         self._data = data
         self.status_code = status_code
         self.is_success = 200 <= status_code < 300
+        self.text = text if text is not None else ""
+        self.reason_phrase = reason_phrase
     def json(self):
+        if self._data is None:
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
         return self._data
 
 
@@ -169,3 +173,67 @@ def test_delay_is_none_when_no_revision_has_been_issued(client, session, flight_
     assert body["departure_delay"] is None
     assert body["arrival_delay_min"] is None
     assert body["arrival_delay"] is None
+
+
+# ── error handling: non-JSON / non-2xx responses shouldn't say "unreachable" ──
+
+def _fake_client(response):
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, headers=None):
+            return response
+    return FakeClient
+
+
+def test_rate_limited_html_error_page_is_not_reported_as_unreachable(client, session, flight_item, monkeypatch):
+    # Regression: RapidAPI's 429/403 error pages are plain text/HTML, not
+    # JSON — the old code called r.json() unconditionally and let the
+    # resulting JSONDecodeError get caught and mislabeled as "Flight API
+    # unreachable", hiding the real (rate limit / auth) cause.
+    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    resp = FakeResponse(status_code=429, text="Too Many Requests", reason_phrase="Too Many Requests")
+    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client(resp))
+
+    r = client.get(f"/items/{flight_item['id']}/flight-check")
+    assert r.status_code == 502
+    assert "unreachable" not in r.json()["detail"].lower()
+    assert "Too Many Requests" in r.json()["detail"]
+
+
+def test_non_2xx_json_error_body_still_extracts_message(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    resp = FakeResponse({"message": "Invalid API key"}, status_code=403)
+    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client(resp))
+
+    r = client.get(f"/items/{flight_item['id']}/flight-check")
+    assert r.status_code == 502
+    assert r.json()["detail"] == "Invalid API key"
+
+
+def test_2xx_response_with_unparseable_body_gives_a_clear_message(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    resp = FakeResponse(status_code=200)  # data=None → .json() raises, like the old bug's real case
+    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client(resp))
+
+    r = client.get(f"/items/{flight_item['id']}/flight-check")
+    assert r.status_code == 502
+    assert "unreachable" not in r.json()["detail"].lower()
+    assert "non-JSON" in r.json()["detail"]
+
+
+def test_genuine_connection_failure_is_still_reported_as_unreachable(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+
+    class FailingClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, headers=None):
+            raise ConnectionError("Connection refused")
+    monkeypatch.setattr(items_mod.httpx, "Client", FailingClient)
+
+    r = client.get(f"/items/{flight_item['id']}/flight-check")
+    assert r.status_code == 502
+    assert "unreachable" in r.json()["detail"].lower()

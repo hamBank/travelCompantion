@@ -188,15 +188,27 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
                     "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com",
                 },
             )
-        body = r.json()
     except Exception as e:
         record_external_call("aerodatabox", ok=False, error=str(e))
         raise HTTPException(status_code=502, detail=f"Flight API unreachable: {e}")
 
+    # Non-2xx responses (rate limit, auth, quota) often come back as an HTML/
+    # plain-text page rather than JSON — parse the body defensively so that
+    # case doesn't get misreported as "unreachable" via a JSON-decode error.
     if not r.is_success:
-        msg = body.get("message") or body.get("detail") or f"API returned {r.status_code}"
+        try:
+            err_body = r.json()
+            msg = err_body.get("message") or err_body.get("detail") or f"API returned {r.status_code}"
+        except ValueError:
+            msg = (r.text or "").strip()[:300] or f"API returned {r.status_code} {r.reason_phrase}"
         record_external_call("aerodatabox", ok=False, error=msg)
         raise HTTPException(status_code=502, detail=msg)
+
+    try:
+        body = r.json()
+    except ValueError as e:
+        record_external_call("aerodatabox", ok=False, error=str(e))
+        raise HTTPException(status_code=502, detail=f"AeroDataBox returned an unexpected (non-JSON) response: {e}")
     record_external_call("aerodatabox", ok=True)
 
     flights = body if isinstance(body, list) else body.get("data", [])
