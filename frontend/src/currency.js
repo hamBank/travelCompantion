@@ -41,15 +41,16 @@ export function parseCost(str) {
     }
   }
 
-  // Try ISO code suffix: "120 USD", "450EUR"
-  const isoSuffix = s.match(/^([\d,.\s]+)\s*([A-Z]{3})$/i)
+  // Try ISO code suffix, anywhere in the string (so labels like "Total: 654.66 SGD" still parse):
+  // "120 USD", "450EUR", "Total: 654.66 SGD"
+  const isoSuffix = s.match(/([\d,]+(?:\.\d+)?)\s*([A-Z]{3})\s*$/i)
   if (isoSuffix) {
     const num = extractNumber(isoSuffix[1])
     if (num !== null) return { amount: num, code: isoSuffix[2].toUpperCase() }
   }
 
-  // Try ISO code prefix: "USD 120"
-  const isoPrefix = s.match(/^([A-Z]{3})\s*([\d,.]+)/i)
+  // Try ISO code prefix, anywhere in the string: "USD 120", "Total: USD 120"
+  const isoPrefix = s.match(/\b([A-Z]{3})\s*([\d,]+(?:\.\d+)?)/i)
   if (isoPrefix) {
     const num = extractNumber(isoPrefix[2])
     if (num !== null) return { amount: num, code: isoPrefix[1].toUpperCase() }

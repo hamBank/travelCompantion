@@ -20,6 +20,12 @@ describe('parseCost', () => {
     expect(parseCost(null)).toBeNull()
     expect(parseCost('free')).toBeNull()
   })
+  it('parses an ISO code suffix preceded by a label', () => {
+    expect(parseCost('Total: 654.66 SGD')).toEqual({ amount: 654.66, code: 'SGD' })
+  })
+  it('parses an ISO code prefix preceded by a label', () => {
+    expect(parseCost('Total: USD 120')).toEqual({ amount: 120, code: 'USD' })
+  })
 })
 
 describe('formatCurrencyAmount', () => {
