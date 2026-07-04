@@ -155,6 +155,15 @@ function FlightCheckPanel({ item, onItemUpdate }) {
               Arr {result.arrival_delay}
             </span>
           )}
+          {!result.departure_delay && !result.arrival_delay && (
+            <span
+              className="text-xs italic"
+              style={{ color: 'var(--text-faint)' }}
+              title="Airlines usually only publish delay estimates in the day or so before departure"
+            >
+              No delay data yet — check again closer to departure
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {mismatches.length > 0
