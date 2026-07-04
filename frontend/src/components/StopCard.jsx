@@ -362,7 +362,7 @@ function LayoverBadge({ duration, location }) {
   )
 }
 
-export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false, inboundConnection = null, skipDays = null, onItemAdded }) {
+export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false, inboundConnection = null, skipDays = null, onItemAdded, forceOpen = false }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
@@ -389,8 +389,10 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const segments = weatherSegments(stop, items)
   const segmentsKey = JSON.stringify(segments)
   // In headerless (frameless) mode every stop's content is always shown, so we
-  // must fetch regardless of `open`; in framed mode fetch when expanded.
-  const contentVisible = hideFrame || open
+  // must fetch regardless of `open`; in framed mode fetch when expanded, or
+  // when forced open (e.g. Today view — a collapsed stop there would hide the
+  // one thing the single-day view exists to show).
+  const contentVisible = hideFrame || open || forceOpen
   useEffect(() => {
     if (!contentVisible) return
     const hasBase = wxStart && wxEnd && (stop.lat || stop.lng || wxQuery)
@@ -551,10 +553,10 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
         >
           {status}
         </button>
-        <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem' }}>{open ? '▲' : '▼'}</span>
+        <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem' }}>{contentVisible ? '▲' : '▼'}</span>
       </button>
 
-      {open && (
+      {contentVisible && (
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
           <InboundBanner inbound={inbound} onUpdate={onUpdate} />
           {inboundConnection && <LayoverBadge {...inboundConnection} />}

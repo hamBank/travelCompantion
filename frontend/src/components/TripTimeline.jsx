@@ -122,7 +122,9 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
       if (isEditing() || getCurrentModal()) return
       const tag = document.activeElement?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      navigateDay(e.key === 'j' ? 'next' : 'prev')
+      // Deliberately the reverse of the item-detail-modal mapping (j=next,
+      // k=prev there) — k moves to the next day, j to the previous.
+      navigateDay(e.key === 'k' ? 'next' : 'prev')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -366,7 +368,8 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
               onUpdate={() => load({ background: true, remount: false })}
               inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames}
               inboundConnection={inboundConnections[stop.id] ?? null}
-              skipDays={skipDaysByStop[stop.id] ?? null} />
+              skipDays={skipDaysByStop[stop.id] ?? null}
+              forceOpen={!!activeDay} />
           ))}
         </div>
 
