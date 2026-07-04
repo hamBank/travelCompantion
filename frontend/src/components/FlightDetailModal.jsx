@@ -49,7 +49,10 @@ const STATUS_COLOR = {
 // "EnRoute" → "En Route", "CanceledUncertain" → "Canceled Uncertain"
 export const formatStatus = s => s ? s.replace(/([a-z])([A-Z])/g, '$1 $2') : s
 
-function FlightCheckPanel({ item, onItemUpdate }) {
+// Shared state for the flight check: the trigger button lives in the modal
+// header (next to ✕) while the results panel renders in the body, so the
+// state is lifted here and passed to both.
+function useFlightCheck(item, onItemUpdate) {
   const [state, setState]     = useState('idle')  // idle | loading | done | error
   const [result, setResult]   = useState(null)
   const [errMsg, setErrMsg]   = useState(null)
@@ -87,6 +90,14 @@ function FlightCheckPanel({ item, onItemUpdate }) {
       setApplying(null)
     }
   }
+
+  return { state, result, errMsg, applying, run, applyField }
+}
+
+// Header-sized trigger: the button plus the transient loading/error/not-found
+// states. Once results arrive they render in the body via FlightCheckResults.
+function FlightCheckTrigger({ check }) {
+  const { state, result, errMsg, run } = check
 
   if (state === 'idle') {
     return (
@@ -126,6 +137,13 @@ function FlightCheckPanel({ item, onItemUpdate }) {
     )
   }
 
+  return null  // results showing in the body — nothing needed up here
+}
+
+function FlightCheckResults({ check }) {
+  const { state, result, applying, run, applyField } = check
+  if (state !== 'done' || !result?.found) return null
+
   const statusColor = STATUS_COLOR[result.flight_status] ?? 'var(--text-muted)'
   const mismatches = result.checks.filter(c => c.match === false)
 
@@ -136,7 +154,7 @@ function FlightCheckPanel({ item, onItemUpdate }) {
         border: `1px solid ${mismatches.length ? 'color-mix(in srgb, var(--warning) 40%, transparent)' : 'color-mix(in srgb, var(--success) 40%, transparent)'}`,
         borderRadius: '0.5rem',
       }}
-      className="overflow-hidden"
+      className="mb-4 overflow-hidden"
     >
       {/* panel header */}
       <div className="flex items-center justify-between px-3 py-2" style={mismatches.length > 0 ? { borderBottom: '1px solid var(--border)' } : undefined}>
@@ -269,6 +287,8 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
     dirtyRef.current = true
   }
 
+  const check = useFlightCheck(item, onItemUpdate)
+
   function requestClose() {
     if (dirtyRef.current) onSave?.(itemRef.current)
     onClose()
@@ -324,6 +344,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {d.flight_number && <FlightCheckTrigger check={check} />}
             <button
               onClick={requestClose}
               style={{ color: 'var(--text-faint)' }}
@@ -375,11 +396,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             )
           })()}
 
-          {d.flight_number && (
-            <div className="mb-4">
-              <FlightCheckPanel item={item} onItemUpdate={onItemUpdate} />
-            </div>
-          )}
+          {d.flight_number && <FlightCheckResults check={check} />}
 
           <div className="space-y-0">
             <Row label="Status"        value={d.flight_status} />
