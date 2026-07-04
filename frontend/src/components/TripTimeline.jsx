@@ -11,6 +11,7 @@ import { useShowInbound, useHideStopFrames } from '../settings.js'
 import { fmtDay } from '../dates.js'
 import { getCurrentModal } from '../modalNav.js'
 import { isEditing, onEditChange } from '../editState.js'
+import { useOnline } from '../online.js'
 
 export default function TripTimeline({ tripId, onStats, onStops }) {
   const [timeline, setTimeline] = useState(null)
@@ -28,6 +29,7 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   const pendingRefresh = useRef(false)  // queued while edit modal is open
   const showInbound = useShowInbound()
   const hideStopFrames = useHideStopFrames()
+  const online = useOnline()
 
   useEffect(() => { load() }, [tripId])
 
@@ -191,6 +193,9 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
     <>
     <RoleContext.Provider value={timeline.role ?? 'owner'}>
       <div>
+        {!online && (
+          <p style={{ color: 'var(--text-faint)' }} className="text-xs mb-3">Showing cached data</p>
+        )}
         {editable && warnings.length > 0 && !dismissed && (
           <div
             style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)' }}

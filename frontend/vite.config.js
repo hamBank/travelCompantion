@@ -57,9 +57,21 @@ export default defineConfig({
             // NetworkFirst for all GET API reads: fresh data when online,
             // cached copy when offline. Times out after 4s to surface cached
             // data quickly on slow connections.
+            //
+            // /auth/config, /pending, and /health are included alongside the
+            // itinerary paths so a cold start while offline (app killed,
+            // airplane mode, reopen) can get past the auth gate and the
+            // pending-imports badge without ever reaching the network — a
+            // trip's cached timeline is useless if boot fails before it.
+            //
+            // ?sync= busted URLs (TripTimeline's silent-refresh cache-buster)
+            // are excluded: each one is a unique key that would otherwise fill
+            // this cache's 100-entry cap with one-off entries and evict the
+            // plain (non-busted) URL that offline loads actually look up.
             urlPattern: ({ request, url }) =>
               request.method === 'GET' &&
-              ['/trips', '/stops', '/items', '/import'].some(p => url.pathname.startsWith(p)),
+              !url.searchParams.has('sync') &&
+              ['/trips', '/stops', '/items', '/import', '/auth', '/pending', '/health'].some(p => url.pathname.startsWith(p)),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-reads',
@@ -67,6 +79,24 @@ export default defineConfig({
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 30 * 24 * 60 * 60,
+              },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            // Weather forecasts — NetworkFirst like the API reads above, but in
+            // its own cache with a short max age: forecasts stale out within a
+            // day and shouldn't compete with (and evict) itinerary entries in
+            // api-reads, which has a much longer intended lifetime.
+            urlPattern: ({ request, url }) =>
+              request.method === 'GET' && url.pathname.startsWith('/weather'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'weather',
+              networkTimeoutSeconds: 4,
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 24 * 60 * 60,
               },
               cacheableResponse: { statuses: [200] },
             },

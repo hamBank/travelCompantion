@@ -14,22 +14,11 @@ import { getAuthConfig, exportTripPdf, getPending } from './api.js'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale, KindFilterContext } from './settings.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
+import { useOnline } from './online.js'
 import ItemEditModal from './components/ItemEditModal.jsx'
 
 // Apply saved font scale before first render
 applyFontScale()
-
-function useOnline() {
-  const [online, setOnline] = useState(navigator.onLine)
-  useEffect(() => {
-    const on = () => setOnline(true)
-    const off = () => setOnline(false)
-    window.addEventListener('online', on)
-    window.addEventListener('offline', off)
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
-  }, [])
-  return online
-}
 
 function useTheme() {
   const [theme, setThemeState] = useState(
