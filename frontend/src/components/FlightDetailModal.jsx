@@ -136,10 +136,10 @@ function FlightCheckPanel({ item, onItemUpdate }) {
         border: `1px solid ${mismatches.length ? 'color-mix(in srgb, var(--warning) 40%, transparent)' : 'color-mix(in srgb, var(--success) 40%, transparent)'}`,
         borderRadius: '0.5rem',
       }}
-      className="mt-4 overflow-hidden"
+      className="overflow-hidden"
     >
       {/* panel header */}
-      <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between px-3 py-2" style={mismatches.length > 0 ? { borderBottom: '1px solid var(--border)' } : undefined}>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Live check · {result.flight_iata}</span>
           {result.flight_status && (
@@ -174,42 +174,45 @@ function FlightCheckPanel({ item, onItemUpdate }) {
         </div>
       </div>
 
-      {/* check rows */}
-      <div className="divide-y" style={{ '--tw-divide-color': 'var(--border)' }}>
-        {result.checks.map(c => (
-          <div key={c.field} className="flex items-start gap-2 px-3 py-2 text-xs">
-            <span style={{ color: 'var(--text-faint)', width: '6rem', flexShrink: 0 }} className="uppercase tracking-wide pt-0.5">
-              {c.field}
-            </span>
-            <div className="flex-1 min-w-0 space-y-0.5">
-              {c.stored
-                ? <div style={{ color: 'var(--text-muted)' }}>Stored: {c.stored}</div>
-                : <div style={{ color: 'var(--text-faint)' }} className="italic">Not stored</div>
-              }
-              <div style={{ color: c.match === false ? 'var(--warning)' : c.match === true ? 'var(--success)' : 'var(--text)' }}>
-                Live: {c.live}
+      {/* check rows — only when there's something to act on; a clean "All
+          match" header alone is enough when nothing's actually mismatched */}
+      {mismatches.length > 0 && (
+        <div className="divide-y" style={{ '--tw-divide-color': 'var(--border)' }}>
+          {result.checks.map(c => (
+            <div key={c.field} className="flex items-start gap-2 px-3 py-2 text-xs">
+              <span style={{ color: 'var(--text-faint)', width: '6rem', flexShrink: 0 }} className="uppercase tracking-wide pt-0.5">
+                {c.field}
+              </span>
+              <div className="flex-1 min-w-0 space-y-0.5">
+                {c.stored
+                  ? <div style={{ color: 'var(--text-muted)' }}>Stored: {c.stored}</div>
+                  : <div style={{ color: 'var(--text-faint)' }} className="italic">Not stored</div>
+                }
+                <div style={{ color: c.match === false ? 'var(--warning)' : c.match === true ? 'var(--success)' : 'var(--text)' }}>
+                  Live: {c.live}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {c.match !== true && (
+                  <button
+                    onClick={() => applyField(c)}
+                    disabled={applying === c.key}
+                    style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
+                    className="px-1.5 py-0.5 rounded text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
+                  >
+                    {applying === c.key ? '…' : 'Apply'}
+                  </button>
+                )}
+                <span className="text-base leading-none">
+                  {c.match === true  && <span style={{ color: 'var(--success)' }}>✓</span>}
+                  {c.match === false && <span style={{ color: 'var(--warning)' }}>!</span>}
+                  {c.match === null  && <span style={{ color: 'var(--text-faint)' }}>–</span>}
+                </span>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {c.match !== true && (
-                <button
-                  onClick={() => applyField(c)}
-                  disabled={applying === c.key}
-                  style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
-                  className="px-1.5 py-0.5 rounded text-xs font-medium disabled:opacity-40 hover:opacity-80 transition-opacity"
-                >
-                  {applying === c.key ? '…' : 'Apply'}
-                </button>
-              )}
-              <span className="text-base leading-none">
-                {c.match === true  && <span style={{ color: 'var(--success)' }}>✓</span>}
-                {c.match === false && <span style={{ color: 'var(--warning)' }}>!</span>}
-                {c.match === null  && <span style={{ color: 'var(--text-faint)' }}>–</span>}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -321,7 +324,6 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {d.flight_number && <FlightCheckPanel item={item} onItemUpdate={onItemUpdate} />}
             <button
               onClick={requestClose}
               style={{ color: 'var(--text-faint)' }}
@@ -372,6 +374,12 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
               </div>
             )
           })()}
+
+          {d.flight_number && (
+            <div className="mb-4">
+              <FlightCheckPanel item={item} onItemUpdate={onItemUpdate} />
+            </div>
+          )}
 
           <div className="space-y-0">
             <Row label="Status"        value={d.flight_status} />
