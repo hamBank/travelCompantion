@@ -20,6 +20,11 @@ describe('parseCost', () => {
     expect(parseCost(null)).toBeNull()
     expect(parseCost('free')).toBeNull()
   })
+  it('does not mistake a non-currency 3-letter label for an ISO code', () => {
+    expect(parseCost('~9 min')).toBeNull()
+    expect(parseCost('~22 min')).toBeNull()
+    expect(parseCost('Est 50')).toBeNull()
+  })
   it('parses an ISO code suffix preceded by a label', () => {
     expect(parseCost('Total: 654.66 SGD')).toEqual({ amount: 654.66, code: 'SGD' })
   })

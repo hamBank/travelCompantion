@@ -24,6 +24,14 @@ const SYMBOL_MAP = [
   ['zł',  'PLN'], ['R',   'ZAR'],
 ]
 
+// All 3-letter ISO codes this app knows how to display — used to validate
+// suffix/prefix matches so an unrelated label word (e.g. "min", "est") that
+// happens to be 3 letters next to a number is never mistaken for a currency.
+const VALID_ISO_CODES = new Set([
+  ...SYMBOL_MAP.map(([, code]) => code).filter(code => code.length === 3),
+  'ILS',
+])
+
 /**
  * Parse a free-text cost string into { amount, code }.
  * Returns null if no recognisable currency + numeric amount is found.
@@ -44,14 +52,14 @@ export function parseCost(str) {
   // Try ISO code suffix, anywhere in the string (so labels like "Total: 654.66 SGD" still parse):
   // "120 USD", "450EUR", "Total: 654.66 SGD"
   const isoSuffix = s.match(/([\d,]+(?:\.\d+)?)\s*([A-Z]{3})\s*$/i)
-  if (isoSuffix) {
+  if (isoSuffix && VALID_ISO_CODES.has(isoSuffix[2].toUpperCase())) {
     const num = extractNumber(isoSuffix[1])
     if (num !== null) return { amount: num, code: isoSuffix[2].toUpperCase() }
   }
 
   // Try ISO code prefix, anywhere in the string: "USD 120", "Total: USD 120"
   const isoPrefix = s.match(/\b([A-Z]{3})\s*([\d,]+(?:\.\d+)?)/i)
-  if (isoPrefix) {
+  if (isoPrefix && VALID_ISO_CODES.has(isoPrefix[1].toUpperCase())) {
     const num = extractNumber(isoPrefix[2])
     if (num !== null) return { amount: num, code: isoPrefix[1].toUpperCase() }
   }
