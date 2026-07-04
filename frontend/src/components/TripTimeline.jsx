@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending } from '../api.js'
-import StopCard, { computeCrossStopLayover, itemDateKey } from './StopCard.jsx'
+import StopCard, { computeCrossStopLayover, itemDateKey, itemOccursOn } from './StopCard.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import RailDetailModal from './RailDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
@@ -13,7 +13,7 @@ import { getCurrentModal } from '../modalNav.js'
 import { isEditing, onEditChange } from '../editState.js'
 import { useOnline } from '../online.js'
 
-export default function TripTimeline({ tripId, onStats, onStops }) {
+export default function TripTimeline({ tripId, onStats, onStops, filterDate = null, onClearFilterDate }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -111,6 +111,33 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading timeline…</p>
   if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
   if (!timeline?.stops?.length) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">No stops yet.</p>
+
+  // Today mode: only stops with at least one today-occurring item, each
+  // trimmed to just those items. Cross-stop computations below (layovers,
+  // j/k nav, day-banner skip tracking) deliberately keep using the
+  // UNfiltered timeline.stops — only the rendered StopCard list is filtered.
+  const visibleStops = filterDate
+    ? timeline.stops
+        .map(s => ({ ...s, items: s.items.filter(i => itemOccursOn(i, filterDate)) }))
+        .filter(s => s.items.length > 0)
+    : timeline.stops
+
+  if (filterDate && visibleStops.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <p style={{ color: 'var(--text-faint)' }} className="text-sm mb-2">Nothing scheduled today.</p>
+        {onClearFilterDate && (
+          <button
+            onClick={onClearFilterDate}
+            style={{ color: 'var(--accent)' }}
+            className="text-xs font-medium hover:opacity-70 transition-opacity underline"
+          >
+            Show full timeline
+          </button>
+        )}
+      </div>
+    )
+  }
 
   // Build global sorted item list for cross-stop j/k navigation
   const allItems = timeline.stops.flatMap(s =>
@@ -239,7 +266,7 @@ export default function TripTimeline({ tripId, onStats, onStops }) {
         )}
 
         <div className="space-y-1.5">
-          {timeline.stops.map((stop, i) => (
+          {visibleStops.map((stop, i) => (
             <StopCard key={`${stop.id}-${renderKey}`} stop={stop} index={i} onUpdate={load}
               inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames}
               inboundConnection={inboundConnections[stop.id] ?? null}

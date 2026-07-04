@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -53,6 +53,55 @@ describe('itemDateKey', () => {
   it('returns null when no datetime', () => {
     const item = { kind: 'note', details: {}, scheduled_at: null }
     expect(itemDateKey(item)).toBeNull()
+  })
+})
+
+// ── itemOccursOn ─────────────────────────────────────────────────────────────
+
+describe('itemOccursOn', () => {
+  const TODAY = '2026-08-21'
+
+  it('activity: true on its own date, false on a different date', () => {
+    const item = { kind: 'activity', details: {}, scheduled_at: '2026-08-21T14:30' }
+    expect(itemOccursOn(item, TODAY)).toBe(true)
+    expect(itemOccursOn(item, '2026-08-22')).toBe(false)
+  })
+
+  it('flight: counts if departing OR arriving on the date (a redeye)', () => {
+    const redeye = { kind: 'flight', details: { depart_time: '2026-08-20T23:50', arrive_time: '2026-08-21T06:10' } }
+    expect(itemOccursOn(redeye, TODAY)).toBe(true)
+
+    const departsToday = { kind: 'flight', details: { depart_time: '2026-08-21T09:00', arrive_time: '2026-08-21T11:00' } }
+    expect(itemOccursOn(departsToday, TODAY)).toBe(true)
+
+    const unrelated = { kind: 'flight', details: { depart_time: '2026-08-19T09:00', arrive_time: '2026-08-19T11:00' } }
+    expect(itemOccursOn(unrelated, TODAY)).toBe(false)
+  })
+
+  it('accommodation: true when the date falls within checkin..checkout inclusive', () => {
+    const stay = { kind: 'accommodation', details: { checkin: '2026-08-19T15:00', checkout: '2026-08-23T11:00' } }
+    expect(itemOccursOn(stay, TODAY)).toBe(true)
+    expect(itemOccursOn(stay, '2026-08-19')).toBe(true)   // checkin day
+    expect(itemOccursOn(stay, '2026-08-23')).toBe(true)   // checkout day
+    expect(itemOccursOn(stay, '2026-08-24')).toBe(false)  // after checkout
+    expect(itemOccursOn(stay, '2026-08-18')).toBe(false)  // before checkin
+  })
+
+  it('accommodation: checkin-only (no checkout) only matches its own date', () => {
+    const stay = { kind: 'accommodation', details: { checkin: '2026-08-21T15:00' } }
+    expect(itemOccursOn(stay, TODAY)).toBe(true)
+    expect(itemOccursOn(stay, '2026-08-22')).toBe(false)
+  })
+
+  it('dateless items are excluded, except pinned important notes', () => {
+    const dateless = { kind: 'activity', details: {}, scheduled_at: null }
+    expect(itemOccursOn(dateless, TODAY)).toBe(false)
+
+    const importantNote = { kind: 'note', details: { important: true }, scheduled_at: null }
+    expect(itemOccursOn(importantNote, TODAY)).toBe(true)
+
+    const plainNote = { kind: 'note', details: {}, scheduled_at: null }
+    expect(itemOccursOn(plainNote, TODAY)).toBe(false)
   })
 })
 

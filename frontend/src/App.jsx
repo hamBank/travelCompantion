@@ -48,6 +48,7 @@ function AppShell({ user, onLogout }) {
   const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [kindFilter, setKindFilter] = useState('')
   const [packing, setPacking] = useState(false)
+  const [today, setToday] = useState(false)
   const online = useOnline()
 
   function refreshPending() {
@@ -73,8 +74,8 @@ function AppShell({ user, onLogout }) {
 
   const [userChoseList, setUserChoseList] = useState(false)
 
-  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setPacking(false); setStats(null); setTripStops([]); setKindFilter('') }
-  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter('') }
+  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(false); setStats(null); setTripStops([]); setKindFilter('') }
+  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter('') }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
@@ -150,7 +151,11 @@ function AppShell({ user, onLogout }) {
                   trip={selectedTrip}
                   onTripRenamed={name => setSelectedTrip(t => ({ ...t, name }))}
                 />
-              : <TripTimeline tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops} />
+              : <TripTimeline
+                  tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
+                  filterDate={today ? new Date().toLocaleDateString('sv-SE') : null}
+                  onClearFilterDate={() => setToday(false)}
+                />
           : <TripList onOpen={openTrip} skipAutoOpen={userChoseList} />
         }
       </main>
@@ -167,7 +172,7 @@ function AppShell({ user, onLogout }) {
               + Add item
             </button>
           )}
-          {selectedTrip && online && !packing && canEdit(selectedTrip.role) && (
+          {selectedTrip && online && !packing && !today && canEdit(selectedTrip.role) && (
             <button
               onClick={() => setEditing(e => !e)}
               style={{
@@ -181,9 +186,23 @@ function AppShell({ user, onLogout }) {
               {editing ? 'View' : 'Edit'}
             </button>
           )}
+          {selectedTrip && online && !packing && (
+            <button
+              onClick={() => { setToday(t => !t); setEditing(false) }}
+              style={{
+                background: today ? 'var(--accent)' : 'transparent',
+                color: today ? 'var(--accent-fg)' : 'var(--text-muted)',
+                border: '1px solid',
+                borderColor: today ? 'var(--accent)' : 'var(--border)',
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              📅 {today ? 'All days' : 'Today'}
+            </button>
+          )}
           {selectedTrip && online && (
             <button
-              onClick={() => { setPacking(p => !p); setEditing(false) }}
+              onClick={() => { setPacking(p => !p); setEditing(false); setToday(false) }}
               style={{
                 background: packing ? 'var(--accent)' : 'transparent',
                 color: packing ? 'var(--accent-fg)' : 'var(--text-muted)',

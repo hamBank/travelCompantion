@@ -67,6 +67,31 @@ export function itemDateKey(item) {
   return String(dt).split('T')[0]
 }
 
+// Does this item occur on the given local date ("YYYY-MM-DD")? Used by the
+// Today view (App.jsx / TripTimeline.jsx) to show only what's relevant right
+// now, across every stop.
+export function itemOccursOn(item, dateKey) {
+  const d = item.details || {}
+  if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') {
+    const depDate = d.depart_time ? String(d.depart_time).split('T')[0] : null
+    const arrDate = d.arrive_time ? String(d.arrive_time).split('T')[0] : null
+    // A redeye departing yesterday but arriving today still counts as today.
+    return depDate === dateKey || arrDate === dateKey
+  }
+  if (item.kind === 'accommodation') {
+    if (!d.checkin) return false
+    const checkinDate = String(d.checkin).split('T')[0]
+    const checkoutDate = d.checkout ? String(d.checkout).split('T')[0] : checkinDate
+    // ISO date strings order lexicographically, so plain string comparison works.
+    return checkinDate <= dateKey && dateKey <= checkoutDate
+  }
+  if (!item.scheduled_at) {
+    // Dateless items are excluded, except pinned important notes.
+    return item.kind === 'note' && !!d.important
+  }
+  return String(item.scheduled_at).split('T')[0] === dateKey
+}
+
 export function itemTimeStr(item) {
   let dt
   if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') dt = item.details?.depart_time
