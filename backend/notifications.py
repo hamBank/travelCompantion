@@ -4,6 +4,7 @@ lead time before other-transport (rail/transfer) departure.
 Idempotent via NotificationLog — running any number of times per real-world
 event sends at most one notification per (item, kind).
 """
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -11,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
+from . import flight_live
 from .models import ItineraryItem, ItemKind, Stop, TripMembership, PushSubscription, NotificationLog
 from .push import send_push, PushSendError
 
@@ -27,6 +29,18 @@ CHECKIN_HEADS_UP_MINUTES = 20
 # If a trigger time has already passed by more than this, skip it rather than
 # firing a stale/misleading notification (e.g. after a cron outage).
 GRACE_HOURS = 6
+
+# ── Live flight delay/cancellation/gate-change alerts ─────────────────────────
+# Only poll flights departing within this many hours (AeroDataBox's free tier
+# is 600 units/month — this keeps the ceiling to roughly WINDOW/POLL_MINUTES*60
+# calls per tracked flight, e.g. 24h/45min ≈ 32).
+FLIGHT_ALERT_WINDOW_HOURS = float(os.getenv("FLIGHT_ALERT_WINDOW_HOURS", "24"))
+# Minimum gap between polls of the same flight.
+FLIGHT_ALERT_POLL_MINUTES = float(os.getenv("FLIGHT_ALERT_POLL_MINUTES", "45"))
+# Delay-alert escalation thresholds (minutes). Only the largest bucket the
+# current delay clears is sent, so a steady 45m delay doesn't re-alert every
+# poll, but a growing delay (45m → 70m) still gets a fresh, more urgent alert.
+DELAY_BUCKETS_MIN = [15, 30, 60, 120, 240]
 
 
 def _parse_checkin_window(s) -> Optional[float]:
@@ -176,3 +190,118 @@ def send_due_notifications(session: Session, *, now: Optional[datetime] = None, 
         processed += 1
     session.commit()
     return processed
+
+
+def _flight_label(details: dict, item: ItineraryItem) -> str:
+    number = details.get("flight_number") or ""
+    origin = details.get("origin") or ""
+    destination = details.get("destination") or ""
+    route = f"{origin}→{destination}" if origin and destination else (destination or origin)
+    label = f"{number} {route}".strip()
+    return label or item.name or "Flight"
+
+
+def send_flight_alerts(session: Session, *, now: Optional[datetime] = None,
+                       sender=send_push, fetch=None) -> int:
+    """Poll near-departure flights for live status and push an alert on
+    cancellation, a delay-bucket escalation, or a gate change. Idempotent via
+    NotificationLog like send_due_notifications — kinds are "flight_cancel",
+    "flight_delay:{bucket}", and "flight_gate:{gate}". Returns alerts sent.
+
+    `fetch` defaults to flight_live.fetch_flight; injectable for tests.
+    """
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    fetch = fetch or flight_live.fetch_flight
+    window = timedelta(hours=FLIGHT_ALERT_WINDOW_HOURS)
+    poll_gap = timedelta(minutes=FLIGHT_ALERT_POLL_MINUTES)
+
+    flights = session.exec(
+        select(ItineraryItem).where(ItineraryItem.kind == ItemKind.flight)
+    ).all()
+    logged = {(row.item_id, row.kind) for row in session.exec(select(NotificationLog)).all()}
+
+    sent = 0
+    for item in flights:
+        d = item.details or {}
+        flight_iata = (d.get("flight_number") or "").replace(" ", "").upper()
+        depart_local = d.get("depart_time")
+        if not flight_iata or not depart_local:
+            continue
+
+        depart = _local_to_utc(depart_local, d.get("depart_tz"))
+        if not depart or not (now < depart <= now + window):
+            continue  # no depart time, already departed, or outside the alert window
+
+        last_poll_s = d.get("flight_poll_at")
+        if last_poll_s:
+            try:
+                if now - datetime.fromisoformat(last_poll_s) < poll_gap:
+                    continue  # polled recently enough
+            except ValueError:
+                pass  # malformed stored value — treat as never polled
+
+        # Record the poll attempt before calling out, so a failing lookup is
+        # still throttled (an outage shouldn't retry every cron tick).
+        d = {**d, "flight_poll_at": now.isoformat(timespec="minutes")}
+        item.details = d
+        session.add(item)
+        session.commit()
+
+        try:
+            live = fetch(flight_iata, str(depart_local)[:10])
+        except flight_live.FlightLiveError:
+            continue  # one flight's failure shouldn't stop the run
+        if live is None:
+            continue
+
+        stop = session.get(Stop, item.stop_id)
+        if not stop:
+            continue
+        recipients = _recipients(session, stop.trip_id)
+        label = _flight_label(d, item)
+
+        def _send(kind: str, title: str, body: str) -> None:
+            nonlocal sent
+            if (item.id, kind) in logged:
+                return
+            payload = {"title": title, "body": body, "url": "/", "urgent": True}
+            for sub in recipients:
+                info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
+                try:
+                    sender(info, payload, urgent=True)
+                except PushSendError as e:
+                    if e.expired:
+                        session.delete(sub)
+            session.add(NotificationLog(item_id=item.id, kind=kind))
+            logged.add((item.id, kind))
+            sent += 1
+
+        status = live.get("status")
+        dep_movement = live.get("departure") or {}
+
+        if status in ("Canceled", "CanceledUncertain"):
+            _send("flight_cancel", "Flight cancelled", f"{label} has been cancelled")
+        else:
+            dep_delay = flight_live.delay_min(dep_movement)
+            if dep_delay is not None:
+                applicable = [b for b in DELAY_BUCKETS_MIN if b <= dep_delay]
+                if applicable:
+                    bucket = max(applicable)
+                    revised_local = (dep_movement.get("revisedTime") or {}).get("local")
+                    when = revised_local[11:16] if revised_local else "?"
+                    _send(
+                        f"flight_delay:{bucket}", "Flight delayed",
+                        f"{label} now departing {when} ({flight_live.delay_str(dep_delay)})",
+                    )
+
+            live_gate = dep_movement.get("gate")
+            stored_gate = d.get("origin_gate")
+            if live_gate and stored_gate and str(live_gate) != str(stored_gate):
+                _send(
+                    f"flight_gate:{live_gate}", "Gate changed",
+                    f"Gate changed: {stored_gate} → {live_gate}",
+                )
+
+        session.commit()
+
+    return sent

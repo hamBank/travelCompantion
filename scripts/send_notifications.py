@@ -12,13 +12,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlmodel import Session  # noqa: E402
 from backend.database import engine  # noqa: E402
-from backend.notifications import send_due_notifications  # noqa: E402
+from backend.notifications import send_due_notifications, send_flight_alerts  # noqa: E402
+from backend import flight_live  # noqa: E402
 
 
 def main() -> None:
     with Session(engine) as session:
         n = send_due_notifications(session)
-    print(f"{datetime.now(timezone.utc):%F %T} processed {n} notification trigger{'' if n == 1 else 's'}")
+        # Live flight polling needs AeroDataBox configured — skip quietly on
+        # servers that don't have it set, rather than erroring the cron.
+        a = send_flight_alerts(session) if flight_live.AERODATABOX_KEY else 0
+    print(
+        f"{datetime.now(timezone.utc):%F %T} processed {n} notification trigger{'' if n == 1 else 's'}"
+        f", {a} flight alert{'' if a == 1 else 's'}"
+    )
 
 
 if __name__ == "__main__":

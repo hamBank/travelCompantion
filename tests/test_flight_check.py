@@ -6,7 +6,7 @@ the flight's Distance field can be checked/applied the same way as terminal,
 gate, etc. — instead of only ever being hand-typed.
 """
 import pytest
-from backend.routers import items as items_mod
+from backend import flight_live
 
 
 @pytest.fixture
@@ -59,9 +59,9 @@ def _fake_client_returning(flight_data):
 
 
 def test_distance_check_prefers_miles(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     live = _live_flight(greatCircleDistance={"meter": 9266400, "km": 9266.4, "mile": 5758.7, "nm": 5003.5})
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
     assert r.status_code == 200
@@ -74,9 +74,9 @@ def test_distance_check_prefers_miles(client, session, flight_item, monkeypatch)
 
 
 def test_distance_check_falls_back_to_km_when_miles_missing(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     live = _live_flight(greatCircleDistance={"km": 9266.4})
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
     dist = next(c for c in r.json()["checks"] if c["key"] == "distance")
@@ -84,19 +84,19 @@ def test_distance_check_falls_back_to_km_when_miles_missing(client, session, fli
 
 
 def test_distance_check_omitted_when_api_has_no_distance_data(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     live = _live_flight()  # no greatCircleDistance key at all
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
     assert all(c["key"] != "distance" for c in r.json()["checks"])
 
 
 def test_distance_check_flags_mismatch_against_a_differently_typed_stored_value(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     client.patch(f"/items/{flight_item['id']}", json={"details": {**flight_item["details"], "distance": "5000 mi"}})
     live = _live_flight(greatCircleDistance={"mile": 5758.7})
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
     dist = next(c for c in r.json()["checks"] if c["key"] == "distance")
@@ -107,13 +107,13 @@ def test_distance_check_flags_mismatch_against_a_differently_typed_stored_value(
 # ── departure/arrival delay ───────────────────────────────────────────────────
 
 def test_delay_reports_late_departure_in_minutes(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     live = _live_flight(departure={
         "airport": {"iata": "SIN"},
         "scheduledTime": {"utc": "2026-07-24 13:35"},
         "revisedTime": {"utc": "2026-07-24 14:20"},
     })
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
 
     body = client.get(f"/items/{flight_item['id']}/flight-check").json()
     assert body["departure_delay_min"] == 45
@@ -121,13 +121,13 @@ def test_delay_reports_late_departure_in_minutes(client, session, flight_item, m
 
 
 def test_delay_reports_early_arrival_as_negative_minutes(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     live = _live_flight(arrival={
         "airport": {"iata": "HEL"},
         "scheduledTime": {"utc": "2026-07-25 03:00"},
         "revisedTime": {"utc": "2026-07-25 02:15"},
     })
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
 
     body = client.get(f"/items/{flight_item['id']}/flight-check").json()
     assert body["arrival_delay_min"] == -45
@@ -135,13 +135,13 @@ def test_delay_reports_early_arrival_as_negative_minutes(client, session, flight
 
 
 def test_delay_formats_hours_and_minutes(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     live = _live_flight(departure={
         "airport": {"iata": "SIN"},
         "scheduledTime": {"utc": "2026-07-24 13:35"},
         "revisedTime": {"utc": "2026-07-24 15:05"},
     })
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
 
     body = client.get(f"/items/{flight_item['id']}/flight-check").json()
     assert body["departure_delay_min"] == 90
@@ -149,13 +149,13 @@ def test_delay_formats_hours_and_minutes(client, session, flight_item, monkeypat
 
 
 def test_delay_reports_on_time_when_revised_matches_scheduled(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     live = _live_flight(departure={
         "airport": {"iata": "SIN"},
         "scheduledTime": {"utc": "2026-07-24 13:35"},
         "revisedTime": {"utc": "2026-07-24 13:35"},
     })
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
 
     body = client.get(f"/items/{flight_item['id']}/flight-check").json()
     assert body["departure_delay_min"] == 0
@@ -163,10 +163,10 @@ def test_delay_reports_on_time_when_revised_matches_scheduled(client, session, f
 
 
 def test_delay_is_none_when_no_revision_has_been_issued(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     # _live_flight's default departure/arrival have scheduledTime but no revisedTime
     live = _live_flight()
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
 
     body = client.get(f"/items/{flight_item['id']}/flight-check").json()
     assert body["departure_delay_min"] is None
@@ -192,9 +192,9 @@ def test_rate_limited_html_error_page_is_not_reported_as_unreachable(client, ses
     # JSON — the old code called r.json() unconditionally and let the
     # resulting JSONDecodeError get caught and mislabeled as "Flight API
     # unreachable", hiding the real (rate limit / auth) cause.
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     resp = FakeResponse(status_code=429, text="Too Many Requests", reason_phrase="Too Many Requests")
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client(resp))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client(resp))
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
     assert r.status_code == 502
@@ -203,9 +203,9 @@ def test_rate_limited_html_error_page_is_not_reported_as_unreachable(client, ses
 
 
 def test_non_2xx_json_error_body_still_extracts_message(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     resp = FakeResponse({"message": "Invalid API key"}, status_code=403)
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client(resp))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client(resp))
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
     assert r.status_code == 502
@@ -213,9 +213,9 @@ def test_non_2xx_json_error_body_still_extracts_message(client, session, flight_
 
 
 def test_2xx_response_with_unparseable_body_gives_a_clear_message(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
     resp = FakeResponse(status_code=200)  # data=None → .json() raises, like the old bug's real case
-    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client(resp))
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client(resp))
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
     assert r.status_code == 502
@@ -224,7 +224,7 @@ def test_2xx_response_with_unparseable_body_gives_a_clear_message(client, sessio
 
 
 def test_genuine_connection_failure_is_still_reported_as_unreachable(client, session, flight_item, monkeypatch):
-    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
 
     class FailingClient:
         def __init__(self, *a, **k): pass
@@ -232,7 +232,7 @@ def test_genuine_connection_failure_is_still_reported_as_unreachable(client, ses
         def __exit__(self, *a): return False
         def get(self, url, headers=None):
             raise ConnectionError("Connection refused")
-    monkeypatch.setattr(items_mod.httpx, "Client", FailingClient)
+    monkeypatch.setattr(flight_live.httpx, "Client", FailingClient)
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
     assert r.status_code == 502

@@ -34,6 +34,11 @@ backend/
   sheets.py          # Google Sheets OAuth fetch
   documents.py       # Claude-based email/document parsing → PendingChange builder
   permissions.py     # require_trip_role / require_stop_role / require_item_role
+  flight_live.py     # AeroDataBox flight-by-number fetch + delay_min/delay_str —
+                     #   shared by items.py's flight-check and notifications.py's
+                     #   live delay/cancel/gate-change alerts (no circular import)
+  notifications.py  # push triggers: check-in window, departure lead time, and
+                     #   (send_flight_alerts) live-polled delay/cancel/gate alerts
   routers/
     trips.py         # /trips CRUD + /trips/{id}/timeline
     stops.py         # /trips/{id}/stops, /stops/{id} CRUD + reorder
@@ -46,6 +51,8 @@ backend/
   static/            # COMPILED frontend output (committed) — served at /
 mail_ingest.py                   # stdlib-only stdin→POST shim (run by postfix pipe)
 scripts/
+  send_notifications.py         # cron entry point: send_due_notifications +
+                                 #   send_flight_alerts (skipped if AERODATABOX_KEY unset)
   mail_ingest_wrapper.sh         # sources .env, execs mail_ingest.py; run as travelcomp user
 frontend/
   src/
