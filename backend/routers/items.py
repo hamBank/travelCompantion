@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 from sqlalchemy import nullslast, func
 from sqlalchemy.orm.attributes import flag_modified
 from typing import List, Optional
+from datetime import datetime
 import os, io, math, time, re, json, hashlib, urllib.request, urllib.error, urllib.parse, xml.etree.ElementTree as ET, httpx
 from pydantic import BaseModel
 from ..database import get_session
@@ -230,6 +231,27 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
         sign, h, mins = m.group(1), int(m.group(2)), int(m.group(3))
         return f"GMT{sign}{h}" if mins == 0 else f"GMT{sign}{h}:{m.group(3)}"
 
+    def delay_min(movement):
+        # Minutes late (+) or early (-) vs the last published schedule, from
+        # AeroDataBox's scheduledTime vs revisedTime UTC timestamps for this
+        # movement. None when no revision has been issued (still on schedule).
+        sched   = (movement.get("scheduledTime") or {}).get("utc")
+        revised = (movement.get("revisedTime") or {}).get("utc")
+        if not sched or not revised:
+            return None
+        try:
+            fmt = "%Y-%m-%d %H:%M"
+            return round((datetime.strptime(revised[:16], fmt) - datetime.strptime(sched[:16], fmt)).total_seconds() / 60)
+        except (ValueError, TypeError):
+            return None
+
+    def delay_str(mins):
+        if mins is None:
+            return None
+        h, m = divmod(abs(mins), 60)
+        dur = (f"{h}h" + (f" {m}m" if m else "")) if h else f"{m}m"
+        return f"{dur} early" if mins < 0 else (f"{dur} late" if mins > 0 else "On time")
+
     def chk(label, key, stored, live_val, update_val=None):
         if live_val is None:
             return None
@@ -274,10 +296,17 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
         chk("Distance",     "distance",        d.get("distance"),        distance_live),
     ] if c]
 
+    dep_delay_min = delay_min(dep)
+    arr_delay_min = delay_min(arr)
+
     return {
         "found": True,
         "flight_iata": flight_iata,
         "flight_status": live.get("status"),
+        "departure_delay_min": dep_delay_min,
+        "departure_delay": delay_str(dep_delay_min),
+        "arrival_delay_min": arr_delay_min,
+        "arrival_delay": delay_str(arr_delay_min),
         "checks": results,
     }
 

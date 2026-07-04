@@ -30,14 +30,24 @@ function Row({ label, value }) {
   )
 }
 
+// AeroDataBox's FlightStatus enum (PascalCase) — see check_flight in items.py
 const STATUS_COLOR = {
-  scheduled: 'var(--status-confirmed)',
-  active:    'var(--success)',
-  landed:    'var(--success)',
-  cancelled: 'var(--error)',
-  incident:  'var(--error)',
-  diverted:  'var(--warning)',
+  Unknown:           'var(--text-muted)',
+  Expected:          'var(--status-confirmed)',
+  EnRoute:           'var(--success)',
+  CheckIn:           'var(--status-confirmed)',
+  Boarding:          'var(--success)',
+  GateClosed:        'var(--warning)',
+  Departed:          'var(--success)',
+  Delayed:           'var(--warning)',
+  Approaching:       'var(--success)',
+  Arrived:           'var(--success)',
+  Canceled:          'var(--error)',
+  Diverted:          'var(--warning)',
+  CanceledUncertain: 'var(--warning)',
 }
+// "EnRoute" → "En Route", "CanceledUncertain" → "Canceled Uncertain"
+export const formatStatus = s => s ? s.replace(/([a-z])([A-Z])/g, '$1 $2') : s
 
 function FlightCheckPanel({ item, onItemUpdate }) {
   const [state, setState]     = useState('idle')  // idle | loading | done | error
@@ -130,10 +140,20 @@ function FlightCheckPanel({ item, onItemUpdate }) {
     >
       {/* panel header */}
       <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Live check · {result.flight_iata}</span>
           {result.flight_status && (
-            <span className="text-xs capitalize font-medium" style={{ color: statusColor }}>{result.flight_status}</span>
+            <span className="text-xs font-medium" style={{ color: statusColor }}>{formatStatus(result.flight_status)}</span>
+          )}
+          {result.departure_delay && (
+            <span className="text-xs" style={{ color: result.departure_delay_min > 0 ? 'var(--warning)' : 'var(--text-faint)' }}>
+              Dep {result.departure_delay}
+            </span>
+          )}
+          {result.arrival_delay && (
+            <span className="text-xs" style={{ color: result.arrival_delay_min > 0 ? 'var(--warning)' : 'var(--text-faint)' }}>
+              Arr {result.arrival_delay}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2">

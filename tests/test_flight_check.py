@@ -35,10 +35,10 @@ class FakeResponse:
 
 def _live_flight(**overrides):
     base = {
-        "departure": {"airport": {"iata": "SIN"}, "scheduledTime": {"local": "2026-07-24 21:35+08:00"}},
-        "arrival":   {"airport": {"iata": "HEL"}, "scheduledTime": {"local": "2026-07-25 06:00+03:00"}},
+        "departure": {"airport": {"iata": "SIN"}, "scheduledTime": {"local": "2026-07-24 21:35+08:00", "utc": "2026-07-24 13:35"}},
+        "arrival":   {"airport": {"iata": "HEL"}, "scheduledTime": {"local": "2026-07-25 06:00+03:00", "utc": "2026-07-25 03:00"}},
         "airline":   {"name": "Finnair"},
-        "status": "scheduled",
+        "status": "Expected",
     }
     base.update(overrides)
     return base
@@ -98,3 +98,74 @@ def test_distance_check_flags_mismatch_against_a_differently_typed_stored_value(
     dist = next(c for c in r.json()["checks"] if c["key"] == "distance")
     assert dist["match"] is False
     assert dist["update_value"] == "5,759 mi"
+
+
+# ── departure/arrival delay ───────────────────────────────────────────────────
+
+def test_delay_reports_late_departure_in_minutes(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    live = _live_flight(departure={
+        "airport": {"iata": "SIN"},
+        "scheduledTime": {"utc": "2026-07-24 13:35"},
+        "revisedTime": {"utc": "2026-07-24 14:20"},
+    })
+    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    assert body["departure_delay_min"] == 45
+    assert body["departure_delay"] == "45m late"
+
+
+def test_delay_reports_early_arrival_as_negative_minutes(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    live = _live_flight(arrival={
+        "airport": {"iata": "HEL"},
+        "scheduledTime": {"utc": "2026-07-25 03:00"},
+        "revisedTime": {"utc": "2026-07-25 02:15"},
+    })
+    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    assert body["arrival_delay_min"] == -45
+    assert body["arrival_delay"] == "45m early"
+
+
+def test_delay_formats_hours_and_minutes(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    live = _live_flight(departure={
+        "airport": {"iata": "SIN"},
+        "scheduledTime": {"utc": "2026-07-24 13:35"},
+        "revisedTime": {"utc": "2026-07-24 15:05"},
+    })
+    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    assert body["departure_delay_min"] == 90
+    assert body["departure_delay"] == "1h 30m late"
+
+
+def test_delay_reports_on_time_when_revised_matches_scheduled(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    live = _live_flight(departure={
+        "airport": {"iata": "SIN"},
+        "scheduledTime": {"utc": "2026-07-24 13:35"},
+        "revisedTime": {"utc": "2026-07-24 13:35"},
+    })
+    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    assert body["departure_delay_min"] == 0
+    assert body["departure_delay"] == "On time"
+
+
+def test_delay_is_none_when_no_revision_has_been_issued(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(items_mod, "_AERODATABOX_KEY", "fake-key")
+    # _live_flight's default departure/arrival have scheduledTime but no revisedTime
+    live = _live_flight()
+    monkeypatch.setattr(items_mod.httpx, "Client", _fake_client_returning(live))
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    assert body["departure_delay_min"] is None
+    assert body["departure_delay"] is None
+    assert body["arrival_delay_min"] is None
+    assert body["arrival_delay"] is None
