@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { checkFlight, updateItem } from '../api.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { registerModal, unregisterModal } from '../modalNav.js'
@@ -249,13 +249,30 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
   const [showHistory, setShowHistory] = useState(false)
   const d = item.details ?? {}
 
+  // Applying a Check-flight field only updates this modal's own state — it
+  // must NOT bubble up to onSave immediately, since that cascades all the way
+  // to TripTimeline's full (non-silent) reload and blanks the whole page to
+  // "Loading timeline…", closing this modal mid-review. Instead, track that
+  // something changed and flush a single onSave when the modal actually
+  // closes, so applying several mismatches in a row only triggers one refresh.
+  // itemRef mirrors `item` so requestClose (captured by effects that don't
+  // re-run on every apply) always reads the latest value, not a stale one.
+  const dirtyRef = useRef(false)
+  const itemRef = useRef(item)
+  useEffect(() => { itemRef.current = item }, [item])
+
   function onItemUpdate(updated) {
     setItem(updated)
-    onSave?.(updated)
+    dirtyRef.current = true
+  }
+
+  function requestClose() {
+    if (dirtyRef.current) onSave?.(itemRef.current)
+    onClose()
   }
 
   useEffect(() => {
-    registerModal(item.id, onClose)
+    registerModal(item.id, requestClose)
     return () => unregisterModal()
   }, [item.id, onClose])
 
@@ -263,7 +280,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
 
   useEffect(() => {
     function onKey(e) {
-      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'Escape') { requestClose(); return }
       if (e.key === 'j' || e.key === 'k')
         window.dispatchEvent(new CustomEvent('modalNav', { detail: { itemId: item.id, direction: e.key === 'j' ? 'next' : 'prev' } }))
     }
@@ -279,7 +296,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'var(--overlay)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onClick={e => { if (e.target === e.currentTarget) requestClose() }}
     >
       <div
         style={{
@@ -306,7 +323,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
           <div className="flex items-center gap-2 shrink-0">
             {d.flight_number && <FlightCheckPanel item={item} onItemUpdate={onItemUpdate} />}
             <button
-              onClick={onClose}
+              onClick={requestClose}
               style={{ color: 'var(--text-faint)' }}
               className="text-lg leading-none hover:opacity-70"
             >
