@@ -9,6 +9,7 @@ import UserSettings from './components/UserSettings.jsx'
 import ShareModal from './components/ShareModal.jsx'
 import PendingReview from './components/PendingReview.jsx'
 import PackingList from './components/PackingList.jsx'
+import BudgetSummary from './components/BudgetSummary.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf, getPending } from './api.js'
 import { canEdit, canManage } from './roles.js'
@@ -49,6 +50,7 @@ function AppShell({ user, onLogout }) {
   const [kindFilter, setKindFilter] = useState('')
   const [packing, setPacking] = useState(false)
   const [today, setToday] = useState(false)
+  const [showBudget, setShowBudget] = useState(false)
   const online = useOnline()
 
   function refreshPending() {
@@ -134,6 +136,10 @@ function AppShell({ user, onLogout }) {
 
       {showSettings && <UserSettings onClose={() => setShowSettings(false)} />}
       {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={() => setShowShare(false)} />}
+
+      {showBudget && selectedTrip && (
+        <BudgetSummary trip={selectedTrip} stops={tripStops} onClose={() => setShowBudget(false)} />
+      )}
       {showImports && (
         <PendingReview
           onClose={() => { setShowImports(false); refreshPending() }}
@@ -150,6 +156,7 @@ function AppShell({ user, onLogout }) {
               ? <EditTrip
                   trip={selectedTrip}
                   onTripRenamed={name => setSelectedTrip(t => ({ ...t, name }))}
+                  onTripUpdated={fields => setSelectedTrip(t => ({ ...t, ...fields }))}
                 />
               : <TripTimeline
                   tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
@@ -231,6 +238,15 @@ function AppShell({ user, onLogout }) {
               className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
             >
               {exporting ? 'Exporting…' : 'Export PDF'}
+            </button>
+          )}
+          {selectedTrip && online && !packing && (
+            <button
+              onClick={() => setShowBudget(true)}
+              style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              💰 Budget
             </button>
           )}
           {online && pendingCount > 0 && (

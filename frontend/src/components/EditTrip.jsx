@@ -5,7 +5,7 @@ import EditStopCard from './EditStopCard.jsx'
 function toDateInput(iso) { return iso ? iso.split('T')[0] : '' }
 function fromDateInput(val) { return val ? val + 'T00:00:00' : null }
 
-export default function EditTrip({ trip, onTripRenamed }) {
+export default function EditTrip({ trip, onTripRenamed, onTripUpdated }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -13,6 +13,7 @@ export default function EditTrip({ trip, onTripRenamed }) {
     name: trip.name,
     start_date: toDateInput(trip.start_date),
     end_date: toDateInput(trip.end_date),
+    budget: trip.budget ?? '',
   })
   const [saved, setSaved] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -40,9 +41,11 @@ export default function EditTrip({ trip, onTripRenamed }) {
         name: fields.name,
         start_date: fromDateInput(fields.start_date),
         end_date: fromDateInput(fields.end_date),
+        budget: fields.budget || null,
       })
       setSaved(true)
       onTripRenamed?.(fields.name)
+      onTripUpdated?.({ budget: fields.budget || null })
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
   }
@@ -98,6 +101,21 @@ export default function EditTrip({ trip, onTripRenamed }) {
               />
             </div>
           ))}
+        </div>
+
+        <div>
+          <label htmlFor="budget" style={{ color: 'var(--text-faint)' }} className="block text-xs uppercase tracking-wide mb-1.5">
+            Budget
+          </label>
+          <input
+            id="budget"
+            value={fields.budget}
+            onChange={e => set('budget', e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && save()}
+            placeholder="e.g. 5000 AUD"
+            style={inputStyle}
+            className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          />
         </div>
 
         <div className="flex items-center justify-end gap-3">

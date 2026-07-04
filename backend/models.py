@@ -52,6 +52,9 @@ class TripBase(SQLModel):
     name: str
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    # Cost-style string like "5000 AUD", parsed client-side (parseCost) same
+    # as item costs — stored opaquely here, same convention as ItineraryItem.cost.
+    budget: Optional[str] = None
 
 
 class Trip(TripBase, table=True):
@@ -68,6 +71,7 @@ class TripUpdate(SQLModel):
     name: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    budget: Optional[str] = None
 
 
 class TripRead(TripBase):

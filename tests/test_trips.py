@@ -80,6 +80,33 @@ def test_update_trip_clears_dates(client: TestClient):
     assert r.json()["end_date"] is None
 
 
+def test_update_trip_budget_is_readable_on_list(client: TestClient):
+    created = client.post("/trips/", json={"name": "Budgeted"}).json()
+    r = client.patch(f"/trips/{created['id']}", json={"budget": "5000 AUD"})
+    assert r.status_code == 200
+    assert r.json()["budget"] == "5000 AUD"
+
+    listed = next(t for t in client.get("/trips/").json() if t["id"] == created["id"])
+    assert listed["budget"] == "5000 AUD"
+
+
+def test_update_trip_other_fields_leave_budget_untouched(client: TestClient):
+    created = client.post("/trips/", json={"name": "Budgeted"}).json()
+    client.patch(f"/trips/{created['id']}", json={"budget": "5000 AUD"})
+    r = client.patch(f"/trips/{created['id']}", json={"name": "Renamed"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "Renamed"
+    assert r.json()["budget"] == "5000 AUD"
+
+
+def test_update_trip_budget_clearable_with_null(client: TestClient):
+    created = client.post("/trips/", json={"name": "Budgeted"}).json()
+    client.patch(f"/trips/{created['id']}", json={"budget": "5000 AUD"})
+    r = client.patch(f"/trips/{created['id']}", json={"budget": None})
+    assert r.status_code == 200
+    assert r.json()["budget"] is None
+
+
 def test_delete_trip(client: TestClient):
     created = client.post("/trips/", json={"name": "Gone"}).json()
     r = client.delete(f"/trips/{created['id']}")
