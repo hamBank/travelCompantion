@@ -71,4 +71,34 @@ describe('aggregateSpend', () => {
     expect(result.planned).toBe(0)
     expect(result.byKind).toEqual({})
   })
+
+  it('tracks each original currency separately, including ones with no home conversion', () => {
+    const items = [
+      { name: 'Dinner', kind: 'restaurant', cost: '120 AUD', details: {} },
+      { name: 'Museum ticket', kind: 'activity', cost: '30 USD', details: {} },
+      { name: 'Hostel', kind: 'accommodation', cost: '200 USD', details: {} },
+    ]
+    const result = aggregateSpend(items, 'AUD')
+    expect(result.byCurrency.AUD.planned).toBe(120)
+    expect(result.byCurrency.USD.planned).toBe(230)
+    expect(result.unconvertible).toEqual(['Museum ticket', 'Hostel'])
+  })
+
+  it('tracks paid amounts by their own currency, separately from the cost currency', () => {
+    const items = [
+      {
+        name: 'Hotel', kind: 'accommodation', cost: '500 EUR',
+        details: { amount_paid: '200 EUR' },
+      },
+    ]
+    const result = aggregateSpend(items, 'AUD')
+    expect(result.byCurrency.EUR.planned).toBe(500)
+    expect(result.byCurrency.EUR.paid).toBe(200)
+  })
+
+  it('buckets a cost string with no recognisable currency as unconvertible', () => {
+    const items = [{ name: 'Snack', kind: 'food', cost: '15', details: {} }]
+    const result = aggregateSpend(items, 'AUD')
+    expect(result.unconvertible).toEqual(['Snack'])
+  })
 })

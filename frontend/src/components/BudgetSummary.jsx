@@ -5,7 +5,7 @@ import { KIND_LABEL } from '../kinds.js'
 export default function BudgetSummary({ trip, stops, onClose }) {
   const home = getHomeCurrency() || 'AUD'
   const items = (stops ?? []).flatMap(s => s.items ?? [])
-  const { planned, paid, byKind, unconvertible } = aggregateSpend(items, home)
+  const { planned, paid, byKind, byCurrency, unconvertible } = aggregateSpend(items, home)
 
   const budget = trip?.budget ? parseFloat(trip.budget) : null
   const budgetValid = budget != null && !Number.isNaN(budget) && budget > 0
@@ -15,6 +15,14 @@ export default function BudgetSummary({ trip, stops, onClose }) {
   const fmt = (amt) => formatCurrencyAmount(amt, home)
 
   const kindRows = Object.entries(byKind).sort((a, b) => b[1].planned - a[1].planned)
+
+  // Home currency first (it's what you'll be topping up most often), then the
+  // rest ordered by how much of each you'll need.
+  const currencyRows = Object.entries(byCurrency).sort(([codeA], [codeB]) => {
+    if (codeA === home) return -1
+    if (codeB === home) return 1
+    return byCurrency[codeB].planned - byCurrency[codeA].planned
+  })
 
   return (
     <div
@@ -86,10 +94,38 @@ export default function BudgetSummary({ trip, stops, onClose }) {
             </div>
           )}
 
+          {currencyRows.length > 0 && (
+            <div>
+              <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide block mb-1.5">By currency</span>
+              <table className="w-full text-xs">
+                <tbody>
+                  {currencyRows.map(([code, sums]) => {
+                    const outstanding = sums.planned - sums.paid
+                    return (
+                      <tr key={code}>
+                        <td style={{ color: 'var(--text-muted)' }} className="py-0.5">
+                          {code}{code === home && <span style={{ color: 'var(--text-faint)' }}> (home)</span>}
+                        </td>
+                        <td style={{ color: 'var(--text)' }} className="py-0.5 text-right">
+                          {formatCurrencyAmount(sums.planned, code, home)}
+                        </td>
+                        <td style={{ color: 'var(--text-faint)' }} className="py-0.5 text-right pl-2">
+                          {outstanding > 0
+                            ? `${formatCurrencyAmount(outstanding, code, home)} left`
+                            : 'settled'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {unconvertible.length > 0 && (
             <p style={{ color: 'var(--text-faint)' }} className="text-xs">
-              Not included above ({unconvertible.length} item{unconvertible.length === 1 ? '' : 's'} in a foreign
-              currency with no conversion on record): {unconvertible.join(', ')}
+              Not included in the home-currency totals above ({unconvertible.length} item{unconvertible.length === 1 ? '' : 's'} — see
+              the currency they're actually in under "By currency"): {unconvertible.join(', ')}
             </p>
           )}
         </div>

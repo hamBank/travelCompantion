@@ -44,4 +44,11 @@ describe('BudgetSummary', () => {
     render(<BudgetSummary trip={{ budget: '1000 AUD' }} stops={stops} onClose={() => {}} />)
     expect(screen.getByText(/Museum/)).toBeInTheDocument()
   })
+
+  it('lists a per-currency breakdown, home currency first', () => {
+    render(<BudgetSummary trip={{ budget: '1000 AUD' }} stops={stops} onClose={() => {}} />)
+    expect(screen.getByText('By currency')).toBeInTheDocument()
+    expect(screen.getByText(/AUD/)).toBeInTheDocument()
+    expect(screen.getByText(/USD/)).toBeInTheDocument()
+  })
 })
