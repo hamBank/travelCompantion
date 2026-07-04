@@ -31,6 +31,7 @@ def fetch_flight(flight_iata: str, dep_date: str) -> Optional[dict]:
         with httpx.Client(timeout=12) as client:
             r = client.get(
                 f"{_AERODATABOX_BASE}/flights/number/{flight_iata}/{dep_date}",
+                params={"withLocation": "true"},
                 headers={
                     "X-RapidAPI-Key":  AERODATABOX_KEY,
                     "X-RapidAPI-Host": "aerodatabox.p.rapidapi.com",

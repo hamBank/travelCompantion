@@ -205,7 +205,8 @@ Stops:   GET/POST /trips/{id}/stops ; GET/PATCH/DELETE /stops/{id} ; PATCH /stop
 Items:   GET/POST /stops/{id}/items ; GET/PATCH/DELETE /items/{id}
          GET /stops/{id}/enrich?kind=&name=&location=  (Google Places autofill; works pre-save)
          GET /items/{id}/flight-check    (AeroDataBox; checks Distance via greatCircleDistance,
-                                          plus live status + departure/arrival delay)
+                                          live status + departure/arrival delay, and live
+                                          aircraft position while airborne/trackable)
          GET /items/{id}/rail-check
          POST/GET /items/{id}/gpx        (upload / download GPX)
          GET /items/{id}/gpx-map         (Static Maps image tracing details.gpx_route)

@@ -53,7 +53,7 @@ def _fake_client_returning(flight_data):
         def __init__(self, *a, **k): pass
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def get(self, url, headers=None):
+        def get(self, url, params=None, headers=None):
             return FakeResponse({"data": [flight_data]})
     return FakeClient
 
@@ -182,7 +182,7 @@ def _fake_client(response):
         def __init__(self, *a, **k): pass
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def get(self, url, headers=None):
+        def get(self, url, params=None, headers=None):
             return response
     return FakeClient
 
@@ -230,10 +230,70 @@ def test_genuine_connection_failure_is_still_reported_as_unreachable(client, ses
         def __init__(self, *a, **k): pass
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def get(self, url, headers=None):
+        def get(self, url, params=None, headers=None):
             raise ConnectionError("Connection refused")
     monkeypatch.setattr(flight_live.httpx, "Client", FailingClient)
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
     assert r.status_code == 502
     assert "unreachable" in r.json()["detail"].lower()
+
+
+# ── live aircraft position ("Where is my flight") ─────────────────────────────
+
+def test_aircraft_position_populated_when_location_present(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
+    live = _live_flight(location={
+        "lat": 1.35, "lon": 103.99,
+        "reportedAtUtc": "2026-07-24 14:05",
+        "groundSpeed": {"kt": 480, "kmPerHour": 889},
+        "altitude": {"feet": 36000, "meter": 10973},
+    })
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    pos = body["aircraft_position"]
+    assert pos["lat"] == 1.35
+    assert pos["lng"] == 103.99  # AeroDataBox's `lon` renamed to `lng`
+    assert pos["reported_at_utc"] == "2026-07-24 14:05"
+    assert pos["ground_speed_kt"] == 480
+    assert pos["altitude_ft"] == 36000
+
+
+def test_aircraft_position_null_when_no_location_key(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
+    live = _live_flight()  # no location key at all — pre-departure/landed/unavailable
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    assert body["aircraft_position"] is None
+
+
+def test_aircraft_position_nulls_optional_fields_when_partial(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
+    live = _live_flight(location={"lat": 1.35, "lon": 103.99})  # no speed/altitude/time
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client_returning(live))
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    pos = body["aircraft_position"]
+    assert pos["lat"] == 1.35 and pos["lng"] == 103.99
+    assert pos["reported_at_utc"] is None
+    assert pos["ground_speed_kt"] is None
+    assert pos["altitude_ft"] is None
+
+
+def test_fetch_flight_requests_with_location(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
+    captured = {}
+
+    class CapturingClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None, headers=None):
+            captured["params"] = params
+            return FakeResponse({"data": [_live_flight()]})
+    monkeypatch.setattr(flight_live.httpx, "Client", CapturingClient)
+
+    client.get(f"/items/{flight_item['id']}/flight-check")
+    assert captured["params"] == {"withLocation": "true"}

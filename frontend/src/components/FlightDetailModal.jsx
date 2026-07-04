@@ -49,6 +49,19 @@ const STATUS_COLOR = {
 // "EnRoute" → "En Route", "CanceledUncertain" → "Canceled Uncertain"
 export const formatStatus = s => s ? s.replace(/([a-z])([A-Z])/g, '$1 $2') : s
 
+// "✈ In the air · 480 kt · 36,000 ft · as of 09:41 UTC" — elides any piece
+// that's missing (AeroDataBox only reports position while airborne/tracked,
+// and speed/altitude/time are each independently optional). null → null.
+export function formatPosition(pos) {
+  if (!pos) return null
+  const bits = ['✈ In the air']
+  if (pos.ground_speed_kt != null) bits.push(`${Math.round(pos.ground_speed_kt)} kt`)
+  if (pos.altitude_ft != null) bits.push(`${Math.round(pos.altitude_ft).toLocaleString()} ft`)
+  const hhmm = pos.reported_at_utc ? String(pos.reported_at_utc).slice(11, 16) : ''
+  if (hhmm) bits.push(`as of ${hhmm} UTC`)
+  return bits.join(' · ')
+}
+
 // Shared state for the flight check: the trigger button lives in the modal
 // header (next to ✕) while the results panel renders in the body, so the
 // state is lifted here and passed to both.
@@ -146,6 +159,8 @@ function FlightCheckResults({ check }) {
 
   const statusColor = STATUS_COLOR[result.flight_status] ?? 'var(--text-muted)'
   const mismatches = result.checks.filter(c => c.match === false)
+  const positionText = formatPosition(result.aircraft_position)
+  const hasMoreBelowHeader = mismatches.length > 0 || !!positionText
 
   return (
     <div
@@ -157,7 +172,7 @@ function FlightCheckResults({ check }) {
       className="mb-4 overflow-hidden"
     >
       {/* panel header */}
-      <div className="flex items-center justify-between px-3 py-2" style={mismatches.length > 0 ? { borderBottom: '1px solid var(--border)' } : undefined}>
+      <div className="flex items-center justify-between px-3 py-2" style={hasMoreBelowHeader ? { borderBottom: '1px solid var(--border)' } : undefined}>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Live check · {result.flight_iata}</span>
           {result.flight_status && (
@@ -191,6 +206,27 @@ function FlightCheckResults({ check }) {
           <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70" title="Re-check">↺</button>
         </div>
       </div>
+
+      {/* Live aircraft position ("Where is my flight") — only while airborne/
+          trackable; no placeholder when absent, the status/delay line above
+          already communicates flight state. */}
+      {positionText && (
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 text-xs"
+          style={mismatches.length > 0 ? { borderBottom: '1px solid var(--border)' } : undefined}
+        >
+          <span style={{ color: 'var(--text-muted)' }}>{positionText}</span>
+          <a
+            href={`https://maps.google.com/?q=${result.aircraft_position.lat},${result.aircraft_position.lng}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: 'var(--text-faint)' }}
+            className="hover:opacity-70 transition-opacity ml-auto"
+          >
+            Track on map ↗
+          </a>
+        </div>
+      )}
 
       {/* check rows — only when there's something to act on; a clean "All
           match" header alone is enough when nothing's actually mismatched */}

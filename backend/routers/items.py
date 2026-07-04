@@ -259,6 +259,20 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
     dep_delay_min = flight_live.delay_min(dep)
     arr_delay_min = flight_live.delay_min(arr)
 
+    # Live aircraft position ("Where is my flight") — only present while the
+    # flight is airborne/trackable (requested via withLocation=true in
+    # flight_live.fetch_flight). AeroDataBox's `lon` is renamed to `lng` to
+    # match this codebase's convention everywhere else.
+    loc = live.get("location") or {}
+    aircraft_position = None
+    if loc.get("lat") is not None and loc.get("lon") is not None:
+        aircraft_position = {
+            "lat": loc["lat"], "lng": loc["lon"],
+            "reported_at_utc": loc.get("reportedAtUtc"),
+            "ground_speed_kt": (loc.get("groundSpeed") or {}).get("kt"),
+            "altitude_ft": (loc.get("altitude") or {}).get("feet"),
+        }
+
     return {
         "found": True,
         "flight_iata": flight_iata,
@@ -267,6 +281,7 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
         "departure_delay": flight_live.delay_str(dep_delay_min),
         "arrival_delay_min": arr_delay_min,
         "arrival_delay": flight_live.delay_str(arr_delay_min),
+        "aircraft_position": aircraft_position,
         "checks": results,
     }
 
