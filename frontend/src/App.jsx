@@ -160,8 +160,8 @@ function AppShell({ user, onLogout }) {
                 />
               : <TripTimeline
                   tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
-                  filterDate={today ? new Date().toLocaleDateString('sv-SE') : null}
-                  onClearFilterDate={() => setToday(false)}
+                  todayMode={today}
+                  onExitToday={() => setToday(false)}
                 />
           : <TripList onOpen={openTrip} skipAutoOpen={userChoseList} />
         }

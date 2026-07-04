@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending } from '../api.js'
 import StopCard, { computeCrossStopLayover, itemDateKey, itemOccursOn } from './StopCard.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
@@ -12,8 +12,38 @@ import { fmtDay } from '../dates.js'
 import { getCurrentModal } from '../modalNav.js'
 import { isEditing, onEditChange } from '../editState.js'
 import { useOnline } from '../online.js'
+import { useSwipeNav } from '../swipeNav.js'
 
-export default function TripTimeline({ tripId, onStats, onStops, filterDate = null, onClearFilterDate }) {
+// Today-view defaults: today's date if it falls within the trip's dates,
+// otherwise the trip's first day (or plain today when the trip has no
+// dates set at all, so Today view still does something sensible).
+export function pickInitialDay(timeline) {
+  const now = new Date().toLocaleDateString('sv-SE')
+  const start = timeline?.start_date ? String(timeline.start_date).slice(0, 10) : null
+  const end = timeline?.end_date ? String(timeline.end_date).slice(0, 10) : null
+  if (start && now < start) return start
+  if (end && now > end) return start ?? now
+  return now
+}
+
+export function shiftDay(dateStr, deltaDays) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + deltaDays)
+  return d.toLocaleDateString('sv-SE')
+}
+
+// Clamp a day-navigation step to the trip's date span, when known. Returns
+// the current day unchanged if the step would go out of bounds.
+export function clampedShiftDay(dateStr, direction, timeline) {
+  const next = shiftDay(dateStr, direction === 'next' ? 1 : -1)
+  const start = timeline?.start_date ? String(timeline.start_date).slice(0, 10) : null
+  const end = timeline?.end_date ? String(timeline.end_date).slice(0, 10) : null
+  if (start && next < start) return dateStr
+  if (end && next > end) return dateStr
+  return next
+}
+
+export default function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -30,6 +60,8 @@ export default function TripTimeline({ tripId, onStats, onStops, filterDate = nu
   const showInbound = useShowInbound()
   const hideStopFrames = useHideStopFrames()
   const online = useOnline()
+  const [selectedDay, setSelectedDay] = useState(null)  // 'YYYY-MM-DD', only meaningful while todayMode
+  const dayInitializedRef = useRef(false)  // have we already picked a day for this todayMode "on" stint?
 
   useEffect(() => { load() }, [tripId])
 
@@ -76,6 +108,38 @@ export default function TripTimeline({ tripId, onStats, onStops, filterDate = nu
     return () => window.removeEventListener('modalNav', handleModalNav)
   }, [])
 
+  // Today-view day navigation — j/k and swipe left/right, mirroring the
+  // detail-modal item navigation above. Clamped to the trip's date span.
+  const navigateDay = useCallback(direction => {
+    setSelectedDay(day => (day == null ? day : clampedShiftDay(day, direction, timeline)))
+  }, [timeline])
+
+  useEffect(() => {
+    if (!todayMode) return
+    function onKey(e) {
+      if (e.key !== 'j' && e.key !== 'k') return
+      // A detail/edit modal owns j/k while it's open — don't fight it.
+      if (isEditing() || getCurrentModal()) return
+      const tag = document.activeElement?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      navigateDay(e.key === 'j' ? 'next' : 'prev')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [todayMode, navigateDay])
+
+  useSwipeNav(navigateDay, todayMode)
+
+  // Pick the default day once per todayMode "on" stint (not on every background
+  // refresh — timeline gets a new object reference on each poll/save, which
+  // would otherwise reset navigation back to the default day mid-browse).
+  useEffect(() => {
+    if (!todayMode) { dayInitializedRef.current = false; setSelectedDay(null); return }
+    if (dayInitializedRef.current || !timeline) return
+    dayInitializedRef.current = true
+    setSelectedDay(pickInitialDay(timeline))
+  }, [todayMode, timeline])
+
   // Surface stop counts to the header (shown in the minimal title bar).
   useEffect(() => {
     if (timeline?.stops) {
@@ -115,23 +179,50 @@ export default function TripTimeline({ tripId, onStats, onStops, filterDate = nu
   if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
   if (!timeline?.stops?.length) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">No stops yet.</p>
 
-  // Today mode: only stops with at least one today-occurring item, each
+  const activeDay = todayMode ? selectedDay : null
+
+  // Today mode: only stops with at least one occurring-on-activeDay item, each
   // trimmed to just those items. Cross-stop computations below (layovers,
   // j/k nav, day-banner skip tracking) deliberately keep using the
   // UNfiltered timeline.stops — only the rendered StopCard list is filtered.
-  const visibleStops = filterDate
+  const visibleStops = activeDay
     ? timeline.stops
-        .map(s => ({ ...s, items: s.items.filter(i => itemOccursOn(i, filterDate)) }))
+        .map(s => ({ ...s, items: s.items.filter(i => itemOccursOn(i, activeDay)) }))
         .filter(s => s.items.length > 0)
     : timeline.stops
 
-  if (filterDate && visibleStops.length === 0) {
+  const dayNavHeader = todayMode && activeDay && (
+    <div className="flex items-center justify-center gap-3 mb-3">
+      <button
+        onClick={() => navigateDay('prev')}
+        style={{ color: 'var(--text-muted)' }}
+        className="text-sm px-1.5 hover:opacity-70 transition-opacity"
+        aria-label="Previous day"
+      >
+        ◀
+      </button>
+      <span style={{ color: 'var(--text)' }} className="text-sm font-medium min-w-[9rem] text-center">
+        {fmtDay(activeDay)}
+      </span>
+      <button
+        onClick={() => navigateDay('next')}
+        style={{ color: 'var(--text-muted)' }}
+        className="text-sm px-1.5 hover:opacity-70 transition-opacity"
+        aria-label="Next day"
+      >
+        ▶
+      </button>
+    </div>
+  )
+
+  if (activeDay && visibleStops.length === 0) {
     return (
       <div className="text-center py-12">
+        {dayNavHeader}
         <p style={{ color: 'var(--text-faint)' }} className="text-sm mb-2">Nothing scheduled today.</p>
-        {onClearFilterDate && (
+        {onExitToday && (
           <button
-            onClick={onClearFilterDate}
+            onClick={onExitToday}
             style={{ color: 'var(--accent)' }}
             className="text-xs font-medium hover:opacity-70 transition-opacity underline"
           >
@@ -226,6 +317,7 @@ export default function TripTimeline({ tripId, onStats, onStops, filterDate = nu
         {!online && (
           <p style={{ color: 'var(--text-faint)' }} className="text-xs mb-3">Showing cached data</p>
         )}
+        {dayNavHeader}
         {editable && warnings.length > 0 && !dismissed && (
           <div
             style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)' }}

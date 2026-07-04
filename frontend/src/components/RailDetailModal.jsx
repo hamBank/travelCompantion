@@ -355,7 +355,8 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
     return () => unregisterModal()
   }, [item.id, onClose])
 
-  useSwipeNav(item.id)  // mobile: swipe left/right = next/prev (mirrors j/k)
+  // mobile: swipe left/right = next/prev (mirrors j/k)
+  useSwipeNav(direction => window.dispatchEvent(new CustomEvent('modalNav', { detail: { itemId: item.id, direction } })))
 
   useEffect(() => {
     function onKey(e) {

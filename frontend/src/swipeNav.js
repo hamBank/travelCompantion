@@ -1,19 +1,21 @@
 import { useEffect } from 'react'
 
 /**
- * Mobile swipe navigation for detail modals — the touch analogue of j/k.
+ * Generic mobile swipe navigation — the touch analogue of j/k.
  *
- * A horizontal swipe dispatches the same `modalNav` CustomEvent the keyboard
- * handler uses, so it reuses TripTimeline's cross-stop next/prev logic:
+ * A horizontal swipe calls `onDirection('next' | 'prev')`:
  *   swipe left  → next      swipe right → prev
  *
- * Mostly-vertical gestures (scrolling) and short taps are ignored.
+ * Mostly-vertical gestures (scrolling) and short taps are ignored. Pass
+ * `enabled = false` to skip attaching listeners (e.g. a feature that's only
+ * navigable in one particular mode).
  */
 const MIN_DX = 60          // px of horizontal travel required
 const H_OVER_V = 1.5       // horizontal must dominate vertical by this factor
 
-export function useSwipeNav(itemId) {
+export function useSwipeNav(onDirection, enabled = true) {
   useEffect(() => {
+    if (!enabled) return
     let startX = 0, startY = 0, tracking = false
 
     const onStart = e => {
@@ -31,8 +33,7 @@ export function useSwipeNav(itemId) {
       const dy = t.clientY - startY
       if (Math.abs(dx) < MIN_DX) return                 // too short / a tap
       if (Math.abs(dx) < Math.abs(dy) * H_OVER_V) return // mostly vertical → scroll
-      const direction = dx < 0 ? 'next' : 'prev'
-      window.dispatchEvent(new CustomEvent('modalNav', { detail: { itemId, direction } }))
+      onDirection(dx < 0 ? 'next' : 'prev')
     }
 
     document.addEventListener('touchstart', onStart, { passive: true })
@@ -41,5 +42,5 @@ export function useSwipeNav(itemId) {
       document.removeEventListener('touchstart', onStart)
       document.removeEventListener('touchend', onEnd)
     }
-  }, [itemId])
+  }, [onDirection, enabled])
 }

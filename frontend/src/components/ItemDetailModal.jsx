@@ -698,7 +698,8 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNa
     return () => unregisterModal()
   }, [item.id, onClose])
 
-  useSwipeNav(item.id)  // mobile: swipe left/right = next/prev (mirrors j/k)
+  // mobile: swipe left/right = next/prev (mirrors j/k)
+  useSwipeNav(direction => window.dispatchEvent(new CustomEvent('modalNav', { detail: { itemId: item.id, direction } })))
 
   useEffect(() => {
     function onKey(e) {
