@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react'
-import { updateStopStatus, updateItemStatus, getWeather, fetchRiverMapBlob, fetchGpxMapBlob } from '../api.js'
+import { updateStopStatus, updateItemStatus, getWeather, fetchRiverMapBlob, fetchGpxMapBlob, fetchDayMapBlob } from '../api.js'
 import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
@@ -167,6 +167,40 @@ export function DayBanner({ dateKey, weather }) {
   )
 }
 
+// One Static Maps pin per distinct location touched by a day's items, shown
+// at the bottom of that day's block.
+export function DayMap({ stopId, locations }) {
+  const [mapUrl, setMapUrl] = useState(null)
+  const key = locations.join('|')
+
+  useEffect(() => {
+    if (!locations.length) return
+    let objectUrl = null
+    let cancelled = false
+    fetchDayMapBlob(stopId, locations).then(blob => {
+      if (cancelled || !blob) return
+      objectUrl = URL.createObjectURL(blob)
+      setMapUrl(objectUrl)
+    })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      setMapUrl(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopId, key])
+
+  if (locations.length === 0) return null
+
+  return (
+    <div style={{ borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid var(--border)', margin: '0.5rem 0 0' }}>
+      {mapUrl
+        ? <img src={mapUrl} alt="Day locations map" style={{ display: 'block', width: '100%', height: 'auto' }} />
+        : <div style={{ color: 'var(--text-faint)' }} className="text-xs px-3 py-2">Loading map…</div>}
+    </div>
+  )
+}
+
 // Flag as an image (emoji flags don't render on Chrome/Edge on Windows). Falls
 // back to the emoji where no ISO code resolves.
 export function FlagMark({ country }) {
@@ -247,6 +281,52 @@ export function fmtConnectionDur(ms) {
 
 function _normLoc(s) {
   return String(s || '').trim().toLowerCase()
+}
+
+// Every location string an item touches, for the day map's pins. Kinds with
+// no meaningful location (note, etc.) return an empty array.
+export function itemLocations(item) {
+  const d = item.details || {}
+  switch (item.kind) {
+    case 'accommodation':
+    case 'restaurant':
+    case 'activity':
+    case 'show':
+    case 'food':
+    case 'purchase':
+      return [d.location].filter(Boolean)
+    case 'tour':
+      return [d.meeting_point].filter(Boolean)
+    case 'transfer':
+    case 'river_transfer':
+    case 'walk':
+    case 'cycling':
+      return [d.start_location, d.end_location].filter(Boolean)
+    case 'rail':
+      return [d.origin, d.destination].filter(Boolean)
+    case 'flight':
+      // Flight stores IATA codes — resolve to a city name so Static Maps has
+      // something a geocoder can actually place a pin on.
+      return [d.origin, d.destination].filter(Boolean).map(c => airportName(c) || c)
+    case 'hire':
+      return [d.pickup_location, d.dropoff_location].filter(Boolean)
+    default:
+      return []
+  }
+}
+
+// Deduplicated (case/whitespace-insensitive), order-preserving location list
+// across every item in a day — what the day map's pins are built from.
+export function dayLocations(items) {
+  const seen = new Set()
+  const out = []
+  for (const item of items || []) {
+    for (const loc of itemLocations(item)) {
+      const key = _normLoc(loc)
+      if (key && !seen.has(key)) { seen.add(key); out.push(loc) }
+    }
+  }
+  return out
 }
 
 // A stop's weather is normally fetched once for its own location/date span.
@@ -528,6 +608,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
                       <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>,
                       layovers[item.id] && <OffsetRow key={`lay-${item.id}`}><LayoverBadge {...layovers[item.id]} /></OffsetRow>,
                     ].filter(Boolean))}
+                    <DayMap stopId={stop.id} locations={dayLocations(byDate[dk])} />
                   </div>
                 )
               })}
@@ -618,6 +699,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
                       renderCard(item),
                       layovers[item.id] && <LayoverBadge key={`lay-${item.id}`} {...layovers[item.id]} />,
                     ].filter(Boolean))}
+                    <DayMap stopId={stop.id} locations={dayLocations(byDate[dk])} />
                   </div>
                 ))}
                 {undated.map(item => renderCard(item))}

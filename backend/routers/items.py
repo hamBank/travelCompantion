@@ -890,6 +890,74 @@ def gpx_map(item_id: int, session: Session = Depends(get_session), user: dict = 
     return _static_map_png(path, details.get("start_location"), details.get("end_location"), color="0x2563ebff")
 
 
+_DAY_MAP_MAX_LOCATIONS = 12  # bounds URL length and marker legibility; also caps worst-case cost/call
+_MARKER_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # Static Maps only accepts a single A-Z/0-9 char per marker
+
+
+class DayMapRequest(BaseModel):
+    locations: List[str]
+
+
+@router.post("/stops/{stop_id}/day-map")
+def day_map(stop_id: int, req: DayMapRequest, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Proxy a Static Maps image with one pin per (already-deduplicated,
+    frontend-supplied) location string for a single day's items. Stop-scoped
+    — not item-scoped like river-map/gpx-map, since this reflects an
+    arbitrary same-day set rather than one item's stored path — but still
+    requires at least viewer on that stop's trip, so the billed API can't be
+    hammered by an arbitrary caller the way a fully stateless endpoint could.
+    """
+    require_stop_role(session, user, stop_id, TripRole.viewer)
+    locations = [loc.strip() for loc in req.locations if loc and loc.strip()]
+    # Preserve first-seen order while deduplicating case-insensitively — the
+    # same address showing up under two items (e.g. a restaurant and a note
+    # both at the hotel) shouldn't burn two marker slots.
+    seen = set()
+    deduped = []
+    for loc in locations:
+        key = loc.lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(loc)
+    if not deduped:
+        raise HTTPException(status_code=400, detail="No locations given")
+    if len(deduped) > _DAY_MAP_MAX_LOCATIONS:
+        raise HTTPException(status_code=400, detail=f"Too many locations (max {_DAY_MAP_MAX_LOCATIONS})")
+    if not _STATIC_MAPS_KEY:
+        raise HTTPException(status_code=503, detail="Static Maps not configured (set GOOGLE_STATIC_MAPS_API_KEY)")
+
+    params = {"size": "640x400", "maptype": "roadmap", "key": _STATIC_MAPS_KEY}
+    query_parts = [urllib.parse.urlencode(params)]
+    for i, loc in enumerate(deduped):
+        label = _MARKER_LABELS[i] if i < len(_MARKER_LABELS) else ""
+        marker = f"label:{label}|{loc}" if label else loc
+        query_parts.append(urllib.parse.urlencode({"markers": marker}))
+    url = f"{_STATIC_MAPS_API}?{'&'.join(query_parts)}"
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        body = e.response.text.strip()
+        detail = f"Static Maps request failed: {e.response.status_code} {e.response.reason_phrase}"
+        if body:
+            detail += f" — {body[:300]}"
+        record_external_call("google_static_maps", ok=False, error=detail)
+        raise HTTPException(status_code=503, detail=detail)
+    except Exception as e:
+        record_external_call("google_static_maps", ok=False, error=str(e))
+        raise HTTPException(status_code=503, detail=f"Static Maps request failed: {e}")
+    record_external_call("google_static_maps", ok=True)
+
+    etag = hashlib.sha256(json.dumps(deduped).encode()).hexdigest()[:16]
+    return Response(
+        content=resp.content,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=86400", "ETag": etag},
+    )
+
+
 _ENRICHABLE_KINDS = {ItemKind.accommodation, ItemKind.restaurant, ItemKind.activity, ItemKind.show, ItemKind.tour}
 
 
