@@ -19,6 +19,9 @@ import { parseCost, getHomeCurrency } from './currency.js'
  * @param {Array} items - flat array of ItineraryItems (all stops)
  * @param {string} homeCurrency - e.g. "AUD"
  * @returns {{planned: number, paid: number, byKind: Object, byCurrency: Object, unconvertible: string[], noRecognizableCost: string[]}}
+ *   byCurrency[code] is { planned, paid, items: [{ name, planned, paid }] } —
+ *   the per-item list is what actually answers "which items did the app
+ *   detect as this currency", not just a bare total.
  */
 export function aggregateSpend(items, homeCurrency) {
   const home = homeCurrency || getHomeCurrency()
@@ -29,9 +32,12 @@ export function aggregateSpend(items, homeCurrency) {
   const unconvertible = []
   const noRecognizableCost = []
 
-  const bump = (code, field, amt) => {
-    if (!byCurrency[code]) byCurrency[code] = { planned: 0, paid: 0 }
+  const bump = (code, field, amt, name) => {
+    if (!byCurrency[code]) byCurrency[code] = { planned: 0, paid: 0, items: [] }
     byCurrency[code][field] += amt
+    let entry = byCurrency[code].items.find(it => it.name === name)
+    if (!entry) { entry = { name, planned: 0, paid: 0 }; byCurrency[code].items.push(entry) }
+    entry[field] += amt
   }
 
   for (const item of items ?? []) {
@@ -50,7 +56,7 @@ export function aggregateSpend(items, homeCurrency) {
     }
 
     const costCode = parsedCost.code
-    bump(costCode, 'planned', parsedCost.amount)
+    bump(costCode, 'planned', parsedCost.amount, item.name)
 
     let plannedAmt = null
     if (d.converted_cost != null && d.converted_currency === home) {
@@ -65,7 +71,7 @@ export function aggregateSpend(items, homeCurrency) {
       const parsedPaid = parseCost(amountPaid, home)
       const paidCode = parsedPaid?.code || costCode
       const paidRaw = parsedPaid?.amount ?? (parseFloat(amountPaid) || 0)
-      bump(paidCode, 'paid', paidRaw)
+      bump(paidCode, 'paid', paidRaw, item.name)
 
       if (d.converted_amount_paid != null && d.converted_currency === home) {
         paidAmt = d.converted_amount_paid

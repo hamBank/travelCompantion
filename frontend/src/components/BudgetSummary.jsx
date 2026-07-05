@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { aggregateSpend } from '../budget.js'
 import { formatCurrencyAmount, getHomeCurrency } from '../currency.js'
 import { KIND_LABEL } from '../kinds.js'
@@ -6,6 +7,7 @@ export default function BudgetSummary({ trip, stops, onClose }) {
   const home = getHomeCurrency() || 'AUD'
   const items = (stops ?? []).flatMap(s => s.items ?? [])
   const { planned, paid, byKind, byCurrency, unconvertible, noRecognizableCost } = aggregateSpend(items, home)
+  const [expandedCurrency, setExpandedCurrency] = useState(null)
 
   const budget = trip?.budget ? parseFloat(trip.budget) : null
   const budgetValid = budget != null && !Number.isNaN(budget) && budget > 0
@@ -96,14 +98,23 @@ export default function BudgetSummary({ trip, stops, onClose }) {
 
           {currencyRows.length > 0 && (
             <div>
-              <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide block mb-1.5">By currency</span>
+              <div className="flex items-baseline gap-1.5 mb-1.5">
+                <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">By currency</span>
+                <span style={{ color: 'var(--text-faint)' }} className="text-xs">(tap a row to see which items)</span>
+              </div>
               <table className="w-full text-xs">
                 <tbody>
-                  {currencyRows.map(([code, sums]) => {
+                  {currencyRows.flatMap(([code, sums]) => {
                     const outstanding = sums.planned - sums.paid
-                    return (
-                      <tr key={code}>
+                    const expanded = expandedCurrency === code
+                    const rows = [
+                      <tr
+                        key={code}
+                        onClick={() => setExpandedCurrency(expanded ? null : code)}
+                        className="cursor-pointer"
+                      >
                         <td style={{ color: 'var(--text-muted)' }} className="py-0.5">
+                          <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem' }}>{expanded ? '▾' : '▸'}</span>{' '}
                           {code}{code === home && <span style={{ color: 'var(--text-faint)' }}> (home)</span>}
                         </td>
                         <td style={{ color: 'var(--text)' }} className="py-0.5 text-right">
@@ -114,8 +125,22 @@ export default function BudgetSummary({ trip, stops, onClose }) {
                             ? `${formatCurrencyAmount(outstanding, code, home)} left`
                             : 'settled'}
                         </td>
-                      </tr>
-                    )
+                      </tr>,
+                    ]
+                    if (expanded) {
+                      rows.push(...sums.items.map(it => (
+                        <tr key={`${code}-${it.name}`}>
+                          <td style={{ color: 'var(--text-faint)' }} className="py-0.5 pl-4">{it.name}</td>
+                          <td style={{ color: 'var(--text-faint)' }} className="py-0.5 text-right">
+                            {formatCurrencyAmount(it.planned, code, home)}
+                          </td>
+                          <td style={{ color: 'var(--text-faint)' }} className="py-0.5 text-right pl-2">
+                            {it.paid > 0 ? `paid ${formatCurrencyAmount(it.paid, code, home)}` : ''}
+                          </td>
+                        </tr>
+                      )))
+                    }
+                    return rows
                   })}
                 </tbody>
               </table>

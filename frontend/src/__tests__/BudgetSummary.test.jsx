@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import BudgetSummary from '../components/BudgetSummary.jsx'
 import { HOME_CURRENCY_KEY } from '../currency.js'
 
@@ -50,6 +50,17 @@ describe('BudgetSummary', () => {
     expect(screen.getByText('By currency')).toBeInTheDocument()
     expect(screen.getByText(/AUD/)).toBeInTheDocument()
     expect(screen.getByText(/USD/)).toBeInTheDocument()
+  })
+
+  it('reveals which items are under a currency when its row is clicked', () => {
+    render(<BudgetSummary trip={{ budget: '1000 AUD' }} stops={stops} onClose={() => {}} />)
+    // Item names aren't shown anywhere until the currency row is expanded.
+    expect(screen.queryByText('Museum')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText(/^USD/))
+    expect(screen.getByText('Museum')).toBeInTheDocument()
+    // Clicking again collapses it.
+    fireEvent.click(screen.getByText(/^USD/))
+    expect(screen.queryByText('Museum')).not.toBeInTheDocument()
   })
 
   it('gives free-text cost strings a distinct footnote instead of pointing at "By currency"', () => {

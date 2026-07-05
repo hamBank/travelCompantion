@@ -132,4 +132,26 @@ describe('aggregateSpend', () => {
     expect(result.planned).toBe(2017.5)
     expect(result.unconvertible).toEqual([])
   })
+
+  it('lists which items were detected under each currency, not just a bare total', () => {
+    const items = [
+      { name: 'Dinner', kind: 'restaurant', cost: '120 AUD', details: {} },
+      { name: 'Museum ticket', kind: 'activity', cost: '30 USD', details: {} },
+      { name: 'Hostel', kind: 'accommodation', cost: '200 USD', details: {} },
+    ]
+    const result = aggregateSpend(items, 'AUD')
+    expect(result.byCurrency.AUD.items).toEqual([{ name: 'Dinner', planned: 120, paid: 0 }])
+    expect(result.byCurrency.USD.items).toEqual([
+      { name: 'Museum ticket', planned: 30, paid: 0 },
+      { name: 'Hostel', planned: 200, paid: 0 },
+    ])
+  })
+
+  it('merges an item\'s cost and paid amounts into one entry when both land in the same currency', () => {
+    const items = [
+      { name: 'Hotel', kind: 'accommodation', cost: '500 EUR', details: { amount_paid: '200 EUR' } },
+    ]
+    const result = aggregateSpend(items, 'AUD')
+    expect(result.byCurrency.EUR.items).toEqual([{ name: 'Hotel', planned: 500, paid: 200 }])
+  })
 })
