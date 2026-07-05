@@ -67,6 +67,27 @@ export function itemDateKey(item) {
   return String(dt).split('T')[0]
 }
 
+// Epoch ms when the item is definitively over, or null if undatable. Used by
+// the past-items catch-up banner (TripTimeline.jsx) — a several-hour grace
+// period there absorbs the approximation from ignoring timezone (naive-local,
+// same convention as itemSortKey).
+export function itemEndMs(item) {
+  const d = item.details || {}
+  let dt
+  if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') dt = d.arrive_time || d.depart_time
+  else if (item.kind === 'accommodation') dt = d.checkout || d.checkin
+  else dt = item.scheduled_at
+  if (!dt) return null
+  const ms = toUtcMs(dt, null)
+  if (ms == null) return null
+  // Date-only values (no time-of-day, or an explicit midnight) — treat as
+  // ending at end-of-day so a dated-but-untimed activity isn't "past"
+  // during the rest of its own day.
+  const timePart = String(dt).split('T')[1]
+  const dateOnly = !timePart || timePart.slice(0, 5) === '00:00'
+  return dateOnly ? ms + 24 * 3600_000 : ms
+}
+
 // Does this item occur on the given local date ("YYYY-MM-DD")? Used by the
 // Today view (App.jsx / TripTimeline.jsx) to show only what's relevant right
 // now, across every stop.

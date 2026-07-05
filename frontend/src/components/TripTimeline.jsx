@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending } from '../api.js'
-import StopCard, { computeCrossStopLayover, itemDateKey, itemOccursOn } from './StopCard.jsx'
+import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending, updateItemStatus } from '../api.js'
+import StopCard, { computeCrossStopLayover, itemDateKey, itemEndMs, itemOccursOn } from './StopCard.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import RailDetailModal from './RailDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
@@ -43,6 +43,11 @@ export function clampedShiftDay(dateStr, direction, timeline) {
   return next
 }
 
+// A "past pending" item must have ended this many hours ago before the
+// catch-up banner nags about it — absorbs timezone slop and avoids flagging
+// something that only just finished.
+const GRACE_HOURS = 6
+
 export default function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -52,6 +57,9 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   const [pendingCount, setPendingCount] = useState(0)
   const [warnings, setWarnings] = useState([])
   const [dismissed, setDismissed] = useState(false)
+  const [pastPendingDismissed, setPastPendingDismissed] = useState(false)
+  const [markingDone, setMarkingDone] = useState(false)
+  const [markDoneError, setMarkDoneError] = useState(null)
   const [navItem, setNavItem] = useState(null)
   const [renderKey, setRenderKey] = useState(0)  // force remount on data refresh
   const allItemsRef    = useRef([])
@@ -249,6 +257,24 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   })
   allItemsRef.current = allItems
 
+  // Items still "pending" well after they should be over — surfaced as a
+  // one-tap catch-up banner rather than silently auto-marked done (multi-user
+  // trips and mismatched device clocks make auto-writing unsafe).
+  const pastPending = allItems.filter(i =>
+    i.status === 'pending' &&
+    itemEndMs(i) != null &&
+    itemEndMs(i) < Date.now() - GRACE_HOURS * 3600_000)
+
+  async function markPastPendingDone() {
+    if (markingDone) return
+    setMarkingDone(true); setMarkDoneError(null)
+    try {
+      await Promise.all(pastPending.map(i => updateItemStatus(i.id, 'done')))
+      await load({ background: true, remount: false })
+    } catch (e) { setMarkDoneError(e.message) }
+    finally { setMarkingDone(false) }
+  }
+
   // Inbound transport: for each stop, the flight/rail (filed on a *different* stop)
   // whose arrival date matches this stop's arrival date — i.e. how you got here.
   const datePart = v => (v ? String(v).split('T')[0] : null)
@@ -320,6 +346,33 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
           <p style={{ color: 'var(--text-faint)' }} className="text-xs mb-3">Showing cached data</p>
         )}
         {dayNavHeader}
+        {editable && pastPending.length > 0 && !pastPendingDismissed && (
+          <div
+            style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)' }}
+            className="mb-4 rounded-lg px-3 py-2.5"
+          >
+            <div className="flex items-start gap-2">
+              <span style={{ color: 'var(--warning)' }} className="text-sm">⚠</span>
+              <div className="flex-1 min-w-0">
+                <p style={{ color: 'var(--text)' }} className="text-xs font-medium mb-1">
+                  {pastPending.length} past item{pastPending.length > 1 ? 's' : ''} still pending
+                </p>
+                {markDoneError && (
+                  <p style={{ color: 'var(--error)' }} className="text-xs mb-1">{markDoneError}</p>
+                )}
+                <button
+                  onClick={markPastPendingDone}
+                  disabled={markingDone}
+                  style={{ color: 'var(--accent)' }}
+                  className="text-xs font-medium hover:opacity-70 transition-opacity underline disabled:opacity-50"
+                >
+                  {markingDone ? 'Marking done…' : 'Mark all done'}
+                </button>
+              </div>
+              <button onClick={() => setPastPendingDismissed(true)} style={{ color: 'var(--text-faint)' }} className="text-sm leading-none hover:opacity-70">✕</button>
+            </div>
+          </div>
+        )}
         {editable && warnings.length > 0 && !dismissed && (
           <div
             style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)' }}

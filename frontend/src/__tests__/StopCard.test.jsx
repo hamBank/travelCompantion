@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -53,6 +53,43 @@ describe('itemDateKey', () => {
   it('returns null when no datetime', () => {
     const item = { kind: 'note', details: {}, scheduled_at: null }
     expect(itemDateKey(item)).toBeNull()
+  })
+})
+
+// ── itemEndMs ────────────────────────────────────────────────────────────────
+
+describe('itemEndMs', () => {
+  it('flight: uses arrive_time over depart_time', () => {
+    const item = { kind: 'flight', details: { depart_time: '2026-08-19T16:25', arrive_time: '2026-08-19T23:45' } }
+    expect(itemEndMs(item)).toBe(toUtcMs('2026-08-19T23:45', null))
+  })
+
+  it('flight: falls back to depart_time when no arrive_time', () => {
+    const item = { kind: 'flight', details: { depart_time: '2026-08-19T16:25' } }
+    expect(itemEndMs(item)).toBe(toUtcMs('2026-08-19T16:25', null))
+  })
+
+  it('accommodation: uses checkout over checkin', () => {
+    const item = { kind: 'accommodation', details: { checkin: '2026-08-19T15:00', checkout: '2026-08-21T11:00' } }
+    expect(itemEndMs(item)).toBe(toUtcMs('2026-08-21T11:00', null))
+  })
+
+  it('activity: uses scheduled_at', () => {
+    const item = { kind: 'activity', details: {}, scheduled_at: '2026-08-21T14:30' }
+    expect(itemEndMs(item)).toBe(toUtcMs('2026-08-21T14:30', null))
+  })
+
+  it('date-only value ends at end-of-day (+24h vs the midnight timestamp)', () => {
+    const dateOnly = { kind: 'activity', details: {}, scheduled_at: '2026-08-21' }
+    const explicitMidnight = { kind: 'activity', details: {}, scheduled_at: '2026-08-21T00:00' }
+    const midnightMs = toUtcMs('2026-08-21T00:00', null)
+    expect(itemEndMs(dateOnly)).toBe(midnightMs + 24 * 3600_000)
+    expect(itemEndMs(explicitMidnight)).toBe(midnightMs + 24 * 3600_000)
+  })
+
+  it('returns null when there is no time information at all', () => {
+    const item = { kind: 'note', details: {}, scheduled_at: null }
+    expect(itemEndMs(item)).toBeNull()
   })
 })
 
