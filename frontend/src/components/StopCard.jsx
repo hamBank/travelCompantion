@@ -167,8 +167,10 @@ export function DayBanner({ dateKey, weather }) {
   )
 }
 
-// One Static Maps pin per distinct location touched by a day's items, shown
-// at the bottom of that day's block.
+// One Static Maps pin per distinct location touched by a day's items.
+// Single-day (Today) view only — pinned to the bottom of the viewport rather
+// than inline, and deliberately small (well under an item card's footprint)
+// so it never competes with the day's actual content for attention.
 export function DayMap({ stopId, locations }) {
   const [mapUrl, setMapUrl] = useState(null)
   const key = locations.join('|')
@@ -193,10 +195,25 @@ export function DayMap({ stopId, locations }) {
   if (locations.length === 0) return null
 
   return (
-    <div style={{ borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid var(--border)', margin: '0.5rem 0 0' }}>
-      {mapUrl
-        ? <img src={mapUrl} alt="Day locations map" style={{ display: 'block', width: '100%', height: 'auto' }} />
-        : <div style={{ color: 'var(--text-faint)' }} className="text-xs px-3 py-2">Loading map…</div>}
+    <div
+      style={{
+        position: 'fixed',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 15,
+        display: 'flex',
+        justifyContent: 'center',
+        background: 'var(--bg)',
+        borderTop: '1px solid var(--border)',
+        padding: '0.375rem 0 max(0.375rem, env(safe-area-inset-bottom))',
+      }}
+    >
+      <div style={{ width: '9rem', borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid var(--border)' }}>
+        {mapUrl
+          ? <img src={mapUrl} alt="Day locations map" style={{ display: 'block', width: '100%', height: 'auto' }} />
+          : <div style={{ color: 'var(--text-faint)' }} className="text-xs px-2 py-1 text-center">Loading map…</div>}
+      </div>
     </div>
   )
 }
@@ -608,7 +625,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
                       <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>,
                       layovers[item.id] && <OffsetRow key={`lay-${item.id}`}><LayoverBadge {...layovers[item.id]} /></OffsetRow>,
                     ].filter(Boolean))}
-                    <DayMap stopId={stop.id} locations={dayLocations(byDate[dk])} />
                   </div>
                 )
               })}
@@ -699,7 +715,6 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
                       renderCard(item),
                       layovers[item.id] && <LayoverBadge key={`lay-${item.id}`} {...layovers[item.id]} />,
                     ].filter(Boolean))}
-                    <DayMap stopId={stop.id} locations={dayLocations(byDate[dk])} />
                   </div>
                 ))}
                 {undated.map(item => renderCard(item))}
