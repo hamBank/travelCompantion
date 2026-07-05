@@ -51,4 +51,14 @@ describe('BudgetSummary', () => {
     expect(screen.getByText(/AUD/)).toBeInTheDocument()
     expect(screen.getByText(/USD/)).toBeInTheDocument()
   })
+
+  it('gives free-text cost strings a distinct footnote instead of pointing at "By currency"', () => {
+    const stopsWithFreeText = [
+      ...stops,
+      { id: 3, items: [{ name: 'Gallipoli food', kind: 'food', cost: 'Walk', details: {} }] },
+    ]
+    render(<BudgetSummary trip={{ budget: '1000 AUD' }} stops={stopsWithFreeText} onClose={() => {}} />)
+    expect(screen.getByText(/no recognisable cost amount/)).toBeInTheDocument()
+    expect(screen.getByText(/Gallipoli food/)).toBeInTheDocument()
+  })
 })

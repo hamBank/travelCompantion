@@ -5,7 +5,7 @@ import { KIND_LABEL } from '../kinds.js'
 export default function BudgetSummary({ trip, stops, onClose }) {
   const home = getHomeCurrency() || 'AUD'
   const items = (stops ?? []).flatMap(s => s.items ?? [])
-  const { planned, paid, byKind, byCurrency, unconvertible } = aggregateSpend(items, home)
+  const { planned, paid, byKind, byCurrency, unconvertible, noRecognizableCost } = aggregateSpend(items, home)
 
   const budget = trip?.budget ? parseFloat(trip.budget) : null
   const budgetValid = budget != null && !Number.isNaN(budget) && budget > 0
@@ -126,6 +126,12 @@ export default function BudgetSummary({ trip, stops, onClose }) {
             <p style={{ color: 'var(--text-faint)' }} className="text-xs">
               Not included in the home-currency totals above ({unconvertible.length} item{unconvertible.length === 1 ? '' : 's'} — see
               the currency they're actually in under "By currency"): {unconvertible.join(', ')}
+            </p>
+          )}
+
+          {noRecognizableCost.length > 0 && (
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs">
+              Not included anywhere above — no recognisable cost amount ({noRecognizableCost.length} item{noRecognizableCost.length === 1 ? '' : 's'}): {noRecognizableCost.join(', ')}
             </p>
           )}
         </div>

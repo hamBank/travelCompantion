@@ -7,14 +7,18 @@ import { parseCost, getHomeCurrency } from './currency.js'
  * Mirrors CostDisplay's rules for interpreting cost/details fields: prefer the
  * pre-converted details.converted_cost/converted_amount_paid when the currency
  * differs from home, otherwise parse the raw string directly when it's already
- * in the home currency. Items whose cost is in a foreign currency with no
- * conversion on record are bucketed into `unconvertible` rather than silently
- * mis-summed into the home-currency total — but they're still counted in
- * `byCurrency` under their own currency code.
+ * in the home currency. Items whose cost is in a *recognised* foreign currency
+ * with no conversion on record are bucketed into `unconvertible` rather than
+ * silently mis-summed into the home-currency total — but they're still counted
+ * in `byCurrency` under their own currency code. Items whose cost string has no
+ * recognisable currency/amount at all (free-text notes like "Walk" ended up in
+ * the cost field, a stray description, etc.) go in `noRecognizableCost`
+ * instead — they were never a real cost, so byCurrency has nothing to show for
+ * them and pointing the user there would be misleading.
  *
  * @param {Array} items - flat array of ItineraryItems (all stops)
  * @param {string} homeCurrency - e.g. "AUD"
- * @returns {{planned: number, paid: number, byKind: Object, byCurrency: Object, unconvertible: string[]}}
+ * @returns {{planned: number, paid: number, byKind: Object, byCurrency: Object, unconvertible: string[], noRecognizableCost: string[]}}
  */
 export function aggregateSpend(items, homeCurrency) {
   const home = homeCurrency || getHomeCurrency()
@@ -23,6 +27,7 @@ export function aggregateSpend(items, homeCurrency) {
   const byKind = {}
   const byCurrency = {}
   const unconvertible = []
+  const noRecognizableCost = []
 
   const bump = (code, field, amt) => {
     if (!byCurrency[code]) byCurrency[code] = { planned: 0, paid: 0 }
@@ -40,7 +45,7 @@ export function aggregateSpend(items, homeCurrency) {
       // currency is zero. Common for a connecting flight leg whose fare is
       // tracked entirely on an earlier leg of the same booking.
       const bareZero = parseFloat(String(cost).replace(/[^\d.]/g, '')) === 0
-      if (!bareZero) unconvertible.push(item.name)
+      if (!bareZero) noRecognizableCost.push(item.name)
       continue
     }
 
@@ -83,5 +88,5 @@ export function aggregateSpend(items, homeCurrency) {
     byKind[kind].paid += paidAmt
   }
 
-  return { planned, paid, byKind, byCurrency, unconvertible }
+  return { planned, paid, byKind, byCurrency, unconvertible, noRecognizableCost }
 }

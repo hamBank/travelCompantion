@@ -96,10 +96,23 @@ describe('aggregateSpend', () => {
     expect(result.byCurrency.EUR.paid).toBe(200)
   })
 
-  it('buckets a cost string with no recognisable currency as unconvertible', () => {
+  it('buckets a cost string with no recognisable currency/amount as noRecognizableCost, not unconvertible', () => {
     const items = [{ name: 'Snack', kind: 'food', cost: '15', details: {} }]
     const result = aggregateSpend(items, 'AUD')
-    expect(result.unconvertible).toEqual(['Snack'])
+    expect(result.unconvertible).toEqual([])
+    expect(result.noRecognizableCost).toEqual(['Snack'])
+  })
+
+  it('buckets free text stored in the cost field as noRecognizableCost and never counts it', () => {
+    const items = [
+      { name: 'Restaurant', kind: 'food', cost: 'Walk', details: {} },
+      { name: 'Gallipoli food', kind: 'food', cost: "Osteria Sant'Angelo — best meal in town", details: {} },
+    ]
+    const result = aggregateSpend(items, 'AUD')
+    expect(result.noRecognizableCost).toEqual(['Restaurant', 'Gallipoli food'])
+    expect(result.unconvertible).toEqual([])
+    expect(result.byCurrency).toEqual({})
+    expect(result.planned).toBe(0)
   })
 
   it('treats a bare $ cost as the home currency rather than defaulting to USD', () => {
