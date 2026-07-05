@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending, updateItemStatus } from '../api.js'
-import StopCard, { computeCrossStopLayover, itemDateKey, itemEndMs, itemOccursOn } from './StopCard.jsx'
+import StopCard, { computeCrossStopLayover, itemDateKey, itemEndMs, itemOccursOn, DayMap, dayLocations } from './StopCard.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import RailDetailModal from './RailDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
@@ -425,6 +425,14 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
               forceOpen={!!activeDay} />
           ))}
         </div>
+
+        {/* Single-day view only, and always just one map — even when today's
+            items span a spillover day-group (e.g. a multi-night booking whose
+            own date key is yesterday), every visible stop's items for
+            activeDay are combined into one pinned-to-bottom map. */}
+        {activeDay && visibleStops.length > 0 && (
+          <DayMap stopId={visibleStops[0].id} locations={dayLocations(visibleStops.flatMap(s => s.items))} />
+        )}
 
         {editable && (
           <div className="mt-4 flex gap-2 flex-wrap">
