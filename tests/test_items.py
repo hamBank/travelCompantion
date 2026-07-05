@@ -315,3 +315,64 @@ def test_river_map_happy_path(client: TestClient, stop, monkeypatch):
     assert r.content == fake_png
     assert "ETag" in r.headers
     assert "max-age" in r.headers["cache-control"]
+
+
+# ── POST /stops/{id}/day-map ─────────────────────────────────────────────────
+
+def test_day_map_400_with_no_locations(client: TestClient, stop):
+    r = client.post(f"/stops/{stop['id']}/day-map", json={"locations": ["", "   "]})
+    assert r.status_code == 400
+
+
+def test_day_map_400_with_too_many_locations(client: TestClient, stop, monkeypatch):
+    monkeypatch.setattr(items_mod, "_STATIC_MAPS_KEY", "test-key")
+    locs = [f"Place {i}" for i in range(items_mod._DAY_MAP_MAX_LOCATIONS + 1)]
+    r = client.post(f"/stops/{stop['id']}/day-map", json={"locations": locs})
+    assert r.status_code == 400
+
+
+def test_day_map_503_when_key_not_configured(client: TestClient, stop, monkeypatch):
+    monkeypatch.setattr(items_mod, "_STATIC_MAPS_KEY", "")
+    r = client.post(f"/stops/{stop['id']}/day-map", json={"locations": ["Rome"]})
+    assert r.status_code == 503
+
+
+def test_day_map_404_for_missing_stop(client: TestClient):
+    r = client.post("/stops/999999/day-map", json={"locations": ["Rome"]})
+    assert r.status_code == 404
+
+
+def test_day_map_happy_path_dedupes_and_labels_markers(client: TestClient, stop, monkeypatch):
+    monkeypatch.setattr(items_mod, "_STATIC_MAPS_KEY", "test-key")
+    fake_png = b"\x89PNG\r\n\x1a\nfakebytes"
+
+    class FakeResponse:
+        content = fake_png
+        def raise_for_status(self):
+            pass
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url):
+            captured["url"] = url
+            assert "maps.googleapis.com/maps/api/staticmap" in url
+            assert "key=test-key" in url
+            return FakeResponse()
+
+    monkeypatch.setattr(items_mod.httpx, "Client", FakeClient)
+
+    r = client.post(f"/stops/{stop['id']}/day-map", json={
+        "locations": ["Colosseum, Rome", "colosseum, rome", "Trevi Fountain, Rome"],
+    })
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content == fake_png
+    assert "ETag" in r.headers
+    # Deduplicated case-insensitively: only 2 distinct markers, labeled A/B.
+    assert captured["url"].count("markers=") == 2
+    assert "label%3AA" in captured["url"] or "label:A" in captured["url"]
+    assert "label%3AB" in captured["url"] or "label:B" in captured["url"]

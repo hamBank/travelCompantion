@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -534,5 +534,91 @@ describe('weatherSegments', () => {
     expect(weatherSegments(stop, items)).toEqual([
       { start: '2026-08-09', end: '2026-08-09', query: 'Tournon' },
     ])
+  })
+})
+
+// ── itemLocations / dayLocations (day map pins) ──────────────────────────────
+
+describe('itemLocations', () => {
+  it('reads a single location field for simple kinds', () => {
+    expect(itemLocations({ kind: 'restaurant', details: { location: 'Trattoria Roma' } }))
+      .toEqual(['Trattoria Roma'])
+    expect(itemLocations({ kind: 'accommodation', details: { location: 'Hotel Lutetia' } }))
+      .toEqual(['Hotel Lutetia'])
+    expect(itemLocations({ kind: 'tour', details: { meeting_point: 'Colosseum gate' } }))
+      .toEqual(['Colosseum gate'])
+  })
+
+  it('reads both endpoints for transit kinds', () => {
+    expect(itemLocations({ kind: 'transfer', details: { start_location: 'Lyon', end_location: 'Valence' } }))
+      .toEqual(['Lyon', 'Valence'])
+    expect(itemLocations({ kind: 'river_transfer', details: { start_location: 'Tournon', end_location: 'Vienne' } }))
+      .toEqual(['Tournon', 'Vienne'])
+    expect(itemLocations({ kind: 'walk', details: { start_location: 'A', end_location: 'B' } }))
+      .toEqual(['A', 'B'])
+  })
+
+  it('reads origin/destination for rail as-is', () => {
+    expect(itemLocations({ kind: 'rail', details: { origin: 'Paris Gare de Lyon', destination: 'Lyon Part-Dieu' } }))
+      .toEqual(['Paris Gare de Lyon', 'Lyon Part-Dieu'])
+  })
+
+  it('resolves flight IATA codes to city names', () => {
+    expect(itemLocations({ kind: 'flight', details: { origin: 'SIN', destination: 'CDG' } }))
+      .toEqual(['Singapore', 'Paris Charles de Gaulle'])
+  })
+
+  it('falls back to the raw code for an unrecognized airport', () => {
+    expect(itemLocations({ kind: 'flight', details: { origin: 'ZZZ', destination: 'CDG' } }))
+      .toEqual(['ZZZ', 'Paris Charles de Gaulle'])
+  })
+
+  it('reads pickup/dropoff for hire', () => {
+    expect(itemLocations({ kind: 'hire', details: { pickup_location: 'Airport', dropoff_location: 'Downtown' } }))
+      .toEqual(['Airport', 'Downtown'])
+  })
+
+  it('drops missing fields rather than including empty strings', () => {
+    expect(itemLocations({ kind: 'transfer', details: { start_location: 'Lyon' } })).toEqual(['Lyon'])
+  })
+
+  it('returns an empty array for kinds with no location (note)', () => {
+    expect(itemLocations({ kind: 'note', details: { description: 'Buy tickets' } })).toEqual([])
+  })
+
+  it('returns an empty array when details is missing entirely', () => {
+    expect(itemLocations({ kind: 'restaurant' })).toEqual([])
+  })
+})
+
+describe('dayLocations', () => {
+  it('collects locations across every item in the day', () => {
+    const items = [
+      { kind: 'accommodation', details: { location: 'Hotel Lutetia' } },
+      { kind: 'restaurant', details: { location: 'Trattoria Roma' } },
+    ]
+    expect(dayLocations(items)).toEqual(['Hotel Lutetia', 'Trattoria Roma'])
+  })
+
+  it('dedupes case/whitespace-insensitively, keeping first-seen order', () => {
+    const items = [
+      { kind: 'restaurant', details: { location: 'Colosseum, Rome' } },
+      { kind: 'activity', details: { location: '  colosseum, rome  ' } },
+      { kind: 'activity', details: { location: 'Trevi Fountain' } },
+    ]
+    expect(dayLocations(items)).toEqual(['Colosseum, Rome', 'Trevi Fountain'])
+  })
+
+  it('skips items with no location without breaking the rest', () => {
+    const items = [
+      { kind: 'note', details: { description: 'Pack sunscreen' } },
+      { kind: 'restaurant', details: { location: 'Trattoria Roma' } },
+    ]
+    expect(dayLocations(items)).toEqual(['Trattoria Roma'])
+  })
+
+  it('returns an empty array for no items or an empty day', () => {
+    expect(dayLocations([])).toEqual([])
+    expect(dayLocations(undefined)).toEqual([])
   })
 })
