@@ -429,7 +429,8 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
         {/* Single-day view only, and always just one map — even when today's
             items span a spillover day-group (e.g. a multi-night booking whose
             own date key is yesterday), every visible stop's items for
-            activeDay are combined into one pinned-to-bottom map. */}
+            activeDay are combined into one map, shown below all of today's
+            item cards and above the Import-from-document button. */}
         {activeDay && visibleStops.length > 0 && (
           <DayMap stopId={visibleStops[0].id} locations={dayLocations(visibleStops.flatMap(s => s.items))} />
         )}
