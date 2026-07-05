@@ -76,5 +76,6 @@ The hook aborts the push with a clear error if `frontend/src/` changed but
 
 ## Git workflow
 1. Commit source files
-2. If any `frontend/src/` files changed, build then amend (see above)
-3. Push — use `--force-with-lease` when amending main
+2. If any `frontend/src/` files changed, build then commit `backend/static/`
+   as its own separate commit (see above — do not amend)
+3. Push (normal push — no amending means no force needed)
