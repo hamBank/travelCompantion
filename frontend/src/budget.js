@@ -34,7 +34,7 @@ export function aggregateSpend(items, homeCurrency) {
     if (!cost) continue
 
     const d = item?.details ?? {}
-    const parsedCost = parseCost(cost)
+    const parsedCost = parseCost(cost, home)
     if (!parsedCost) { unconvertible.push(item.name); continue }
 
     const costCode = parsedCost.code
@@ -50,7 +50,7 @@ export function aggregateSpend(items, homeCurrency) {
     let paidAmt = 0
     const amountPaid = d.amount_paid
     if (amountPaid) {
-      const parsedPaid = parseCost(amountPaid)
+      const parsedPaid = parseCost(amountPaid, home)
       const paidCode = parsedPaid?.code || costCode
       const paidRaw = parsedPaid?.amount ?? (parseFloat(amountPaid) || 0)
       bump(paidCode, 'paid', paidRaw)

@@ -101,4 +101,12 @@ describe('aggregateSpend', () => {
     const result = aggregateSpend(items, 'AUD')
     expect(result.unconvertible).toEqual(['Snack'])
   })
+
+  it('treats a bare $ cost as the home currency rather than defaulting to USD', () => {
+    const items = [{ name: 'Groceries', kind: 'purchase', cost: '$2,017.50', details: {} }]
+    const result = aggregateSpend(items, 'AUD')
+    expect(result.planned).toBe(2017.5)
+    expect(result.byCurrency.AUD.planned).toBe(2017.5)
+    expect(result.unconvertible).toEqual([])
+  })
 })

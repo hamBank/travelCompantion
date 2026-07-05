@@ -1637,7 +1637,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
         const { converted_cost: _a, converted_amount_paid: _b, converted_currency: _c, ...rest } = finalDetails
         finalDetails = rest
       } else if (homeCurrency) {
-        const parsed = parseCost(core.cost)
+        const parsed = parseCost(core.cost, homeCurrency)
         if (parsed && parsed.code !== homeCurrency) {
           // Re-convert if cost changed or if no conversion stored yet
           if (costChanged || finalDetails.converted_cost == null) {
@@ -1647,7 +1647,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
           }
           // Re-convert amount_paid if it changed or no conversion stored yet
           if ((costChanged || paidChanged || finalDetails.converted_amount_paid == null) && finalDetails.amount_paid != null) {
-            const parsedPaid = parseCost(finalDetails.amount_paid)
+            const parsedPaid = parseCost(finalDetails.amount_paid, homeCurrency)
             const paidAmount = parsedPaid != null ? parsedPaid.amount : parseFloat(finalDetails.amount_paid)
             if (paidAmount === 0) {
               finalDetails = { ...finalDetails, converted_amount_paid: 0 }

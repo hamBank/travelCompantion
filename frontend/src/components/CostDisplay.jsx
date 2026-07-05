@@ -20,7 +20,7 @@ export default function CostDisplay({ item, className = '', showIcon = true, com
   if (!cost) return null
 
   const homeCode   = getHomeCurrency()
-  const parsedCost = parseCost(cost)
+  const parsedCost = parseCost(cost, homeCode)
   const costCode   = parsedCost?.code ?? ''
   const showConverted = convertedCost != null && convertedCurrency && convertedCurrency !== costCode
 
@@ -44,7 +44,7 @@ export default function CostDisplay({ item, className = '', showIcon = true, com
   }
 
   // ── Shared calculations ─────────────────────────────────────────────────────
-  const parsedPaid = parseCost(amountPaid) ?? { amount: parseFloat(amountPaid) ?? 0, code: costCode }
+  const parsedPaid = parseCost(amountPaid, homeCode) ?? { amount: parseFloat(amountPaid) ?? 0, code: costCode }
   const outstanding         = parsedCost && parsedPaid.amount != null ? parsedCost.amount - parsedPaid.amount : null
   const convertedOutstanding = convertedCost != null && convertedPaid != null
     ? Math.round((convertedCost - convertedPaid) * 100) / 100 : null

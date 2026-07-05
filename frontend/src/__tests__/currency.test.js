@@ -31,6 +31,20 @@ describe('parseCost', () => {
   it('parses an ISO code prefix preceded by a label', () => {
     expect(parseCost('Total: USD 120')).toEqual({ amount: 120, code: 'USD' })
   })
+  it('resolves a bare $ to USD when no home currency is given', () => {
+    expect(parseCost('$50')).toEqual({ amount: 50, code: 'USD' })
+  })
+  it('resolves a bare $ to the home currency when home is a dollar currency', () => {
+    expect(parseCost('$50', 'AUD')).toEqual({ amount: 50, code: 'AUD' })
+    expect(parseCost('$50', 'SGD')).toEqual({ amount: 50, code: 'SGD' })
+  })
+  it('still defaults a bare $ to USD when home is not a dollar currency', () => {
+    expect(parseCost('$50', 'EUR')).toEqual({ amount: 50, code: 'USD' })
+  })
+  it('does not let a home currency override an explicit disambiguated prefix', () => {
+    expect(parseCost('US$50', 'AUD')).toEqual({ amount: 50, code: 'USD' })
+    expect(parseCost('A$50', 'USD')).toEqual({ amount: 50, code: 'AUD' })
+  })
 })
 
 describe('formatCurrencyAmount', () => {

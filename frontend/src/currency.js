@@ -2,7 +2,7 @@
 // Order matters — longer matches must come first.
 const SYMBOL_MAP = [
   ['A$',  'AUD'], ['C$',  'CAD'], ['NZ$', 'NZD'], ['HK$', 'HKD'],
-  ['S$',  'SGD'], ['MX$', 'MXN'], ['R$',  'BRL'],
+  ['S$',  'SGD'], ['MX$', 'MXN'], ['R$',  'BRL'], ['US$', 'USD'],
   ['CHF', 'CHF'], ['SEK', 'SEK'], ['NOK', 'NOK'], ['DKK', 'DKK'],
   ['PLN', 'PLN'], ['CZK', 'CZK'], ['HUF', 'HUF'], ['RON', 'RON'],
   ['AED', 'AED'], ['SAR', 'SAR'], ['QAR', 'QAR'], ['KWD', 'KWD'],
@@ -32,11 +32,22 @@ const VALID_ISO_CODES = new Set([
   'ILS',
 ])
 
+// Currencies that share the bare "$" symbol — disambiguated forms (A$, NZ$,
+// S$, HK$, MX$) are unambiguous on their own, but a bare "$" is genuinely
+// ambiguous: most people typing "$" mean whatever currency they're used to,
+// not necessarily USD.
+const DOLLAR_CODES = new Set(['USD', 'AUD', 'CAD', 'NZD', 'SGD', 'HKD', 'MXN', 'TWD'])
+
 /**
  * Parse a free-text cost string into { amount, code }.
  * Returns null if no recognisable currency + numeric amount is found.
+ *
+ * `homeCode`, when given, resolves a bare "$" to the home currency instead of
+ * defaulting to USD — someone whose home currency is AUD typing "$50" means
+ * A$50, not US$50. Only applies when home is itself a dollar-currency;
+ * unambiguous prefixes (A$, US$, NZ$, etc.) are never affected.
  */
-export function parseCost(str) {
+export function parseCost(str, homeCode = '') {
   if (!str) return null
   const s = str.trim()
 
@@ -45,7 +56,10 @@ export function parseCost(str) {
     if (s.startsWith(sym)) {
       const rest = s.slice(sym.length).trim()
       const num = extractNumber(rest)
-      if (num !== null) return { amount: num, code }
+      if (num !== null) {
+        const resolvedCode = sym === '$' && DOLLAR_CODES.has(homeCode) ? homeCode : code
+        return { amount: num, code: resolvedCode }
+      }
     }
   }
 
