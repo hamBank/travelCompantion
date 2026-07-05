@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { createItem, updateItem, enrichPlace, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem, generateRiverPath } from '../api.js'
+import { createItem, updateItem, enrichPlace, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem, generateRiverPath, getBookingPrimary } from '../api.js'
 import { setEditing } from '../editState.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
@@ -92,7 +92,7 @@ function toLocalInput(v) {
   return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4] ?? '00'}:${m[5] ?? '00'}` : ''
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', min }) {
+function Field({ label, value, onChange, placeholder, type = 'text', min, disabled = false, hint = null }) {
   const displayValue = type === 'datetime-local' ? toLocalInput(value) : (value ?? '')
   // Constrain (and open) date/datetime pickers at `min` — e.g. an arrival/check-in
   // — so a departure can't be set earlier and the user doesn't scroll from today.
@@ -106,13 +106,19 @@ function Field({ label, value, onChange, placeholder, type = 'text', min }) {
         min={minValue}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
+        disabled={disabled}
         // en-GB forces the native picker to render a 24-hour clock — the
         // browser otherwise follows the OS locale, which for many users
         // defaults to 12-hour AM/PM regardless of the page's own language.
         lang={(type === 'datetime-local' || type === 'time') ? 'en-GB' : undefined}
-        style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
-        className="rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+        style={{
+          background: disabled ? 'var(--surface)' : 'var(--surface-2)',
+          color: disabled ? 'var(--text-faint)' : 'var(--text)',
+          border: '1px solid var(--border)',
+        }}
+        className="rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed"
       />
+      {hint && <p style={{ color: 'var(--text-faint)' }} className="text-xs mt-0.5">{hint}</p>}
     </div>
   )
 }
@@ -1570,6 +1576,10 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
   const [deleting, setDeleting] = useState(false)
   const [stops, setStops] = useState([])
   const [targetStop, setTargetStop] = useState(item.stop_id ?? (stopsProp?.[0]?.id ?? null))
+  // Set when this flight shares a booking_ref with an earlier-departing flight —
+  // that leg carries the fare for the whole booking, so cost/paid are read-only
+  // here rather than inviting a second, conflicting entry for the same booking.
+  const [bookingPrimary, setBookingPrimary] = useState(null)
 
   // Snapshot the initial form state once, so any close attempt (backdrop
   // click, ✕, Cancel) can warn before silently discarding real edits.
@@ -1583,6 +1593,10 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
   useEffect(() => {
     if (!isNew && item.id) getItemStops(item.id).then(setStops).catch(() => {})
   }, [item.id, isNew])
+
+  useEffect(() => {
+    if (!isNew && item.id && item.kind === 'flight') getBookingPrimary(item.id).then(setBookingPrimary).catch(() => {})
+  }, [item.id, isNew, item.kind])
 
   async function handleDelete() {
     if (deleting) return
@@ -1833,11 +1847,15 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
                 label="Total cost"
                 value={core.cost ?? ''}
                 onChange={v => setCore(c => ({ ...c, cost: v || '' }))}
+                disabled={!!bookingPrimary}
+                hint={bookingPrimary && `Tracked on "${bookingPrimary.name}" (${bookingPrimary.cost || 'no cost set'}) — same booking`}
               />
               <Field
                 label="Amount paid"
                 value={details.amount_paid ?? ''}
                 onChange={v => setDetails(d => ({ ...d, amount_paid: v || undefined }))}
+                disabled={!!bookingPrimary}
+                hint={bookingPrimary && 'Tracked on the same booking’s first flight'}
               />
             </div>
           </div>

@@ -133,6 +133,36 @@ def sibling_stops(item_id: int, session: Session = Depends(get_session), user: d
     ).all()
 
 
+@router.get("/items/{item_id}/booking-primary")
+def booking_primary(item_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """For a flight sharing a booking_ref with an earlier-departing flight in the
+    same trip, returns that earlier flight's {id, name, cost} — the leg that
+    carries the fare for the whole booking, so the UI can point a later leg's
+    cost field at it instead of letting it be edited separately. Returns None
+    when this item is itself the earliest leg (or has no booking_ref, or isn't
+    a flight) — i.e. when there's nothing to defer to.
+    """
+    require_item_role(session, user, item_id, TripRole.viewer)
+    item = session.get(ItineraryItem, item_id)
+    if not item or item.kind != ItemKind.flight:
+        return None
+    booking_ref = (item.details or {}).get("booking_ref")
+    if not booking_ref:
+        return None
+    stop = session.get(Stop, item.stop_id)
+    candidates = session.exec(
+        select(ItineraryItem)
+        .join(Stop, ItineraryItem.stop_id == Stop.id)
+        .where(Stop.trip_id == stop.trip_id, ItineraryItem.kind == ItemKind.flight)
+    ).all()
+    same_booking = [c for c in candidates if (c.details or {}).get("booking_ref") == booking_ref]
+    same_booking.sort(key=lambda c: (c.details or {}).get("depart_time") or "")
+    primary = same_booking[0]
+    if primary.id == item.id:
+        return None
+    return {"id": primary.id, "name": primary.name, "cost": primary.cost}
+
+
 class MoveItemRequest(BaseModel):
     stop_id: int
 

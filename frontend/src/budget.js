@@ -35,7 +35,14 @@ export function aggregateSpend(items, homeCurrency) {
 
     const d = item?.details ?? {}
     const parsedCost = parseCost(cost, home)
-    if (!parsedCost) { unconvertible.push(item.name); continue }
+    if (!parsedCost) {
+      // A bare "0" (no currency symbol/code) is unambiguous — zero in any
+      // currency is zero. Common for a connecting flight leg whose fare is
+      // tracked entirely on an earlier leg of the same booking.
+      const bareZero = parseFloat(String(cost).replace(/[^\d.]/g, '')) === 0
+      if (!bareZero) unconvertible.push(item.name)
+      continue
+    }
 
     const costCode = parsedCost.code
     bump(costCode, 'planned', parsedCost.amount)

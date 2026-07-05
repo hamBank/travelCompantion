@@ -109,4 +109,14 @@ describe('aggregateSpend', () => {
     expect(result.byCurrency.AUD.planned).toBe(2017.5)
     expect(result.unconvertible).toEqual([])
   })
+
+  it('treats a bare "0" cost as zero rather than unconvertible (e.g. a connecting flight leg)', () => {
+    const items = [
+      { name: 'CDG → DOH', kind: 'flight', cost: '$2,017.50', details: {} },
+      { name: 'DOH → PER', kind: 'flight', cost: '0', details: {} },
+    ]
+    const result = aggregateSpend(items, 'AUD')
+    expect(result.planned).toBe(2017.5)
+    expect(result.unconvertible).toEqual([])
+  })
 })

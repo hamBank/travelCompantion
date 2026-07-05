@@ -16,8 +16,9 @@ vi.mock('../api.js', () => ({
   getItemStops: vi.fn(),
   moveItem: vi.fn(),
   generateRiverPath: vi.fn(),
+  getBookingPrimary: vi.fn(),
 }))
-import { enrichPlace, getItemStops } from '../api.js'
+import { enrichPlace, getItemStops, getBookingPrimary } from '../api.js'
 import ItemEditModal from '../components/ItemEditModal.jsx'
 
 beforeEach(() => vi.clearAllMocks())
@@ -87,5 +88,47 @@ describe('ItemEditModal restaurant Auto-fill', () => {
     await waitFor(() => expect(enrichPlace).toHaveBeenCalledWith(
       7, { kind: 'restaurant', name: 'Trattoria', location: undefined }
     ))
+  })
+})
+
+describe('ItemEditModal flight booking-primary cost lock', () => {
+  it('leaves cost/paid editable when this leg is not part of a shared booking', async () => {
+    getItemStops.mockResolvedValue([])
+    getBookingPrimary.mockResolvedValue(null)
+    render(
+      <ItemEditModal
+        item={{ id: 42, stop_id: 7, kind: 'flight', name: 'CDG → DOH', cost: '$2,017.50', details: {} }}
+        onSave={() => {}}
+        onClose={() => {}}
+      />
+    )
+    await waitFor(() => expect(getBookingPrimary).toHaveBeenCalledWith(42))
+    expect(screen.getByDisplayValue('$2,017.50')).not.toBeDisabled()
+  })
+
+  it('disables cost/paid and shows a hint when an earlier leg on the same booking carries the fare', async () => {
+    getItemStops.mockResolvedValue([])
+    getBookingPrimary.mockResolvedValue({ id: 41, name: 'CDG → DOH', cost: '$2,017.50' })
+    render(
+      <ItemEditModal
+        item={{ id: 43, stop_id: 7, kind: 'flight', name: 'DOH → PER', cost: '0', details: {} }}
+        onSave={() => {}}
+        onClose={() => {}}
+      />
+    )
+    await waitFor(() => expect(screen.getByDisplayValue('0')).toBeDisabled())
+    expect(screen.getByText(/Tracked on "CDG → DOH"/)).toBeInTheDocument()
+  })
+
+  it('does not look up a booking primary for a not-yet-saved item', () => {
+    render(
+      <ItemEditModal
+        item={{ stop_id: 7, kind: 'flight', name: '', details: {} }}
+        isNew
+        onSave={() => {}}
+        onClose={() => {}}
+      />
+    )
+    expect(getBookingPrimary).not.toHaveBeenCalled()
   })
 })

@@ -123,6 +123,71 @@ def test_partial_update_preserves_other_fields(client: TestClient, stop):
     assert updated["status"] == "done"
 
 
+# ── GET /items/{id}/booking-primary ──────────────────────────────────────────
+
+def test_booking_primary_points_later_leg_to_earlier_one(client: TestClient, stop):
+    first = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "CDG → DOH", "status": "pending", "cost": "$2017.50",
+        "details": {"booking_ref": "QR/ABC123", "depart_time": "2026-08-19T16:25"},
+    }).json()
+    second = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "DOH → PER", "status": "pending", "cost": "0",
+        "details": {"booking_ref": "QR/ABC123", "depart_time": "2026-08-20T02:30"},
+    }).json()
+
+    r = client.get(f"/items/{second['id']}/booking-primary")
+    assert r.status_code == 200
+    assert r.json() == {"id": first["id"], "name": "CDG → DOH", "cost": "$2017.50"}
+
+
+def test_booking_primary_is_none_for_the_earliest_leg(client: TestClient, stop):
+    first = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "CDG → DOH", "status": "pending", "cost": "$2017.50",
+        "details": {"booking_ref": "QR/ABC123", "depart_time": "2026-08-19T16:25"},
+    }).json()
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "DOH → PER", "status": "pending", "cost": "0",
+        "details": {"booking_ref": "QR/ABC123", "depart_time": "2026-08-20T02:30"},
+    })
+
+    r = client.get(f"/items/{first['id']}/booking-primary")
+    assert r.status_code == 200
+    assert r.json() is None
+
+
+def test_booking_primary_is_none_without_a_booking_ref(client: TestClient, stop):
+    item = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "Solo flight", "status": "pending", "details": {},
+    }).json()
+    r = client.get(f"/items/{item['id']}/booking-primary")
+    assert r.status_code == 200
+    assert r.json() is None
+
+
+def test_booking_primary_is_none_for_non_flight_kinds(client: TestClient, stop):
+    item = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "rail", "name": "Train", "status": "pending",
+        "details": {"booking_ref": "SNCF123"},
+    }).json()
+    r = client.get(f"/items/{item['id']}/booking-primary")
+    assert r.status_code == 200
+    assert r.json() is None
+
+
+def test_booking_primary_ignores_other_bookings(client: TestClient, stop):
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "Unrelated flight", "status": "pending",
+        "details": {"booking_ref": "OTHER999", "depart_time": "2026-08-01T00:00"},
+    })
+    item = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "Only flight in its booking", "status": "pending",
+        "details": {"booking_ref": "QR/SOLO", "depart_time": "2026-08-19T16:25"},
+    }).json()
+    r = client.get(f"/items/{item['id']}/booking-primary")
+    assert r.status_code == 200
+    assert r.json() is None
+
+
 # ── POST /river-path ─────────────────────────────────────────────────────────
 
 from backend.routers import items as items_mod
