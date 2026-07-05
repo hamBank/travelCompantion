@@ -24,12 +24,14 @@ AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
    - Write tests for new behavior FIRST or alongside — every plan lists the
      tests expected of it.
 
-2. **Frontend build/amend/push workflow** (enforced by a pre-push git hook —
-   see `CLAUDE.md` at the repo root for the canonical steps). If any file under
+2. **Frontend build/push workflow** (enforced by a pre-push git hook — see
+   `CLAUDE.md` at the repo root for the canonical steps). If any file under
    `frontend/src/` changed:
    1. commit the source change;
    2. `cd frontend && npm run build` (bakes the commit SHA into the bundle);
-   3. `git add backend/static/ && git commit --amend --no-edit`;
+   3. `git add backend/static/ && git commit -m "Build frontend for <sha>"` —
+      **a separate commit, not an amend** (amending would rewrite the very
+      commit hash the build just baked in);
    4. push. Backend-only changes push normally, no build needed.
 
 3. **Datetimes are naive UTC throughout the backend.** DB columns, JWT expiry,

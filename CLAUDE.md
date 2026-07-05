@@ -36,17 +36,31 @@ git commit -m "..."
 # 2. Build — HEAD is now the new commit, so the correct SHA is baked in
 cd frontend && npm run build
 
-# 3. Amend the build output into the same commit
+# 3. Commit the build output as its OWN commit (do NOT amend — see below)
 cd ..
 git add backend/static/
-git commit --amend --no-edit
+git commit -m "Build frontend for <short-sha-from-step-1>"
 
 # 4. Push
-git push origin main --force-with-lease
+git push origin main
 ```
 
 **NEVER** skip steps 2–3 when `frontend/src/` files changed — the old compiled bundle
 will be served and the SHA health-poller will loop or show stale features.
+
+**Do not use `git commit --amend` for the build commit.** `npm run build` computes
+the baked SHA as `git log -1 --format=%h -- src` — the hash of the commit that last
+touched `frontend/src`. Amending that same commit to add `backend/static/` rewrites
+its own hash, so the SHA baked into `build-sha.txt` / `__BUILD_SHA__` ends up
+referring to a commit that no longer exists post-amend. This was silently wrong on
+every prior deploy (confirmed via git history 2026-07-05) — harmless for the actual
+stale-client-reload check (client and server both come from the same build, so they
+still agree with each other), but it means the SHA shown in the footer and `/health`
+never matched the real deployed commit, defeating its value for debugging deploys.
+Committing the build output separately means `build-sha.txt` will be one commit
+"behind" HEAD (pointing at the source commit, not the follow-up build commit) — that
+mismatch is expected and fine; the SHA it reports is a real, permanent, reachable
+commit that accurately represents the deployed code, which is what matters.
 
 A pre-push git hook enforces this automatically. Install it once per clone:
 ```bash
