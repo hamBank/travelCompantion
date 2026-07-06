@@ -1,5 +1,8 @@
-"""Tests for the /weather endpoint and its 6-hour DB cache."""
+"""Tests for the /weather endpoint and its variable-TTL DB cache."""
+from datetime import date, datetime, timedelta, timezone
+
 import backend.routers.weather as wr
+from backend.models import WeatherCache
 
 
 def test_weather_endpoint_returns_data_and_caches(client, monkeypatch):
@@ -57,3 +60,95 @@ def test_weather_endpoint_is_public(client):
     # No Authorization header required (registered under public prefixes)
     r = client.get("/weather", params={"lat": "1.35", "lng": "103.99", "start": "2026-07-22", "end": "2026-07-22"})
     assert r.status_code in (200, 502)  # 200 normally; never 401
+
+
+# ── Variable cache TTL ──────────────────────────────────────────────────────
+
+def test_cache_ttl_today_or_tomorrow_is_immediate():
+    today = date(2026, 7, 6)
+    assert wr._cache_ttl(today, today, today) == wr.TTL_IMMEDIATE
+    assert wr._cache_ttl(today + timedelta(days=1), today + timedelta(days=1), today) == wr.TTL_IMMEDIATE
+
+
+def test_cache_ttl_two_days_out_is_near():
+    today = date(2026, 7, 6)
+    assert wr._cache_ttl(today + timedelta(days=2), today + timedelta(days=2), today) == wr.TTL_NEAR
+
+
+def test_cache_ttl_within_forecast_horizon_is_default():
+    today = date(2026, 7, 6)
+    assert wr._cache_ttl(today + timedelta(days=3), today + timedelta(days=3), today) == wr.TTL_DEFAULT
+    assert wr._cache_ttl(today + timedelta(days=15), today + timedelta(days=15), today) == wr.TTL_DEFAULT
+
+
+def test_cache_ttl_beyond_horizon_is_far():
+    today = date(2026, 7, 6)
+    assert wr._cache_ttl(today + timedelta(days=16), today + timedelta(days=16), today) == wr.TTL_FAR
+
+
+def test_cache_ttl_entirely_past_is_far():
+    today = date(2026, 7, 6)
+    assert wr._cache_ttl(today - timedelta(days=10), today - timedelta(days=5), today) == wr.TTL_FAR
+
+
+def test_cache_ttl_uses_the_near_edge_of_a_range():
+    # A range that starts tomorrow but runs long is exactly as volatile as one
+    # entirely in the next couple of days — the near edge governs.
+    today = date(2026, 7, 6)
+    assert wr._cache_ttl(today + timedelta(days=1), today + timedelta(days=30), today) == wr.TTL_IMMEDIATE
+
+
+def test_weather_endpoint_refetches_stale_immediate_bucket_entry(client, session, monkeypatch):
+    # A 2-hour-old cache entry for *today* is stale under the 1-hour
+    # TTL_IMMEDIATE bucket, so it must be refetched rather than served as-is.
+    calls = {"n": 0}
+
+    def fake_get_weather(lat, lng, start, end):
+        calls["n"] += 1
+        return {start: {"tmin": 1, "tmax": 2, "icon": "☀", "desc": "Clear", "source": "forecast"}}
+
+    monkeypatch.setattr(wr, "get_weather", fake_get_weather)
+    monkeypatch.setattr(wr, "local_today", lambda lng: date(2026, 7, 6))
+
+    params = {"lat": "1.35", "lng": "103.82", "start": "2026-07-06", "end": "2026-07-06"}
+    r1 = client.get("/weather", params=params)
+    assert r1.json()["cached"] is False
+    assert calls["n"] == 1
+
+    key = wr.cache_key("1.35", "103.82", "2026-07-06", "2026-07-06")
+    row = session.get(WeatherCache, key)
+    row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+    session.add(row)
+    session.commit()
+
+    r2 = client.get("/weather", params=params)
+    assert r2.json()["cached"] is False
+    assert calls["n"] == 2
+
+
+def test_weather_endpoint_serves_stale_far_bucket_entry_from_cache(client, session, monkeypatch):
+    # The same 2-hour staleness is well within the 48-hour TTL_FAR bucket for
+    # a date far beyond the forecast horizon — served from cache, not refetched.
+    calls = {"n": 0}
+
+    def fake_get_weather(lat, lng, start, end):
+        calls["n"] += 1
+        return {start: {"tmin": 1, "tmax": 2, "icon": "☀", "desc": "Clear", "source": "climatology"}}
+
+    monkeypatch.setattr(wr, "get_weather", fake_get_weather)
+    monkeypatch.setattr(wr, "local_today", lambda lng: date(2026, 7, 6))
+
+    params = {"lat": "1.35", "lng": "103.82", "start": "2026-08-01", "end": "2026-08-01"}
+    r1 = client.get("/weather", params=params)
+    assert r1.json()["cached"] is False
+    assert calls["n"] == 1
+
+    key = wr.cache_key("1.35", "103.82", "2026-08-01", "2026-08-01")
+    row = session.get(WeatherCache, key)
+    row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+    session.add(row)
+    session.commit()
+
+    r2 = client.get("/weather", params=params)
+    assert r2.json()["cached"] is True
+    assert calls["n"] == 1
