@@ -51,6 +51,45 @@ describe('pickInitialDay', () => {
       expect(pickInitialDay({ start_date: '2026-07-01T00:00:00', end_date: null })).toBe('2026-09-01')
     } finally { restoreDate() }
   })
+
+  it("refines the default day using the current stop's longitude when it disagrees with the device's local date", () => {
+    // 23:30 UTC on the 6th is already past midnight (the 7th) at a
+    // Singapore-ish longitude — the device (host TZ = UTC in tests) still
+    // says the 6th, but the stop the trip is actually at says the 7th.
+    mockToday('2026-07-06T23:30:00Z')
+    try {
+      const timeline = {
+        start_date: '2026-07-01T00:00:00',
+        end_date: '2026-07-20T00:00:00',
+        stops: [{ arrive: '2026-07-06T00:00:00', depart: '2026-07-08T00:00:00', lng: 103.8198 }],
+      }
+      expect(pickInitialDay(timeline)).toBe('2026-07-07')
+    } finally { restoreDate() }
+  })
+
+  it('does not refine when the current stop has no stored coordinates', () => {
+    mockToday('2026-07-06T23:30:00Z')
+    try {
+      const timeline = {
+        start_date: '2026-07-01T00:00:00',
+        end_date: '2026-07-20T00:00:00',
+        stops: [{ arrive: '2026-07-06T00:00:00', depart: '2026-07-08T00:00:00', lng: null }],
+      }
+      expect(pickInitialDay(timeline)).toBe('2026-07-06')
+    } finally { restoreDate() }
+  })
+
+  it('does not refine when no stop covers the device-local day', () => {
+    mockToday('2026-07-06T23:30:00Z')
+    try {
+      const timeline = {
+        start_date: '2026-07-01T00:00:00',
+        end_date: '2026-07-20T00:00:00',
+        stops: [{ arrive: '2026-07-10T00:00:00', depart: '2026-07-12T00:00:00', lng: 103.8198 }],
+      }
+      expect(pickInitialDay(timeline)).toBe('2026-07-06')
+    } finally { restoreDate() }
+  })
 })
 
 describe('shiftDay', () => {

@@ -102,6 +102,26 @@ def test_get_weather_horizon_last_forecast_day_is_today_plus_15():
     assert out["2026-07-22"]["source"] == "climatology"
 
 
+def test_get_weather_uses_destination_local_today_when_not_overridden(monkeypatch):
+    # No `today` kwarg passed — get_weather must derive it from the destination's
+    # own longitude (tzutil.local_today) rather than the server's own clock.
+    calls = []
+
+    def fake_local_today(lng, **kwargs):
+        calls.append(lng)
+        return date(2026, 7, 6)
+
+    monkeypatch.setattr(weather, "local_today", fake_local_today)
+
+    def fake_fetch(url):
+        assert "start_date=2026-07-06" in url
+        return _daily(["2026-07-06"], [30], [20], [0], [5])
+
+    out = weather.get_weather(1.35, 103.82, "2026-07-06", "2026-07-06", fetch_json=fake_fetch)
+    assert calls == [103.82]
+    assert out["2026-07-06"]["source"] == "forecast"
+
+
 def test_get_weather_handles_fetch_failure_gracefully():
     today = date(2026, 6, 30)
 
