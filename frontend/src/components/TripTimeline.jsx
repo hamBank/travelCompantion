@@ -13,17 +13,48 @@ import { getCurrentModal } from '../modalNav.js'
 import { isEditing, onEditChange } from '../editState.js'
 import { useOnline } from '../online.js'
 import { useSwipeNav } from '../swipeNav.js'
+import { approxLocalDateStr } from '../tzutil.js'
+
+// The stop whose [arrive, depart] range covers `dateStr`, if any — used to
+// refine "today" using where the trip actually is on that day, rather than
+// only the viewing device's own clock.
+function stopCoveringDate(stops, dateStr) {
+  return (stops || []).find(s => {
+    const a = s.arrive ? String(s.arrive).slice(0, 10) : null
+    const d = s.depart ? String(s.depart).slice(0, 10) : null
+    if (!a && !d) return false
+    if (a && dateStr < a) return false
+    if (d && dateStr > d) return false
+    return true
+  }) || null
+}
 
 // Today-view defaults: today's date if it falls within the trip's dates,
 // otherwise the trip's first day (or plain today when the trip has no
 // dates set at all, so Today view still does something sensible).
+//
+// The device's own local date is the first guess (covers the common case —
+// phones auto-adjust timezone while traveling). It's then refined against
+// wherever the trip actually is on that day: a desktop that's never had its
+// timezone updated, or a phone with a stale/manual TZ, would otherwise show
+// the wrong day for a trip already in a very different timezone. Which stop
+// counts as "current" can itself shift once the day is recomputed from that
+// stop's location, so this takes a couple of rounds to settle rather than a
+// single pass.
 export function pickInitialDay(timeline) {
-  const now = new Date().toLocaleDateString('sv-SE')
   const start = timeline?.start_date ? String(timeline.start_date).slice(0, 10) : null
   const end = timeline?.end_date ? String(timeline.end_date).slice(0, 10) : null
-  if (start && now < start) return start
-  if (end && now > end) return start ?? now
-  return now
+  const clamp = (d) => (start && d < start) ? start : (end && d > end) ? (start ?? d) : d
+
+  let candidate = clamp(new Date().toLocaleDateString('sv-SE'))
+  for (let i = 0; i < 2; i++) {
+    const stop = stopCoveringDate(timeline?.stops, candidate)
+    if (!stop || stop.lng == null) break
+    const refined = clamp(approxLocalDateStr(stop.lng))
+    if (refined === candidate) break
+    candidate = refined
+  }
+  return candidate
 }
 
 export function shiftDay(dateStr, deltaDays) {
