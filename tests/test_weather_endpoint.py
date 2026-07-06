@@ -126,6 +126,39 @@ def test_weather_endpoint_refetches_stale_immediate_bucket_entry(client, session
     assert calls["n"] == 2
 
 
+def test_weather_endpoint_invalidates_far_bucket_entry_once_date_enters_horizon(client, session, monkeypatch):
+    # A date fetched as climatology (16 days out, TTL_FAR) must not coast on
+    # that 48-hour window once "today" advances far enough to bring it inside
+    # the forecast horizon — the TTL bucket is recomputed fresh from the
+    # *current* today on every request, never frozen at fetch time, so a
+    # date's effective TTL shrinks the moment its classification changes.
+    today_box = {"value": date(2026, 7, 6)}
+
+    def fake_get_weather(lat, lng, start, end):
+        return {start: {"tmin": 1, "tmax": 2, "icon": "☀", "desc": "Clear", "source": "forecast"}}
+
+    monkeypatch.setattr(wr, "get_weather", fake_get_weather)
+    monkeypatch.setattr(wr, "local_today", lambda lng: today_box["value"])
+
+    # Fetched while 16 days out — beyond the horizon, climatology, TTL_FAR (48h).
+    params = {"lat": "1.35", "lng": "103.82", "start": "2026-07-22", "end": "2026-07-22"}
+    r1 = client.get("/weather", params=params)
+    assert r1.json()["cached"] is False
+
+    # 7 hours later, "today" has advanced a day (now 15 days out — inside the
+    # horizon, TTL_DEFAULT of 6h applies). Under the old fixed 48h TTL this
+    # would still read as "fresh" (7h < 48h); it must not.
+    key = wr.cache_key("1.35", "103.82", "2026-07-22", "2026-07-22")
+    row = session.get(WeatherCache, key)
+    row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=7)
+    session.add(row)
+    session.commit()
+    today_box["value"] = date(2026, 7, 7)
+
+    r2 = client.get("/weather", params=params)
+    assert r2.json()["cached"] is False
+
+
 def test_weather_endpoint_serves_stale_far_bucket_entry_from_cache(client, session, monkeypatch):
     # The same 2-hour staleness is well within the 48-hour TTL_FAR bucket for
     # a date far beyond the forecast horizon — served from cache, not refetched.
