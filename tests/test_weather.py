@@ -84,6 +84,24 @@ def test_get_weather_bad_coords_returns_empty():
     assert weather.get_weather("nope", "nope", "2026-07-22", "2026-07-23") == {}
 
 
+def test_get_weather_horizon_last_forecast_day_is_today_plus_15():
+    # Open-Meteo counts today as day 0, so FORECAST_HORIZON_DAYS=16 total days of
+    # live forecast reach only to today+15 (confirmed against the real API, which
+    # 400s past that). today+16 must fall back to climatology instead.
+    today = date(2026, 7, 6)
+
+    def fake_fetch(url):
+        if "archive-api.open-meteo.com" in url:
+            return _daily(["2020-07-22"], [31], [21], [1])
+        assert "end_date=2026-07-21" in url
+        return _daily(["2026-07-21"], [30], [20], [0], [5])
+
+    out = weather.get_weather(1.35, 103.82, "2026-07-21", "2026-07-22",
+                              fetch_json=fake_fetch, today=today)
+    assert out["2026-07-21"]["source"] == "forecast"
+    assert out["2026-07-22"]["source"] == "climatology"
+
+
 def test_get_weather_handles_fetch_failure_gracefully():
     today = date(2026, 6, 30)
 

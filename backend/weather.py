@@ -197,7 +197,13 @@ def get_weather(lat, lng, start: str, end: str, *, fetch_json=_fetch_json, today
     if end_d < start_d:
         return {}
     today = today or date.today()
-    horizon = today + timedelta(days=FORECAST_HORIZON_DAYS)
+    # Open-Meteo's forecast endpoint counts today as day 0, so FORECAST_HORIZON_DAYS
+    # (16) total days of live data reach only to today+15 — confirmed directly
+    # against the API ("end_date out of allowed range" past that). Using +DAYS here
+    # would request one day past what Open-Meteo actually returns, silently
+    # dropping to climatology for that last day even though it's still "within"
+    # the intended 16-day horizon.
+    horizon = today + timedelta(days=FORECAST_HORIZON_DAYS - 1)
 
     out: dict[str, dict] = {}
 
