@@ -98,6 +98,15 @@ def test_cache_ttl_uses_the_near_edge_of_a_range():
     assert wr._cache_ttl(today + timedelta(days=1), today + timedelta(days=30), today) == wr.TTL_IMMEDIATE
 
 
+class _FakeDate(date):
+    """A `date` subclass whose `.today()` is fixed, for monkeypatching `wr.date`."""
+    _today = date(2026, 7, 6)
+
+    @classmethod
+    def today(cls):
+        return cls._today
+
+
 def test_weather_endpoint_refetches_stale_immediate_bucket_entry(client, session, monkeypatch):
     # A 2-hour-old cache entry for *today* is stale under the 1-hour
     # TTL_IMMEDIATE bucket, so it must be refetched rather than served as-is.
@@ -108,7 +117,7 @@ def test_weather_endpoint_refetches_stale_immediate_bucket_entry(client, session
         return {start: {"tmin": 1, "tmax": 2, "icon": "☀", "desc": "Clear", "source": "forecast"}}
 
     monkeypatch.setattr(wr, "get_weather", fake_get_weather)
-    monkeypatch.setattr(wr, "local_today", lambda lng: date(2026, 7, 6))
+    monkeypatch.setattr(wr, "date", _FakeDate)
 
     params = {"lat": "1.35", "lng": "103.82", "start": "2026-07-06", "end": "2026-07-06"}
     r1 = client.get("/weather", params=params)
@@ -132,13 +141,12 @@ def test_weather_endpoint_invalidates_far_bucket_entry_once_date_enters_horizon(
     # the forecast horizon — the TTL bucket is recomputed fresh from the
     # *current* today on every request, never frozen at fetch time, so a
     # date's effective TTL shrinks the moment its classification changes.
-    today_box = {"value": date(2026, 7, 6)}
-
     def fake_get_weather(lat, lng, start, end):
         return {start: {"tmin": 1, "tmax": 2, "icon": "☀", "desc": "Clear", "source": "forecast"}}
 
     monkeypatch.setattr(wr, "get_weather", fake_get_weather)
-    monkeypatch.setattr(wr, "local_today", lambda lng: today_box["value"])
+    monkeypatch.setattr(wr, "date", _FakeDate)
+    _FakeDate._today = date(2026, 7, 6)
 
     # Fetched while 16 days out — beyond the horizon, climatology, TTL_FAR (48h).
     params = {"lat": "1.35", "lng": "103.82", "start": "2026-07-22", "end": "2026-07-22"}
@@ -153,7 +161,7 @@ def test_weather_endpoint_invalidates_far_bucket_entry_once_date_enters_horizon(
     row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=7)
     session.add(row)
     session.commit()
-    today_box["value"] = date(2026, 7, 7)
+    _FakeDate._today = date(2026, 7, 7)
 
     r2 = client.get("/weather", params=params)
     assert r2.json()["cached"] is False
@@ -169,7 +177,8 @@ def test_weather_endpoint_serves_stale_far_bucket_entry_from_cache(client, sessi
         return {start: {"tmin": 1, "tmax": 2, "icon": "☀", "desc": "Clear", "source": "climatology"}}
 
     monkeypatch.setattr(wr, "get_weather", fake_get_weather)
-    monkeypatch.setattr(wr, "local_today", lambda lng: date(2026, 7, 6))
+    monkeypatch.setattr(wr, "date", _FakeDate)
+    _FakeDate._today = date(2026, 7, 6)
 
     params = {"lat": "1.35", "lng": "103.82", "start": "2026-08-01", "end": "2026-08-01"}
     r1 = client.get("/weather", params=params)
