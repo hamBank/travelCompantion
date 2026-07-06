@@ -18,7 +18,6 @@ from datetime import date, timedelta
 from statistics import mean
 
 from .metrics import record_external_call
-from .tzutil import local_today
 
 # WMO weather codes → (emoji, description). Mirrors the legacy desktop app.
 WMO_ICONS = {
@@ -197,11 +196,17 @@ def get_weather(lat, lng, start: str, end: str, *, fetch_json=_fetch_json, today
     end_d = date.fromisoformat(end)
     if end_d < start_d:
         return {}
-    # "Today" is approximated at the destination's own longitude, not the
-    # server's clock — the server may be hours off from the stop's actual
-    # local calendar day, which previously risked requesting a date range
-    # Open-Meteo would reject outright (see the horizon comment below).
-    today = today or local_today(lng_f)
+    # "Today" here must match whatever clock Open-Meteo itself validates
+    # start_date/end_date against — confirmed directly against their API that
+    # this is their own server clock (UTC), NOT the queried location's local
+    # time, despite `timezone=auto` making the *returned* data locally
+    # bucketed. Using the destination's local "today" instead (as a previous
+    # version of this code did) makes an eastern destination's computed
+    # horizon run ahead of Open-Meteo's real UTC-anchored boundary for part of
+    # each day, causing the whole batched request to be rejected outright —
+    # dragging every date in it down to climatology, not just the overreaching
+    # one. Server-local `date.today()` is the correct reference here.
+    today = today or date.today()
     # Open-Meteo's forecast endpoint counts today as day 0, so FORECAST_HORIZON_DAYS
     # (16) total days of live data reach only to today+15 — confirmed directly
     # against the API ("end_date out of allowed range" past that). Using +DAYS here

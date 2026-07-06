@@ -21,7 +21,6 @@ from sqlmodel import Session
 from ..database import get_session
 from ..models import WeatherCache
 from ..weather import get_weather, geocode, cache_key, CACHE_VERSION, FORECAST_HORIZON_DAYS
-from ..tzutil import local_today
 
 router = APIRouter()
 
@@ -64,8 +63,7 @@ def weather_lookup(
     lat: Optional[str] = None, lng: Optional[str] = None, q: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
-    coords = _coords(lat, lng)
-    have_coords = coords is not None
+    have_coords = _coords(lat, lng) is not None
     if have_coords:
         key = cache_key(lat, lng, start, end)
     elif q and q.strip():
@@ -75,12 +73,11 @@ def weather_lookup(
     else:
         raise HTTPException(status_code=400, detail="Provide lat/lng or q")
 
-    # Geocoding happens below only on a cache miss, so for a q-only lookup we
-    # don't yet know its longitude here — fall back to the server's own date
-    # for the TTL bucket in that case. Off by a day at worst (harmless: it
-    # only ever shifts which bucket applies, never a service-breaking error
-    # like the forecast-horizon calculation in get_weather()).
-    today = local_today(coords[1] if have_coords else None)
+    # Same "today" reference as get_weather()'s horizon calculation (server
+    # clock, matching Open-Meteo's own UTC-anchored validity window) — the TTL
+    # buckets model how close a date is to that same boundary, so they need
+    # to agree on what "today" means.
+    today = date.today()
     ttl = _cache_ttl(date.fromisoformat(start), date.fromisoformat(end), today)
 
     cached = session.get(WeatherCache, key)
