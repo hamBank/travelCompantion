@@ -170,3 +170,43 @@ def test_get_weather_handles_fetch_failure_gracefully():
     out = weather.get_weather(40.66, 16.60, "2026-07-22", "2026-07-23",
                               fetch_json=boom, today=today)
     assert out == {}
+
+
+def test_get_weather_forecast_retries_once_then_succeeds():
+    # A transient failure on the first attempt must not immediately drop the
+    # whole batch to climatology — one immediate retry is tried first.
+    today = date(2026, 6, 30)
+    calls = {"n": 0}
+
+    def flaky(url):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient blip")
+        assert "api.open-meteo.com/v1/forecast" in url
+        return _daily(["2026-07-01"], [25], [15], [0], [11])
+
+    out = weather.get_weather(48.85, 2.35, "2026-07-01", "2026-07-01",
+                              fetch_json=flaky, today=today)
+    assert calls["n"] == 2
+    assert out["2026-07-01"]["source"] == "forecast"
+    assert out["2026-07-01"]["tmax"] == 25
+
+
+def test_get_weather_forecast_falls_back_to_climatology_after_two_failures():
+    # If both the initial attempt and the single retry fail, the in-horizon
+    # date must fall back to climatology rather than raising or being silently
+    # dropped from the payload — but only after actually trying twice.
+    today = date(2026, 6, 30)
+    fc_calls = {"n": 0}
+
+    def fetch(url):
+        if "api.open-meteo.com/v1/forecast" in url:
+            fc_calls["n"] += 1
+            raise RuntimeError("still down")
+        assert "archive-api.open-meteo.com" in url
+        return _daily(["2020-07-01"], [30], [20], [1])
+
+    out = weather.get_weather(48.85, 2.35, "2026-07-01", "2026-07-01",
+                              fetch_json=fetch, today=today)
+    assert fc_calls["n"] == 2  # initial attempt + one retry, no more
+    assert out["2026-07-01"]["source"] == "climatology"

@@ -57,6 +57,28 @@ def _coords(lat, lng):
         return None
 
 
+def _is_degraded(data: dict, start_d: date, end_d: date, today: date) -> bool:
+    """True if `data` looks like a poisoned/partial fetch that must not be cached.
+
+    Covers: a wholly empty payload (e.g. geocode failure), and — the case that
+    actually bit us in prod — any date inside the live-forecast window
+    [today, today+15] that came back as something other than "forecast" (a
+    transient Open-Meteo error drops that date, or the whole batch, to
+    climatology instead of raising). A date beyond the horizon being
+    climatology is normal and not a sign of degradation.
+    """
+    if not data:
+        return True
+    horizon_end = today + timedelta(days=FORECAST_HORIZON_DAYS - 1)
+    d = max(start_d, today)
+    last = min(end_d, horizon_end)
+    while d <= last:
+        if data.get(d.isoformat(), {}).get("source") != "forecast":
+            return True
+        d += timedelta(days=1)
+    return False
+
+
 @router.get("/weather")
 def weather_lookup(
     start: str, end: str,
@@ -80,7 +102,8 @@ def weather_lookup(
     # close a date is to that same boundary, so they need to agree on what
     # "today" means.
     today = utc_today()
-    ttl = _cache_ttl(date.fromisoformat(start), date.fromisoformat(end), today)
+    start_d, end_d = date.fromisoformat(start), date.fromisoformat(end)
+    ttl = _cache_ttl(start_d, end_d, today)
 
     cached = session.get(WeatherCache, key)
     if cached and (datetime.now(timezone.utc).replace(tzinfo=None) - cached.fetched_at) < ttl:
@@ -93,11 +116,19 @@ def weather_lookup(
         resolved = geocode(q)
         data = get_weather(resolved[0], resolved[1], start, end) if resolved else {}
 
-    if cached:
-        cached.payload = data
-        cached.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        session.add(cached)
-    else:
-        session.add(WeatherCache(cache_key=key, payload=data))
-    session.commit()
+    # A degraded payload (upstream blip dropped in-horizon dates to
+    # climatology, or nothing came back at all) is still returned to the
+    # caller — stale-ish beats an error — but must not be written to the
+    # cache: overwriting a good expired row with bad data would poison every
+    # request for up to TTL_FAR (48h). Leave an existing row untouched so the
+    # next request tries fresh instead of coasting on the old (also expired
+    # but at least not wrong) entry either.
+    if not _is_degraded(data, start_d, end_d, today):
+        if cached:
+            cached.payload = data
+            cached.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.add(cached)
+        else:
+            session.add(WeatherCache(cache_key=key, payload=data))
+        session.commit()
     return {"weather": data, "cached": False}

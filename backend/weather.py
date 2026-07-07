@@ -260,10 +260,20 @@ def get_weather(lat, lng, start: str, end: str, *, fetch_json=_fetch_json, today
             f"&timezone=auto&start_date={fc_start.isoformat()}&end_date={fc_end.isoformat()}"
         )
         try:
-            for iso, rec in parse_daily(fetch_json(url)).items():
-                out[iso] = _decorate(rec, "forecast")
+            payload = fetch_json(url)
         except Exception:
-            pass
+            # Transient upstream blips are common enough to be worth one
+            # immediate retry before conceding the whole batch to climatology
+            # (see the /weather endpoint's degraded-payload guard, which
+            # exists precisely because a bare give-up here used to poison the
+            # cache for up to 48h on a single blip).
+            try:
+                payload = fetch_json(url)
+            except Exception:
+                payload = None
+        if payload is not None:
+            for iso, rec in parse_daily(payload).items():
+                out[iso] = _decorate(rec, "forecast")
 
     # 2) Climatology for any remaining dates (typically a future trip).
     remaining = [
