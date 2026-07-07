@@ -80,6 +80,24 @@ def test_geocode_returns_none_on_empty_or_failure():
     assert weather.geocode("x", fetch=boom) is None
 
 
+def test_strip_invisible_chars_removes_zero_width_unicode():
+    # U+200C ZWNJ and U+200B ZERO WIDTH SPACE, as can sneak in from a pasted
+    # address — visually identical to the clean string but breaks geocoding
+    # if passed through as-is (Nominatim 400s on it).
+    dirty = "75 Airport Boulevard‌ ​Singapore 819664"
+    assert weather.strip_invisible_chars(dirty) == "75 Airport Boulevard Singapore 819664"
+
+
+def test_geocode_strips_invisible_chars_before_fetching():
+    dirty = "75 Airport Boulevard‌ ​Singapore 819664"
+
+    def fake_fetch(q):
+        assert "‌" not in q and "​" not in q
+        return [{"lat": "1.36", "lon": "103.99"}]
+
+    assert weather.geocode(dirty, fetch=fake_fetch) == (1.36, 103.99)
+
+
 def test_get_weather_bad_coords_returns_empty():
     assert weather.get_weather("nope", "nope", "2026-07-22", "2026-07-23") == {}
 

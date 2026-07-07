@@ -11,6 +11,7 @@ without hitting the network.
 from __future__ import annotations
 
 import json
+import unicodedata
 import urllib.parse
 import urllib.request
 from collections import Counter
@@ -39,6 +40,18 @@ CLIMATOLOGY_YEARS = 3
 # Cache-key versioning: bump when the payload shape changes so stale-shaped
 # entries are re-fetched rather than served. v2 added wind.
 CACHE_VERSION = "v2"
+
+
+def strip_invisible_chars(s: str) -> str:
+    """Strip zero-width/invisible Unicode format characters (category "Cf" —
+    e.g. U+200B ZERO WIDTH SPACE, U+200C ZWNJ, U+FEFF BOM) that can sneak into
+    pasted addresses. Left in place, they silently break Nominatim geocoding
+    (the request 400s) while looking like a normal address to a human reading
+    it, so the failure is invisible until you diff the raw bytes.
+    """
+    if not s:
+        return s
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Cf")
 
 
 def cache_key(lat, lng, start: str, end: str) -> str:
@@ -99,6 +112,9 @@ def _fetch_geocode(q: str):
 def geocode(q: str, *, fetch=_fetch_geocode):
     """Resolve a place name to (lat, lng) via Nominatim, or None."""
     if not q or not q.strip():
+        return None
+    q = strip_invisible_chars(q).strip()
+    if not q:
         return None
     try:
         results = fetch(q)

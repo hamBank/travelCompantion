@@ -20,7 +20,7 @@ from sqlmodel import Session
 
 from ..database import get_session
 from ..models import WeatherCache
-from ..weather import get_weather, geocode, cache_key, CACHE_VERSION, FORECAST_HORIZON_DAYS
+from ..weather import get_weather, geocode, cache_key, CACHE_VERSION, FORECAST_HORIZON_DAYS, strip_invisible_chars
 
 router = APIRouter()
 
@@ -67,8 +67,8 @@ def weather_lookup(
     if have_coords:
         key = cache_key(lat, lng, start, end)
     elif q and q.strip():
-        # Strip commas (the key delimiter) from the place name.
-        qn = q.strip().lower().replace(",", " ").replace("  ", " ").strip()
+        # Strip commas (the key delimiter) and invisible chars from the place name.
+        qn = strip_invisible_chars(q).strip().lower().replace(",", " ").replace("  ", " ").strip()
         key = f"{CACHE_VERSION},q:{qn},{start},{end}"
     else:
         raise HTTPException(status_code=400, detail="Provide lat/lng or q")
