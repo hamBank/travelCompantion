@@ -161,6 +161,9 @@ export function DayBanner({ dateKey, weather }) {
           {weather.source === 'climatology' && (
             <span style={{ fontSize: '0.85em', opacity: 0.75 }} className="ml-1">avg</span>
           )}
+          {weather.source === 'forecast' && (
+            <span style={{ fontSize: '0.85em', opacity: 0.75 }} className="ml-1">📡</span>
+          )}
         </span>
       )}
     </div>

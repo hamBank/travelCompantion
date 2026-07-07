@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, DayBanner } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -534,6 +534,30 @@ describe('weatherSegments', () => {
     expect(weatherSegments(stop, items)).toEqual([
       { start: '2026-08-09', end: '2026-08-09', query: 'Tournon' },
     ])
+  })
+})
+
+// ── DayBanner ────────────────────────────────────────────────────────────────
+
+describe('DayBanner', () => {
+  const base = { icon: '☀', tmin: 20, tmax: 30, wind: 15 }
+
+  it('marks a live forecast with the 📡 icon, not "avg"', () => {
+    render(<DayBanner dateKey="2026-07-22" weather={{ ...base, source: 'forecast' }} />)
+    expect(screen.getByText('📡')).toBeInTheDocument()
+    expect(screen.queryByText('avg')).not.toBeInTheDocument()
+  })
+
+  it('marks a climatology estimate with "avg", not the 📡 icon', () => {
+    render(<DayBanner dateKey="2026-07-22" weather={{ ...base, source: 'climatology' }} />)
+    expect(screen.getByText('avg')).toBeInTheDocument()
+    expect(screen.queryByText('📡')).not.toBeInTheDocument()
+  })
+
+  it('renders neither tag when there is no weather', () => {
+    render(<DayBanner dateKey="2026-07-22" weather={null} />)
+    expect(screen.queryByText('avg')).not.toBeInTheDocument()
+    expect(screen.queryByText('📡')).not.toBeInTheDocument()
   })
 })
 
