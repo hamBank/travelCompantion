@@ -20,7 +20,7 @@ from sqlmodel import Session
 
 from ..database import get_session
 from ..models import WeatherCache
-from ..weather import get_weather, geocode, cache_key, CACHE_VERSION, FORECAST_HORIZON_DAYS, strip_invisible_chars
+from ..weather import get_weather, geocode, cache_key, CACHE_VERSION, FORECAST_HORIZON_DAYS, strip_invisible_chars, utc_today
 
 router = APIRouter()
 
@@ -73,11 +73,13 @@ def weather_lookup(
     else:
         raise HTTPException(status_code=400, detail="Provide lat/lng or q")
 
-    # Same "today" reference as get_weather()'s horizon calculation (server
-    # clock, matching Open-Meteo's own UTC-anchored validity window) — the TTL
-    # buckets model how close a date is to that same boundary, so they need
-    # to agree on what "today" means.
-    today = date.today()
+    # Same "today" reference as get_weather()'s horizon calculation (UTC,
+    # matching Open-Meteo's own UTC-anchored validity window — NOT
+    # date.today(), which follows the server process's own OS timezone;
+    # production runs Europe/Berlin, not UTC) — the TTL buckets model how
+    # close a date is to that same boundary, so they need to agree on what
+    # "today" means.
+    today = utc_today()
     ttl = _cache_ttl(date.fromisoformat(start), date.fromisoformat(end), today)
 
     cached = session.get(WeatherCache, key)

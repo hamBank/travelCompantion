@@ -15,7 +15,7 @@ import unicodedata
 import urllib.parse
 import urllib.request
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from statistics import mean
 
 from .metrics import record_external_call
@@ -40,6 +40,21 @@ CLIMATOLOGY_YEARS = 3
 # Cache-key versioning: bump when the payload shape changes so stale-shaped
 # entries are re-fetched rather than served. v2 added wind.
 CACHE_VERSION = "v2"
+
+
+def utc_today() -> date:
+    """Today's date per UTC — the reference Open-Meteo's own start_date/
+    end_date validity window is anchored to (confirmed directly against
+    their API). `date.today()` returns the date in whatever timezone the
+    *process* happens to be running under, which is not reliably UTC —
+    the production server's OS clock is Europe/Berlin, not UTC, so
+    `date.today()` there silently reintroduces the exact non-UTC-"today"
+    bug already fixed once for destination-local time (see get_weather's
+    docstring below): during the ~2-hour window each evening after Berlin's
+    local date has rolled over but UTC's hasn't, the horizon would be
+    computed one day ahead of Open-Meteo's real boundary.
+    """
+    return datetime.now(timezone.utc).date()
 
 
 def strip_invisible_chars(s: str) -> str:
@@ -221,8 +236,10 @@ def get_weather(lat, lng, start: str, end: str, *, fetch_json=_fetch_json, today
     # horizon run ahead of Open-Meteo's real UTC-anchored boundary for part of
     # each day, causing the whole batched request to be rejected outright —
     # dragging every date in it down to climatology, not just the overreaching
-    # one. Server-local `date.today()` is the correct reference here.
-    today = today or date.today()
+    # one. utc_today() (not date.today(), which follows the *process's* own
+    # OS timezone — not reliably UTC, see its docstring) is the correct
+    # reference here.
+    today = today or utc_today()
     # Open-Meteo's forecast endpoint counts today as day 0, so FORECAST_HORIZON_DAYS
     # (16) total days of live data reach only to today+15 — confirmed directly
     # against the API ("end_date out of allowed range" past that). Using +DAYS here

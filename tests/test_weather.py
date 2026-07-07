@@ -1,5 +1,5 @@
 """Tests for backend/weather.py — forecast + climatology with mocked network."""
-from datetime import date
+from datetime import date, datetime, timezone
 
 from backend import weather
 
@@ -102,6 +102,24 @@ def test_get_weather_bad_coords_returns_empty():
     assert weather.get_weather("nope", "nope", "2026-07-22", "2026-07-23") == {}
 
 
+def test_utc_today_uses_utc_regardless_of_process_local_clock(monkeypatch):
+    # Regression: production's server OS timezone is Europe/Berlin, not UTC.
+    # utc_today() must derive its date via datetime.now(timezone.utc) — not
+    # date.today(), which follows whatever timezone the *process* happens to
+    # run under and would silently disagree with Open-Meteo's UTC-anchored
+    # clock during the daily window where the two dates differ (exactly the
+    # bug already fixed once for destination-local time, reintroduced via a
+    # non-UTC server clock instead).
+    class FakeDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz is timezone.utc
+            return datetime(2026, 7, 6, 23, 30, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(weather, "datetime", FakeDateTime)
+    assert weather.utc_today() == date(2026, 7, 6)
+
+
 def test_get_weather_horizon_last_forecast_day_is_today_plus_15():
     # Open-Meteo counts today as day 0, so FORECAST_HORIZON_DAYS=16 total days of
     # live forecast reach only to today+15 (confirmed against the real API, which
@@ -121,21 +139,19 @@ def test_get_weather_horizon_last_forecast_day_is_today_plus_15():
 
 
 def test_get_weather_uses_server_clock_when_not_overridden(monkeypatch):
-    # No `today` kwarg passed — get_weather must fall back to the server's own
-    # clock (date.today()), matching Open-Meteo's own UTC-anchored validity
-    # window, rather than the destination's local time. Confirmed directly
-    # against the live API that its start_date/end_date bounds are anchored to
-    # its own clock regardless of the queried location's timezone — an
-    # earlier version of this code used destination-local time instead, which
-    # made an eastern destination's computed horizon run ahead of Open-Meteo's
-    # real boundary for part of each day, causing whole batched requests to
-    # be rejected and fall back to climatology even for in-range dates.
-    class FakeDate(date):
-        @classmethod
-        def today(cls):
-            return date(2026, 7, 6)
-
-    monkeypatch.setattr(weather, "date", FakeDate)
+    # No `today` kwarg passed — get_weather must fall back to utc_today(),
+    # matching Open-Meteo's own UTC-anchored validity window, rather than the
+    # destination's local time (or the process's own OS-configured timezone,
+    # which production runs as Europe/Berlin, not UTC — date.today() would
+    # silently reintroduce the same bug via a different vector). Confirmed
+    # directly against the live API that its start_date/end_date bounds are
+    # anchored to its own UTC clock regardless of the queried location's
+    # timezone — an earlier version of this code used destination-local time
+    # instead, which made an eastern destination's computed horizon run ahead
+    # of Open-Meteo's real boundary for part of each day, causing whole
+    # batched requests to be rejected and fall back to climatology even for
+    # in-range dates.
+    monkeypatch.setattr(weather, "utc_today", lambda: date(2026, 7, 6))
 
     def fake_fetch(url):
         assert "start_date=2026-07-06" in url
