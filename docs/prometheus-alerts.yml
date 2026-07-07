@@ -1,0 +1,57 @@
+# Prometheus alerting rules for Travel Companion.
+#
+# Canonical copy of the alert rules — the server-side Prometheus loads these
+# via a rule_files entry. To install/update on the server:
+#
+#   sudo cp docs/prometheus-alerts.yml /etc/prometheus/rules/travelcomp.yml
+#   # ensure prometheus.yml contains:
+#   #   rule_files:
+#   #     - /etc/prometheus/rules/*.yml
+#   sudo promtool check rules /etc/prometheus/rules/travelcomp.yml
+#   sudo systemctl reload prometheus
+#
+# Alerts render in Grafana's Alerting view (or Alertmanager, if configured).
+# Any alerts previously hand-created in the Grafana UI should be migrated
+# here over time so this file stays the single source of truth.
+
+groups:
+  - name: travelcomp-external-apis
+    rules:
+      # Any outbound third-party call failing is worth knowing about — these
+      # failures are otherwise invisible: the app degrades gracefully (e.g. a
+      # transient Open-Meteo error falls back to climatology data and the
+      # endpoint still returns 200), so nothing surfaces in HTTP metrics.
+      # travelcomp_external_requests_total{service,status} is incremented by
+      # backend/metrics.py:record_external_call around every outbound call
+      # (open_meteo, nominatim, overpass, google_*, aerodatabox, pywebpush…).
+      - alert: ExternalApiErrors
+        expr: sum by (service) (increase(travelcomp_external_requests_total{status="error"}[15m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "External API errors: {{ $labels.service }}"
+          description: >-
+            {{ $value | printf "%.0f" }} failed call(s) to {{ $labels.service }}
+            in the last 15 minutes. Details are logged at warning level by
+            travelcomp.external in the app log.
+
+      # Sustained high error *ratio* for a service that is actually being
+      # called — a stronger signal than the count above (which a single blip
+      # trips). The ratio only evaluates when there is traffic in the window,
+      # so an idle service never divides by zero or false-alarms.
+      - alert: ExternalApiHighErrorRate
+        expr: >-
+          sum by (service) (rate(travelcomp_external_requests_total{status="error"}[15m]))
+          /
+          sum by (service) (rate(travelcomp_external_requests_total[15m]))
+          > 0.25
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "External API failing hard: {{ $labels.service }}"
+          description: >-
+            More than 25% of calls to {{ $labels.service }} have failed for
+            15+ minutes. Whatever feature depends on it (weather, geocoding,
+            river paths, flight checks…) is degraded right now.
