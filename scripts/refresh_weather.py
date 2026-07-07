@@ -23,7 +23,22 @@ from backend.models import WeatherCache, Stop  # noqa: E402
 from backend.weather import (  # noqa: E402
     get_weather as _get_weather, geocode as _geocode,
     parse_cache_key, parse_q_key, cache_key, CACHE_VERSION, _valid_coords,
+    is_degraded, utc_today,
 )
+from datetime import date  # noqa: E402
+
+
+def _usable(data, start: str, end: str, today) -> bool:
+    """Whether a fetched payload is safe to write over the cached one. Same
+    degraded-payload rule as the /weather endpoint's cache-write guard — a
+    transient upstream blip during the nightly refresh must not overwrite a
+    good cached payload with an all-climatology one."""
+    if not data:
+        return False
+    try:
+        return not is_degraded(data, date.fromisoformat(start), date.fromisoformat(end), today)
+    except ValueError:
+        return False  # unparseable dates in a stored key — don't touch the row
 
 
 def _stop_span(stop):
@@ -54,13 +69,14 @@ def _upsert(session, key, data):
     session.add(row)
 
 
-def warm_stops(session, *, get_weather=_get_weather, geocode=_geocode) -> int:
+def warm_stops(session, *, get_weather=_get_weather, geocode=_geocode, today=None) -> int:
     """Proactively (re)fetch weather for EVERY stop, by arrive→depart span.
 
     Covers stops no one has opened yet — important in headerless mode, where the
     client wouldn't otherwise trigger a per-stop lookup. Keys mirror exactly what
     the frontend requests, so the warmed entries are the ones it reads.
     """
+    today = today or utc_today()
     stops = session.exec(select(Stop)).all()
     warmed = 0
     for stop in stops:
@@ -77,19 +93,20 @@ def warm_stops(session, *, get_weather=_get_weather, geocode=_geocode) -> int:
             key, q = _q_key(stop.location, stop.country, start, end)
             resolved = geocode(q)
             data = get_weather(resolved[0], resolved[1], start, end) if resolved else {}
-        if data:
+        if _usable(data, start, end, today):
             _upsert(session, key, data)
             warmed += 1
     session.commit()
     return warmed
 
 
-def refresh_all(session: Session, *, get_weather=_get_weather, geocode=_geocode) -> int:
+def refresh_all(session: Session, *, get_weather=_get_weather, geocode=_geocode, today=None) -> int:
     """Re-fetch each current-version cache entry in place. Returns count refreshed.
 
     Handles both coordinate keys and place-name (q:) keys (re-geocoding the
     latter), so home/coordinate-less stops stay current too.
     """
+    today = today or utc_today()
     rows = session.exec(select(WeatherCache)).all()
     refreshed = 0
     for row in rows:
@@ -104,7 +121,7 @@ def refresh_all(session: Session, *, get_weather=_get_weather, geocode=_geocode)
             q, start, end = qp
             resolved = geocode(q)
             data = get_weather(resolved[0], resolved[1], start, end) if resolved else {}
-        if data:
+        if _usable(data, start, end, today):
             row.payload = data
             row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
             session.add(row)

@@ -20,7 +20,7 @@ from sqlmodel import Session
 
 from ..database import get_session
 from ..models import WeatherCache
-from ..weather import get_weather, geocode, cache_key, CACHE_VERSION, FORECAST_HORIZON_DAYS, strip_invisible_chars, utc_today
+from ..weather import get_weather, geocode, cache_key, CACHE_VERSION, FORECAST_HORIZON_DAYS, is_degraded, strip_invisible_chars, utc_today
 
 router = APIRouter()
 
@@ -55,28 +55,6 @@ def _coords(lat, lng):
         return float(str(lat).split(",")[0]), float(str(lng).split(",")[0])
     except (ValueError, TypeError, AttributeError):
         return None
-
-
-def _is_degraded(data: dict, start_d: date, end_d: date, today: date) -> bool:
-    """True if `data` looks like a poisoned/partial fetch that must not be cached.
-
-    Covers: a wholly empty payload (e.g. geocode failure), and — the case that
-    actually bit us in prod — any date inside the live-forecast window
-    [today, today+15] that came back as something other than "forecast" (a
-    transient Open-Meteo error drops that date, or the whole batch, to
-    climatology instead of raising). A date beyond the horizon being
-    climatology is normal and not a sign of degradation.
-    """
-    if not data:
-        return True
-    horizon_end = today + timedelta(days=FORECAST_HORIZON_DAYS - 1)
-    d = max(start_d, today)
-    last = min(end_d, horizon_end)
-    while d <= last:
-        if data.get(d.isoformat(), {}).get("source") != "forecast":
-            return True
-        d += timedelta(days=1)
-    return False
 
 
 @router.get("/weather")
@@ -123,7 +101,7 @@ def weather_lookup(
     # request for up to TTL_FAR (48h). Leave an existing row untouched so the
     # next request tries fresh instead of coasting on the old (also expired
     # but at least not wrong) entry either.
-    if not _is_degraded(data, start_d, end_d, today):
+    if not is_degraded(data, start_d, end_d, today):
         if cached:
             cached.payload = data
             cached.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)

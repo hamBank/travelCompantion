@@ -426,3 +426,81 @@ def test_departure_notification_falls_back_when_no_route_details(session):
     calls = []
     send_due_notifications(session, now=now, sender=_fake_sender(calls))
     assert calls[0][1]["body"] == "Eurostar departs at 14:00"
+
+
+# ── Timezone fallback for items with no depart_tz ────────────────────────────
+# Stored depart times are destination-local wall clock. Without a depart_tz
+# detail, triggers used to treat them as UTC — on a UTC+8 trip the "departure
+# approaching" alert fired ~5h after the train left. The fallback chain is
+# depart_tz → stop.timezone column (sheet import) → stop longitude ÷ 15.
+
+def test_rail_without_tz_uses_stop_longitude_offset(session):
+    trip, stop = _seed_trip(session)
+    stop.lng = "103.82"  # Singapore-ish → approx UTC+7 (round(103.82/15))
+    session.add(stop)
+    session.commit()
+    now = datetime(2026, 8, 1, 12, 0)
+    # Wall-clock 21:00 at ~UTC+7 is 14:00 UTC — 2h away, inside the 3h lead →
+    # due. Under the old treat-as-UTC reading it was 9h away and NOT due.
+    _rail(session, stop, (now + timedelta(hours=9)).isoformat(timespec="minutes"))
+
+    calls = []
+    n = send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert n == 1
+    assert calls[0][1]["title"] == "Departure approaching"
+
+
+def test_rail_without_tz_prefers_stop_timezone_column_over_longitude(session):
+    trip, stop = _seed_trip(session)
+    stop.timezone = "8"   # sheet-imported real offset
+    stop.lng = "103.82"   # longitude approximation would say +7
+    session.add(stop)
+    session.commit()
+    now = datetime(2026, 8, 1, 12, 0)
+    # Wall now+10:30 → UTC now+2:30 under +8 (due, 3h lead) but UTC now+3:30
+    # under +7 (not due) — only the timezone-column reading fires.
+    _rail(session, stop, (now + timedelta(hours=10, minutes=30)).isoformat(timespec="minutes"))
+
+    calls = []
+    n = send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert n == 1
+
+
+def test_explicit_depart_tz_still_wins_over_stop_hints(session):
+    trip, stop = _seed_trip(session)
+    stop.timezone = "8"
+    stop.lng = "103.82"
+    session.add(stop)
+    session.commit()
+    now = datetime(2026, 8, 1, 12, 0)
+    # depart_tz says UTC+2: wall now+4h → UTC now+2h → due. Stop hints (+8/+7)
+    # would put the departure in the past (skipped) — so firing proves the
+    # item's own tz was used.
+    _rail(session, stop, (now + timedelta(hours=4)).isoformat(timespec="minutes"), depart_tz="GMT+2")
+
+    calls = []
+    n = send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert n == 1
+
+
+def test_flight_alert_window_uses_stop_offset_fallback(session):
+    from backend.notifications import send_flight_alerts
+
+    trip, stop = _seed_trip(session)
+    stop.lng = "103.82"  # approx UTC+7
+    session.add(stop)
+    session.commit()
+    now = datetime(2026, 8, 1, 12, 0)
+    # Wall now+26h → UTC now+19h: inside the 24h polling window only once the
+    # offset correction is applied (treat-as-UTC put it at 26h → outside).
+    _flight(session, stop, (now + timedelta(hours=26)).isoformat(timespec="minutes"),
+            checkin_window="24h", flight_number="SQ1")
+
+    fetched = []
+
+    def fake_fetch(flight_iata, day):
+        fetched.append(flight_iata)
+        return None  # no live data — we only care that the window opened
+
+    send_flight_alerts(session, now=now, sender=_fake_sender([]), fetch=fake_fetch)
+    assert fetched == ["SQ1"]
