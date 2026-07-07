@@ -1,6 +1,6 @@
 """Tests for cache-key helpers and the daily weather refresh."""
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlmodel import SQLModel, Session, create_engine, select
@@ -36,7 +36,7 @@ def test_refresh_all_updates_payload_and_timestamp():
             return {"2026-07-27": {"tmin": 19, "tmax": 32, "wind": 18, "icon": "⛅",
                                    "desc": "Partly cloudy", "source": "climatology"}}
 
-        n = refresh_all(s, get_weather=fake_get_weather)
+        n = refresh_all(s, get_weather=fake_get_weather, today=date(2026, 7, 1))
         assert n == 1
 
         row = s.exec(select(WeatherCache)).one()
@@ -60,7 +60,7 @@ def test_refresh_all_regeocodes_q_keys():
             assert (lat, lng) == (-35.34, 149.03)
             return {"2026-08-20": {"tmin": 2, "tmax": 13}}
 
-        n = refresh_all(s, get_weather=fake_get_weather, geocode=fake_geocode)
+        n = refresh_all(s, get_weather=fake_get_weather, geocode=fake_geocode, today=date(2026, 7, 1))
         assert n == 1
         row = s.exec(select(WeatherCache)).one()
         assert row.payload["2026-08-20"]["tmax"] == 13
@@ -88,7 +88,7 @@ def test_warm_stops_warms_coord_and_q_stops_with_matching_keys():
         def fake_get_weather(lat, lng, start, end):
             return {start: {"tmin": 1, "tmax": 2, "wind": 3}}
 
-        n = warm_stops(s, get_weather=fake_get_weather, geocode=fake_geocode)
+        n = warm_stops(s, get_weather=fake_get_weather, geocode=fake_geocode, today=date(2026, 7, 1))
         assert n == 2  # Matera + Duffy; Nowhere skipped
 
         keys = {r.cache_key for r in s.exec(select(WC)).all()}
@@ -106,3 +106,45 @@ def test_refresh_all_skips_stale_version_keys():
         s.commit()
         n = refresh_all(s, get_weather=lambda *a: {"x": 1})
         assert n == 0  # stale-version key left untouched
+
+
+# ── Degraded payloads must not overwrite cached ones ─────────────────────────
+# Same rule as the /weather endpoint's cache-write guard: a transient upstream
+# blip during the nightly refresh (in-horizon dates coming back climatology)
+# must leave the existing cached payload alone.
+
+def test_refresh_all_keeps_old_payload_when_refetch_is_degraded():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    today = date(2026, 7, 1)
+    key = weather.cache_key("1.35", "103.82", "2026-07-03", "2026-07-03")
+    good = {"2026-07-03": {"tmin": 25, "tmax": 31, "source": "forecast"}}
+    with Session(engine) as s:
+        s.add(WeatherCache(cache_key=key, payload=good))
+        s.commit()
+
+        def degraded_get_weather(lat, lng, start, end):
+            return {start: {"tmin": 24, "tmax": 30, "source": "climatology"}}
+
+        n = refresh_all(s, get_weather=degraded_get_weather, today=today)
+        assert n == 0
+        row = s.exec(select(WeatherCache)).one()
+        assert row.payload == good  # untouched
+
+
+def test_warm_stops_skips_degraded_payload():
+    from backend.models import Stop
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    today = date(2026, 7, 1)
+    with Session(engine) as s:
+        s.add(Stop(trip_id=1, location="Singapore", lat="1.35", lng="103.82",
+                   arrive=_dt(2026, 7, 3), depart=_dt(2026, 7, 4)))
+        s.commit()
+
+        def degraded_get_weather(lat, lng, start, end):
+            return {start: {"tmin": 24, "tmax": 30, "source": "climatology"}}
+
+        n = warm_stops(s, get_weather=degraded_get_weather, today=today)
+        assert n == 0
+        assert s.exec(select(WeatherCache)).all() == []  # nothing written

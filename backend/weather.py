@@ -57,6 +57,32 @@ def utc_today() -> date:
     return datetime.now(timezone.utc).date()
 
 
+def is_degraded(data: dict, start_d: date, end_d: date, today: date) -> bool:
+    """True if `data` looks like a poisoned/partial fetch that must not be cached.
+
+    Covers: a wholly empty payload (e.g. geocode failure), and — the case that
+    actually bit us in prod — any date inside the live-forecast window
+    [today, today+15] that came back as something other than "forecast" (a
+    transient Open-Meteo error drops that date, or the whole batch, to
+    climatology instead of raising). A date beyond the horizon being
+    climatology is normal and not a sign of degradation.
+
+    Shared by the /weather endpoint's cache-write guard and the daily
+    refresh script (which would otherwise overwrite good cached payloads
+    with poisoned ones — the same bug, via a different writer).
+    """
+    if not data:
+        return True
+    horizon_end = today + timedelta(days=FORECAST_HORIZON_DAYS - 1)
+    d = max(start_d, today)
+    last = min(end_d, horizon_end)
+    while d <= last:
+        if data.get(d.isoformat(), {}).get("source") != "forecast":
+            return True
+        d += timedelta(days=1)
+    return False
+
+
 def strip_invisible_chars(s: str) -> str:
     """Strip zero-width/invisible Unicode format characters (category "Cf" —
     e.g. U+200B ZERO WIDTH SPACE, U+200C ZWNJ, U+FEFF BOM) that can sneak into

@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from . import flight_live
 from .models import ItineraryItem, ItemKind, Stop, TripMembership, PushSubscription, NotificationLog
 from .push import send_push, PushSendError
+from .tzutil import approx_utc_offset_hours
 
 # How far before departure to alert for non-flight transport (rail/transfer).
 # TODO: make configurable (per-item or per-user) — fixed default for now.
@@ -57,15 +58,20 @@ def _parse_checkin_window(s) -> Optional[float]:
     return None
 
 
-def _local_to_utc(dt_str, tz) -> Optional[datetime]:
+def _local_to_utc(dt_str, tz, fallback_offset_hours: Optional[float] = None) -> Optional[datetime]:
     """Convert a stored local wall-clock datetime + timezone to a naive UTC
     datetime (naive throughout, matching this module's naive-UTC `now` convention).
 
     Mirrors frontend/src/components/StopCard.jsx:toUtcMs exactly — same fixed-
     offset ("GMT+8", "+08:00") and IANA zone name ("Europe/Helsinki") parsing —
     so the notification trigger and the UI agree on when things actually happen.
-    Falls back to treating the datetime as already-UTC when tz is absent or
-    can't be resolved (matches the frontend's fallback too).
+
+    When tz is absent or can't be resolved, `fallback_offset_hours` (from the
+    item's stop — see _stop_utc_offset_hours) is applied instead; with neither,
+    the datetime is treated as already-UTC (the frontend's fallback, tolerable
+    there because its uses are relative/cushioned, but wrong by the full
+    destination offset here where triggers compare against real UTC now — on a
+    UTC+8 trip that fires "departure approaching" hours after the train left).
     """
     if not dt_str:
         return None
@@ -77,6 +83,8 @@ def _local_to_utc(dt_str, tz) -> Optional[datetime]:
     except ValueError:
         return None
     if not tz:
+        if fallback_offset_hours is not None:
+            return naive - timedelta(hours=fallback_offset_hours)
         return naive
 
     tz_s = str(tz).strip()
@@ -90,7 +98,40 @@ def _local_to_utc(dt_str, tz) -> Optional[datetime]:
         aware_local = naive.replace(tzinfo=ZoneInfo(tz_s))
         return aware_local.astimezone(timezone.utc).replace(tzinfo=None)
     except Exception:
+        if fallback_offset_hours is not None:
+            return naive - timedelta(hours=fallback_offset_hours)
         return naive
+
+
+def _stop_utc_offset_hours(session: Session, item: ItineraryItem) -> Optional[float]:
+    """Best-effort UTC offset for an item's stop, used when the item's own
+    details carry no depart_tz (manually-entered rail/transfer items usually
+    don't). Two sources, most-trustworthy first:
+
+    - the stop's `timezone` column (sheet-import supplies a real per-stop
+      offset). Its model default is "0", which is indistinguishable from
+      "never set" — so 0 falls through rather than being trusted; a genuinely
+      UTC stop is recovered by the longitude path landing on ~0 anyway.
+    - the stop's longitude, approximated at 15°/hour (backend/tzutil.py) —
+      within an hour or two everywhere, plenty for triggers with a 3-hour
+      lead and a 6-hour grace window.
+    """
+    stop = session.get(Stop, item.stop_id)
+    if not stop:
+        return None
+    try:
+        off = float(str(stop.timezone or "").strip())
+        if off != 0:
+            return off
+    except ValueError:
+        pass
+    try:
+        lng = float(str(stop.lng).split(",")[0].strip())
+    except (ValueError, TypeError):
+        return None
+    if not (-180 <= lng <= 180):
+        return None
+    return float(approx_utc_offset_hours(lng))
 
 
 def _due_triggers(session: Session, now: datetime):
@@ -106,7 +147,8 @@ def _due_triggers(session: Session, now: datetime):
     for item in items:
         d = item.details or {}
         depart_local = d.get("depart_time")
-        depart = _local_to_utc(depart_local, d.get("depart_tz"))
+        fallback = None if d.get("depart_tz") else _stop_utc_offset_hours(session, item)
+        depart = _local_to_utc(depart_local, d.get("depart_tz"), fallback_offset_hours=fallback)
         if not depart or depart <= now:
             continue  # no depart time, or already departed (both in UTC)
 
@@ -228,7 +270,8 @@ def send_flight_alerts(session: Session, *, now: Optional[datetime] = None,
         if not flight_iata or not depart_local:
             continue
 
-        depart = _local_to_utc(depart_local, d.get("depart_tz"))
+        fallback = None if d.get("depart_tz") else _stop_utc_offset_hours(session, item)
+        depart = _local_to_utc(depart_local, d.get("depart_tz"), fallback_offset_hours=fallback)
         if not depart or not (now < depart <= now + window):
             continue  # no depart time, already departed, or outside the alert window
 
