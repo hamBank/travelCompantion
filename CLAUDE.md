@@ -114,3 +114,61 @@ semantics (e.g. horizon math, source classification), not just shape — **bump
 `CACHE_VERSION` in `backend/weather.py`** so every stale entry misses instead
 of serving the old bug for up to 48h. Forgetting this cost several rounds of
 manual SQL cache-clearing in production (2026-07-06).
+
+`is_degraded()` (`backend/weather.py`) guards against caching a payload where
+an in-horizon date came back climatology-flavored (a transient Open-Meteo
+error, not a real climatology day) — it has **two callers**, the `/weather`
+endpoint and `scripts/refresh_weather.py`'s nightly cron. If you touch the
+degraded-payload rule, or add a third writer of `WeatherCache`, update/wire up
+`is_degraded()` there too — each writer forgetting it is the same production
+incident via a different code path.
+
+## Timezone handling — which clock, and why it's not obvious
+Multiple pieces of this app each need "what time/day is it" for a different
+purpose, and each needs a **different** clock. Getting this backwards has
+caused two separate production incidents (2026-07-06/07) — read this before
+touching any of the following:
+
+- **Open-Meteo forecast horizon** (`backend/weather.py`'s `utc_today()`) —
+  must be real UTC, confirmed directly against Open-Meteo's API that their
+  `start_date`/`end_date` validity window is anchored to *their* clock (UTC),
+  not the queried location's timezone, despite `timezone=auto` making the
+  *returned* data locally-bucketed. **Do not use `date.today()` here** — the
+  production server's OS timezone is Europe/Berlin, not UTC, and `date.today()`
+  silently reintroduces an hours-wide daily window where the computed horizon
+  overreaches Open-Meteo's real boundary, causing an entire batched request to
+  be rejected and every date in it to fall back to climatology (not just the
+  overreaching one). This was tried once (destination-local time, on the
+  theory that the *destination's* calendar day should govern) and was a
+  regression, not a fix — reverted.
+- **Frontend Today-view default day** (`pickInitialDay` in
+  `TripTimeline.jsx`, `frontend/src/tzutil.js`) — the opposite case: this
+  picks which day's itinerary to *show the user*, which should reflect where
+  the trip physically is, not any external API's clock. Uses the device's
+  local date, refined against the current stop's longitude (approximated at
+  15°/hour — no IANA tz lookup, deliberately coarse, see `tzutil.py`/`.js`).
+- **Notification cron trigger times** (`backend/notifications.py`) — stored
+  depart times are destination-local wall clock; needs converting to UTC to
+  compare against "now". Fallback chain when the item has no `depart_tz`
+  detail: the stop's `timezone` column (populated by sheet import, read by
+  nothing else in the app — don't remove it without checking here first) →
+  the stop's longitude (same 15°/hour approximation as the frontend) → treat
+  as UTC (last resort, wrong by the full offset on non-UTC trips).
+
+The common failure mode: using the *server's* clock somewhere that needs the
+*destination's*, or vice versa, without checking which one the thing you're
+comparing against actually uses. When adding a new "what time is it"
+decision, work out which of these two categories it's in before picking an
+implementation.
+
+## Monitoring
+`docs/prometheus-alerts.yml` is the canonical alert-rules file (external-API
+error rate on `travelcomp_external_requests_total`) — **it does not
+self-install**. One-time per Prometheus instance:
+```bash
+sudo cp docs/prometheus-alerts.yml /etc/prometheus/rules/travelcomp.yml
+sudo promtool check rules /etc/prometheus/rules/travelcomp.yml
+sudo systemctl reload prometheus
+```
+If alerts aren't firing when expected, check this was actually done — the
+file existing in the repo doesn't mean Prometheus has loaded it.
