@@ -13,6 +13,11 @@ def test_weather_endpoint_returns_data_and_caches(client, monkeypatch):
         return {"2026-07-22": {"tmin": 21.0, "tmax": 31.0, "icon": "☀", "desc": "Clear", "source": "climatology"}}
 
     monkeypatch.setattr(wr, "get_weather", fake_get_weather)
+    # Pin "today" well before the requested date so it's unambiguously beyond
+    # the forecast horizon (a climatology source there is normal, not
+    # degraded) — this test is about cache mechanics, not the degraded-payload
+    # guard, and shouldn't depend on the real wall-clock date it happens to run on.
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 6, 1))
 
     r1 = client.get("/weather", params={"lat": "40.66", "lng": "16.60", "start": "2026-07-22", "end": "2026-07-22"})
     assert r1.status_code == 200
@@ -184,3 +189,91 @@ def test_weather_endpoint_serves_stale_far_bucket_entry_from_cache(client, sessi
     r2 = client.get("/weather", params=params)
     assert r2.json()["cached"] is True
     assert calls["n"] == 1
+
+
+# ── Degraded-payload cache guard ─────────────────────────────────────────────
+
+def test_weather_endpoint_degraded_payload_not_cached(client, session, monkeypatch):
+    # An in-horizon date that comes back as climatology (not "forecast") means
+    # the live-forecast fetch failed upstream — the data is still returned to
+    # the caller, but must NOT be written to the cache, so the next request
+    # retries fresh instead of serving this poisoned data for up to 48h.
+    calls = {"n": 0}
+
+    def degraded_get_weather(lat, lng, start, end):
+        calls["n"] += 1
+        return {start: {"tmin": 1, "tmax": 2, "icon": "☀", "desc": "Clear", "source": "climatology"}}
+
+    monkeypatch.setattr(wr, "get_weather", degraded_get_weather)
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 7, 6))
+
+    params = {"lat": "1.35", "lng": "103.82", "start": "2026-07-06", "end": "2026-07-06"}
+    r1 = client.get("/weather", params=params)
+    assert r1.json()["cached"] is False
+    assert r1.json()["weather"]["2026-07-06"]["source"] == "climatology"  # still returned to caller
+
+    key = wr.cache_key("1.35", "103.82", "2026-07-06", "2026-07-06")
+    assert session.get(WeatherCache, key) is None  # nothing written
+
+    # Second request must hit get_weather again — nothing was cached.
+    r2 = client.get("/weather", params=params)
+    assert r2.json()["cached"] is False
+    assert calls["n"] == 2
+
+
+def test_weather_endpoint_degraded_refetch_does_not_overwrite_existing_row(client, session, monkeypatch):
+    # A pre-existing (expired) cache row holding good data must survive a
+    # degraded refetch untouched — overwriting it would destroy possibly-good
+    # old data with definitely-bad new data.
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 7, 6))
+    key = wr.cache_key("1.35", "103.82", "2026-07-06", "2026-07-06")
+    good_payload = {"2026-07-06": {"tmin": 10, "tmax": 20, "icon": "☀", "desc": "Clear", "source": "forecast"}}
+    old_fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+    session.add(WeatherCache(cache_key=key, payload=good_payload, fetched_at=old_fetched_at))
+    session.commit()
+
+    def degraded_get_weather(lat, lng, start, end):
+        return {start: {"tmin": 1, "tmax": 2, "icon": "☀", "desc": "Clear", "source": "climatology"}}
+
+    monkeypatch.setattr(wr, "get_weather", degraded_get_weather)
+
+    params = {"lat": "1.35", "lng": "103.82", "start": "2026-07-06", "end": "2026-07-06"}
+    r = client.get("/weather", params=params)
+    assert r.json()["cached"] is False
+    assert r.json()["weather"]["2026-07-06"]["source"] == "climatology"  # served to caller anyway
+
+    row = session.get(WeatherCache, key)
+    assert row.payload == good_payload      # untouched — not overwritten with bad data
+    assert row.fetched_at == old_fetched_at
+
+
+def test_weather_endpoint_normal_mixed_payload_is_cached(client, session, monkeypatch):
+    # In-horizon days as "forecast" + far-out days as "climatology" is the
+    # normal, healthy shape of a payload and must be cached as usual — this is
+    # NOT a degraded payload. today=2026-07-06 → horizon runs through 2026-07-21.
+    today = date(2026, 7, 6)
+    horizon_end = today + timedelta(days=15)
+    monkeypatch.setattr(wr, "utc_today", lambda: today)
+
+    def mixed_get_weather(lat, lng, start, end):
+        start_d, end_d = date.fromisoformat(start), date.fromisoformat(end)
+        out, d = {}, start_d
+        while d <= end_d:
+            source = "forecast" if d <= horizon_end else "climatology"
+            out[d.isoformat()] = {"tmin": 5, "tmax": 15, "icon": "☀", "desc": "Clear", "source": source}
+            d += timedelta(days=1)
+        return out
+
+    monkeypatch.setattr(wr, "get_weather", mixed_get_weather)
+
+    params = {"lat": "1.35", "lng": "103.82", "start": "2026-07-06", "end": "2026-08-01"}
+    r1 = client.get("/weather", params=params)
+    assert r1.json()["cached"] is False
+
+    key = wr.cache_key("1.35", "103.82", "2026-07-06", "2026-08-01")
+    row = session.get(WeatherCache, key)
+    assert row is not None
+    assert row.payload["2026-08-01"]["source"] == "climatology"
+
+    r2 = client.get("/weather", params=params)
+    assert r2.json()["cached"] is True

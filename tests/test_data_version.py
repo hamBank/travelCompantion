@@ -20,6 +20,26 @@ def test_health_includes_data_version(client):
     assert body["data_version"] > 0
 
 
+def test_health_includes_backend_sha_and_started_at(client):
+    """backend_sha reflects the actual git HEAD of the running checkout — unlike
+    `sha` (the frontend build SHA), it advances on backend-only commits and isn't
+    lost when a feature branch gets squash-merged. started_at marks process boot,
+    for spotting stuck/zombie workers that never restarted after a deploy."""
+    from datetime import datetime
+
+    r = client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+
+    assert "backend_sha" in body
+    assert isinstance(body["backend_sha"], str) and body["backend_sha"]
+    # This test runs from a real git checkout, so the real repo HEAD is available.
+    assert body["backend_sha"] != "unknown"
+
+    assert "started_at" in body
+    datetime.fromisoformat(body["started_at"])  # raises if not a valid ISO timestamp
+
+
 def test_data_version_strictly_increases_after_write(client):
     v1 = client.get("/health").json()["data_version"]
 

@@ -69,13 +69,48 @@ bash scripts/install-hooks.sh
 The hook aborts the push with a clear error if `frontend/src/` changed but
 `backend/static/` was not rebuilt in the same set of commits.
 
+**PR-workflow caveat (squash-merge orphans baked SHAs).** The two-commit rule
+above was written for direct pushes to `main`. On the PR workflow (below), the
+squash-merge rewrites the branch's commits into one new commit on `main`, so
+whatever SHA got baked on the branch — amended or not — refers to a commit that
+no longer exists after merge. That's accepted: the baked SHA still does its real
+job (stale-client reload detection — client and server come from the same build,
+so they agree with each other), but it is NOT a deploy identifier. To verify
+what's actually deployed, use the `backend_sha` field in `/health` (the backend's
+`git rev-parse` at startup — always a real, reachable `main` commit), not the
+`sha` field, which is the frontend-bundle bake and lags/orphans as described.
+
 ## Repository
 - Remote: https://github.com/hamBank/travelCompantion.git
 - PAT stored in Claude memory (project_travel_app.md)
 - Always use HTTPS with PAT for git push
 
-## Git workflow
-1. Commit source files
-2. If any `frontend/src/` files changed, build then commit `backend/static/`
-   as its own separate commit (see above — do not amend)
-3. Push (normal push — no amending means no force needed)
+## Git workflow (PRs, not direct pushes)
+Work lands via pull requests, squash-merged to `main`:
+1. Develop on a feature branch cut from fresh `origin/main`. Commit source
+   first; if `frontend/src/` changed, build and include `backend/static/`
+   (on a squashed branch the amend-vs-separate distinction no longer matters —
+   see the caveat above — but the build must still happen AFTER the source
+   commit, and never be skipped).
+2. Run the test suites (`python -m pytest tests/ -q`, `cd frontend && npx
+   vitest run`) before pushing.
+3. Push the branch, open the PR **non-draft** (draft PRs block auto-merge),
+   and enable auto-merge (squash) immediately — or merge directly once CI is
+   green. CI (backend + frontend checks) is the merge gate; speed of
+   deployment is deliberately prioritized while the app is single-user.
+4. Merges to `main` auto-deploy via the server's webhook → `.deploy-trigger`
+   path watcher (`deploy.sh --update`). If a merge doesn't appear on the
+   server within a few minutes, it can be forced: `sudo ./deploy.sh --update`.
+5. Verify the deploy against `/health`'s `backend_sha` (and `scripts/
+   smoke_check.sh` on the server), not the `sha` field.
+6. After each squash-merge, reset the working branch onto `origin/main`
+   before starting the next change (the old branch commits are orphaned).
+
+## Weather cache — change checklist
+`WeatherCache` rows are served for hours-to-days (variable TTL in
+`backend/routers/weather.py`). When changing weather logic, ask: "does this
+change make previously cached payloads wrong?" If yes — payload shape OR
+semantics (e.g. horizon math, source classification), not just shape — **bump
+`CACHE_VERSION` in `backend/weather.py`** so every stale entry misses instead
+of serving the old bug for up to 48h. Forgetting this cost several rounds of
+manual SQL cache-clearing in production (2026-07-06).

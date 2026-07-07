@@ -575,4 +575,18 @@ if ! $UPDATE_ONLY && ! $_WAS_RUNNING; then
   echo "    sudo certbot --apache -d $DOMAIN"
 fi
 
+# ── 10. Post-deploy smoke check ────────────────────────────────────────────────
+# Deploys have silently failed to take effect before (webhook didn't fire, stale
+# code kept running) and were only caught by manually probing production. Only
+# run this when the service was actually (re)started this run — same condition
+# as the restart in step 4b — so a fresh install where the service hasn't been
+# started yet (no secrets in .env) doesn't spuriously fail here. Non-fatal: a
+# smoke-check failure shouldn't fail the whole deploy/webhook unit, just flag it.
+if $UPDATE_ONLY || $_WAS_RUNNING; then
+  info "Running post-deploy smoke check"
+  bash "$APP_DIR/scripts/smoke_check.sh" "http://127.0.0.1:${BIND_PORT}" \
+    && ok "Smoke check passed" \
+    || warn "Smoke check failed — investigate: journalctl -u travelcomp"
+fi
+
 ok "Done"

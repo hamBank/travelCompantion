@@ -39,6 +39,7 @@ def test_send_push_always_passes_a_nonzero_ttl(monkeypatch):
     """TTL=0 (pywebpush's default) means 'deliver now or drop, no retry' — a push
     service can silently discard the message if the device isn't reachable at
     that exact instant. We must always request that the push service hold it."""
+    pytest.importorskip("pywebpush")
     monkeypatch.setenv("VAPID_PRIVATE_KEY", push.generate_vapid_keypair()[0])
 
     calls = []
@@ -56,6 +57,7 @@ def test_send_push_always_passes_a_nonzero_ttl(monkeypatch):
 
 
 def test_send_push_urgent_sets_priority_headers(monkeypatch):
+    pytest.importorskip("pywebpush")
     monkeypatch.setenv("VAPID_PRIVATE_KEY", push.generate_vapid_keypair()[0])
     calls = []
 
@@ -71,6 +73,7 @@ def test_send_push_urgent_sets_priority_headers(monkeypatch):
 
 
 def test_send_push_not_urgent_by_default_sends_no_extra_headers(monkeypatch):
+    pytest.importorskip("pywebpush")
     monkeypatch.setenv("VAPID_PRIVATE_KEY", push.generate_vapid_keypair()[0])
     calls = []
 
@@ -86,6 +89,7 @@ def test_send_push_not_urgent_by_default_sends_no_extra_headers(monkeypatch):
 
 
 def test_send_push_without_vapid_keys_raises(monkeypatch):
+    pytest.importorskip("pywebpush")
     monkeypatch.delenv("VAPID_PRIVATE_KEY", raising=False)
     with pytest.raises(push.PushSendError) as exc:
         push.send_push({"endpoint": "https://example.com/x", "keys": {"p256dh": "a", "auth": "b"}}, {"title": "t"})
@@ -93,6 +97,7 @@ def test_send_push_without_vapid_keys_raises(monkeypatch):
 
 
 def test_send_push_classifies_expired_subscription(monkeypatch):
+    pytest.importorskip("pywebpush")
     monkeypatch.setenv("VAPID_PRIVATE_KEY", push.generate_vapid_keypair()[0])
 
     class FakeResponse:

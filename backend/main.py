@@ -1,5 +1,6 @@
-import os, hmac, hashlib, json, logging, logging.handlers
+import os, hmac, hashlib, json, logging, logging.handlers, subprocess
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -167,10 +168,37 @@ def _frontend_sha():
     except Exception:
         return 'unknown'
 
+def _compute_backend_sha():
+    """Git HEAD of the actual running backend checkout, unlike `_frontend_sha()`
+    (which tracks the last frontend build and is silent on backend-only deploys,
+    or squashed away entirely for merged feature branches). Computed once at
+    import time — never re-run per request — so a missing/slow git can't add
+    request latency or ever raise into a handler."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).parent.parent,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        ).decode().strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+_BACKEND_SHA = _compute_backend_sha()
+_STARTED_AT  = datetime.now(timezone.utc).isoformat()
+
+
 @app.get("/health")
 def health():
     from .database import get_data_version
-    return {"status": "ok", "sha": _frontend_sha(), "data_version": get_data_version()}
+    return {
+        "status": "ok",
+        "sha": _frontend_sha(),
+        "backend_sha": _BACKEND_SHA,
+        "started_at": _STARTED_AT,
+        "data_version": get_data_version(),
+    }
 
 
 @app.get("/currency/convert")
