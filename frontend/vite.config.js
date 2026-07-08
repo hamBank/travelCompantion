@@ -64,10 +64,11 @@ export default defineConfig({
             // pending-imports badge without ever reaching the network — a
             // trip's cached timeline is useless if boot fails before it.
             //
-            // ?sync= busted URLs (TripTimeline's silent-refresh cache-buster)
-            // are excluded: each one is a unique key that would otherwise fill
-            // this cache's 100-entry cap with one-off entries and evict the
-            // plain (non-busted) URL that offline loads actually look up.
+            // ?sync= busted URLs are excluded defensively (TripTimeline no
+            // longer sends them — plain URLs keep this cache's offline copy
+            // fresh on every silent refresh — but any future one-off busted
+            // URL would otherwise fill the 100-entry cap and evict the plain
+            // URLs that offline loads actually look up).
             urlPattern: ({ request, url }) =>
               request.method === 'GET' &&
               !url.searchParams.has('sync') &&

@@ -152,7 +152,7 @@ function AppShell({ user, onLogout }) {
       <main className="w-full px-4 sm:px-8 lg:px-16 py-6">
         {selectedTrip
           ? packing
-            ? <PackingList tripId={selectedTrip.id} userEmail={user?.email} canEdit={canEdit(selectedTrip.role)} />
+            ? <PackingList tripId={selectedTrip.id} userEmail={user?.email} canEdit={online && canEdit(selectedTrip.role)} />
             : editing
               ? <EditTrip
                   trip={selectedTrip}
