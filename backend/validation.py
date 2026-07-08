@@ -18,7 +18,7 @@ from .models import Stop, ItineraryItem
 
 # Items that represent movement between places. Shared by the missing-transport
 # and impossible-connection checks below.
-_TRANSPORT_KINDS = ("flight", "rail", "transfer", "river_transfer")
+_TRANSPORT_KINDS = ("flight", "rail", "transfer", "river_transfer", "cycling")
 
 _DATE_FORMATS = (
     "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M",

@@ -300,11 +300,17 @@ function OffsetRow({ children }) {
 }
 
 // ── Connection / layover calculation ────────────────────────────────────────
-const TRANSPORT_KINDS = new Set(['flight', 'rail', 'transfer', 'river_transfer'])
+const TRANSPORT_KINDS = new Set(['flight', 'rail', 'transfer', 'river_transfer', 'cycling'])
 
 function _arriveStr(item) {
   const d = item.details || {}
-  return (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') ? (d.arrive_time || null) : null
+  if (item.kind === 'flight' || item.kind === 'rail' || item.kind === 'river_transfer') return d.arrive_time || null
+  // Cycling has no separate arrive_time (unlike flight/rail/river_transfer) — its
+  // own scheduled_at is the only timestamp we have, so it doubles as the proxy
+  // "arrival" here. Without this, a stop reached only by bike (no flight/rail
+  // leg) can never seed a cross-stop connection at all.
+  if (item.kind === 'cycling') return item.scheduled_at || null
+  return null
 }
 
 function _departStr(item) {
@@ -318,6 +324,7 @@ function _connectionLocation(item) {
   if (item.kind === 'rail')     return d.destination || null
   if (item.kind === 'transfer') return d.end_location || null
   if (item.kind === 'river_transfer') return d.end_location || null
+  if (item.kind === 'cycling')  return d.end_location || null
   return null
 }
 

@@ -365,6 +365,26 @@ def test_date_warnings_transport_present_on_transition_day_not_flagged(client: T
     assert missing == []
 
 
+def test_date_warnings_cycling_transport_present_on_transition_day_not_flagged(client: TestClient, trip):
+    # Same Nice → Turin transition, but covered by a cycling leg instead of a
+    # transfer — cycling is a valid transport kind (models.ItemKind.cycling)
+    # and must not be treated as "no transport found".
+    nice = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Nice", "arrive": "2026-09-01T00:00:00", "depart": "2026-09-04T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Turin", "arrive": "2026-09-04T00:00:00", "depart": "2026-09-07T00:00:00", "status": "planned"
+    })
+    client.post(f"/stops/{nice['id']}/items", json={
+        "kind": "cycling", "name": "Ride to Turin", "status": "pending",
+        "scheduled_at": "2026-09-04T09:00",
+        "details": {"start_location": "Nice", "end_location": "Turin"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    missing = [w for w in warnings if w["name"] == "Missing transport"]
+    assert missing == []
+
+
 def test_date_warnings_impossible_connection_same_stop(client: TestClient, trip):
     # Two flights filed on the same stop: the second departs while the first is
     # still in the air — an impossible connection, same-timezone assumption holds.
