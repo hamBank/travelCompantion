@@ -101,3 +101,95 @@ def test_enrich_place_works_with_no_saved_item_yet(client, session, stop, monkey
     r = client.get(f"/stops/{stop['id']}/enrich", params={"kind": "activity", "name": "Colosseum"})
     assert r.status_code == 200
     assert fake.captured_input == "Colosseum"
+
+
+# ── opening_hours ────────────────────────────────────────────────────────────
+
+_MON_FIRST_WEEKDAY_TEXT = [
+    "Monday: 9:00 AM – 5:00 PM",
+    "Tuesday: 9:00 AM – 5:00 PM",
+    "Wednesday: 9:00 AM – 5:00 PM",
+    "Thursday: 9:00 AM – 5:00 PM",
+    "Friday: 9:00 AM – 5:00 PM",
+    "Saturday: 10:00 AM – 2:00 PM",
+    "Sunday: Closed",
+]
+
+_SUN_FIRST_WEEKDAY_TEXT = [
+    "Sunday: Closed",
+    "Monday: 9:00 AM – 5:00 PM",
+    "Tuesday: 9:00 AM – 5:00 PM",
+    "Wednesday: 9:00 AM – 5:00 PM",
+    "Thursday: 9:00 AM – 5:00 PM",
+    "Friday: 9:00 AM – 5:00 PM",
+    "Saturday: 10:00 AM – 2:00 PM",
+]
+
+
+def test_enrich_place_returns_opening_hours_normalized_to_monday_first(client, session, stop, monkeypatch):
+    monkeypatch.setattr(items_mod, "_PLACES_KEY", "fake-key")
+
+    class HoursClient(FakeClient):
+        def get(self, url, params=None):
+            if "findplacefromtext" in url:
+                return _FakeResponse({"candidates": [{"place_id": "abc123"}]})
+            return _FakeResponse({"result": {
+                "formatted_address": "Via Roma 1, Rome",
+                "opening_hours": {"weekday_text": _MON_FIRST_WEEKDAY_TEXT},
+            }})
+
+    monkeypatch.setattr(items_mod.httpx, "Client", HoursClient)
+    r = client.get(f"/stops/{stop['id']}/enrich", params={"kind": "restaurant", "name": "Trattoria"})
+    assert r.status_code == 200
+    assert r.json()["opening_hours"] == _MON_FIRST_WEEKDAY_TEXT
+
+
+def test_enrich_place_reorders_sunday_first_weekday_text_to_monday_first(client, session, stop, monkeypatch):
+    """Google's weekday_text order depends on request locale — a Sunday-first
+    response must still come back Monday-first, keyed off the day name in
+    each string rather than trusting array position."""
+    monkeypatch.setattr(items_mod, "_PLACES_KEY", "fake-key")
+
+    class HoursClient(FakeClient):
+        def get(self, url, params=None):
+            if "findplacefromtext" in url:
+                return _FakeResponse({"candidates": [{"place_id": "abc123"}]})
+            return _FakeResponse({"result": {
+                "opening_hours": {"weekday_text": _SUN_FIRST_WEEKDAY_TEXT},
+            }})
+
+    monkeypatch.setattr(items_mod.httpx, "Client", HoursClient)
+    r = client.get(f"/stops/{stop['id']}/enrich", params={"kind": "restaurant", "name": "Trattoria"})
+    assert r.status_code == 200
+    assert r.json()["opening_hours"] == _MON_FIRST_WEEKDAY_TEXT
+
+
+def test_enrich_place_omits_opening_hours_when_absent(client, session, stop, monkeypatch):
+    """The default FakeClient response has no opening_hours at all — the
+    field should simply be missing, not present-but-empty/null."""
+    monkeypatch.setattr(items_mod, "_PLACES_KEY", "fake-key")
+    fake = FakeClient()
+    monkeypatch.setattr(items_mod.httpx, "Client", lambda *a, **k: fake)
+
+    r = client.get(f"/stops/{stop['id']}/enrich", params={"kind": "restaurant", "name": "Trattoria da Mario"})
+    assert r.status_code == 200
+    assert "opening_hours" not in r.json()
+
+
+def test_enrich_place_omits_opening_hours_when_malformed(client, session, stop, monkeypatch):
+    """A weekday_text that isn't a clean 7-day list (wrong length, or an
+    entry we can't match to a weekday name) is dropped rather than guessed at."""
+    monkeypatch.setattr(items_mod, "_PLACES_KEY", "fake-key")
+
+    class HoursClient(FakeClient):
+        def get(self, url, params=None):
+            if "findplacefromtext" in url:
+                return _FakeResponse({"candidates": [{"place_id": "abc123"}]})
+            return _FakeResponse({"result": {
+                "opening_hours": {"weekday_text": ["Open 24 hours"]},
+            }})
+
+    monkeypatch.setattr(items_mod.httpx, "Client", HoursClient)
+    r = client.get(f"/stops/{stop['id']}/enrich", params={"kind": "restaurant", "name": "Trattoria"})
+    assert r.status_code == 200
+    assert "opening_hours" not in r.json()

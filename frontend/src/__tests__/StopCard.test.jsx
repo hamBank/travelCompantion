@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, DayBanner } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, DayBanner, closedOnDay } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -612,6 +612,65 @@ describe('itemLocations', () => {
 
   it('returns an empty array when details is missing entirely', () => {
     expect(itemLocations({ kind: 'restaurant' })).toEqual([])
+  })
+})
+
+// ── closedOnDay ──────────────────────────────────────────────────────────────
+// 2024-01-01 is a known Monday; 2024-01-07 is a known Sunday — used to pin
+// down the weekday mapping precisely rather than relying on a relative date.
+
+describe('closedOnDay', () => {
+  const HOURS = [
+    'Monday: 9:00 AM – 5:00 PM',
+    'Tuesday: 9:00 AM – 5:00 PM',
+    'Wednesday: 9:00 AM – 5:00 PM',
+    'Thursday: 9:00 AM – 5:00 PM',
+    'Friday: 9:00 AM – 5:00 PM',
+    'Saturday: 10:00 AM – 2:00 PM',
+    'Sunday: Closed',
+  ]
+
+  it('returns true when the mapped weekday entry says closed', () => {
+    expect(closedOnDay(HOURS, '2024-01-07')).toBe(true) // Sunday
+  })
+
+  it('returns false when the mapped weekday entry is open', () => {
+    expect(closedOnDay(HOURS, '2024-01-01')).toBe(false) // Monday
+  })
+
+  it('maps a known Monday and a known Sunday to the correct index', () => {
+    expect(closedOnDay(HOURS, '2024-01-01')).toBe(false) // Monday → index 0
+    expect(closedOnDay(HOURS, '2024-01-07')).toBe(true)  // Sunday → index 6
+    // Saturday (2024-01-06) is open in this fixture
+    expect(closedOnDay(HOURS, '2024-01-06')).toBe(false)
+  })
+
+  it('is case-insensitive when matching "closed"', () => {
+    const lower = [...HOURS.slice(0, 6), 'Sunday: CLOSED']
+    expect(closedOnDay(lower, '2024-01-07')).toBe(true)
+  })
+
+  it('returns false when openingHours is missing', () => {
+    expect(closedOnDay(undefined, '2024-01-07')).toBe(false)
+    expect(closedOnDay(null, '2024-01-07')).toBe(false)
+  })
+
+  it('returns false when openingHours is not a 7-element array', () => {
+    expect(closedOnDay(['Sunday: Closed'], '2024-01-07')).toBe(false)
+    expect(closedOnDay([...HOURS, 'Extra: Closed'], '2024-01-07')).toBe(false)
+  })
+
+  it('returns false when an entry is malformed (not a string)', () => {
+    const malformed = [...HOURS]
+    malformed[6] = null
+    expect(closedOnDay(malformed, '2024-01-07')).toBe(false)
+  })
+
+  it('returns false when dateStr is missing or malformed', () => {
+    expect(closedOnDay(HOURS, undefined)).toBe(false)
+    expect(closedOnDay(HOURS, null)).toBe(false)
+    expect(closedOnDay(HOURS, 'not-a-date')).toBe(false)
+    expect(closedOnDay(HOURS, '')).toBe(false)
   })
 })
 

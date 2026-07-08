@@ -296,6 +296,7 @@ function AccommodationForm({ itemId, stopId, core, details, setCore, setDetails 
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
       if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
       if (suggestions.description && !details.description) { setD('description', suggestions.description); filled++ }
+      if (suggestions.opening_hours && !details.opening_hours) { setD('opening_hours', suggestions.opening_hours); filled++ }
       setEnrichMsg(filled
         ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
         : { text: 'Nothing to add', color: 'var(--text-faint)' })
@@ -414,6 +415,7 @@ function RestaurantForm({ itemId, stopId, core, details, setCore, setDetails }) 
       if (suggestions.location && !details.location) { setD('location', suggestions.location); filled++ }
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
       if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
+      if (suggestions.opening_hours && !details.opening_hours) { setD('opening_hours', suggestions.opening_hours); filled++ }
       setEnrichMsg(filled
         ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
         : { text: 'Nothing to add', color: 'var(--text-faint)' })
@@ -607,6 +609,7 @@ function ActivityForm({ itemId, stopId, core, details, setCore, setDetails }) {
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
       if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
       if (suggestions.description && !details.description) { setD('description', suggestions.description); filled++ }
+      if (suggestions.opening_hours && !details.opening_hours) { setD('opening_hours', suggestions.opening_hours); filled++ }
       setEnrichMsg(filled
         ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
         : { text: 'Nothing to add', color: 'var(--text-faint)' })
@@ -654,6 +657,7 @@ function ShowForm({ itemId, stopId, core, details, setCore, setDetails }) {
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
       if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
       if (suggestions.description && !details.description) { setD('description', suggestions.description); filled++ }
+      if (suggestions.opening_hours && !details.opening_hours) { setD('opening_hours', suggestions.opening_hours); filled++ }
       setEnrichMsg(filled
         ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
         : { text: 'Nothing to add', color: 'var(--text-faint)' })
@@ -936,6 +940,7 @@ function TourForm({ itemId, stopId, core, details, setCore, setDetails }) {
       if (suggestions.location && !details.meeting_point) { setD('meeting_point', suggestions.location); filled++ }
       if (suggestions.contact_phone && !details.contact_phone) { setD('contact_phone', suggestions.contact_phone); filled++ }
       if (suggestions.website && !core.link) { setCore(c => ({ ...c, link: suggestions.website })); filled++ }
+      if (suggestions.opening_hours && !details.opening_hours) { setD('opening_hours', suggestions.opening_hours); filled++ }
       setEnrichMsg(filled
         ? { text: `${filled} field${filled > 1 ? 's' : ''} filled`, color: 'var(--success)' }
         : { text: 'Nothing to add', color: 'var(--text-faint)' })

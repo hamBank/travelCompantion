@@ -968,6 +968,39 @@ def day_map(stop_id: int, req: DayMapRequest, session: Session = Depends(get_ses
 
 _ENRICHABLE_KINDS = {ItemKind.accommodation, ItemKind.restaurant, ItemKind.activity, ItemKind.show, ItemKind.tour}
 
+_WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def _normalize_opening_hours(weekday_text) -> Optional[list]:
+    """Normalize the legacy Places API's `opening_hours.weekday_text` into a
+    7-element Monday-first list of strings.
+
+    Google's own docs say weekday_text's array order depends on the request's
+    locale (some languages start the week Monday, others Sunday) — there is no
+    guaranteed positional order to key off. Each entry does embed its day name
+    as a text prefix ("Monday: 9:00 AM – 5:00 PM") though, so re-derive the
+    correct slot from that rather than trusting position. If any entry can't
+    be confidently matched to a weekday name, bail out to None (omit the field
+    entirely) rather than risk mislabeling a day as open/closed.
+    """
+    if not isinstance(weekday_text, list) or len(weekday_text) != 7:
+        return None
+    result: list = [None] * 7
+    for entry in weekday_text:
+        if not isinstance(entry, str):
+            return None
+        matched = False
+        for i, day in enumerate(_WEEKDAY_NAMES):
+            if entry.strip().lower().startswith(day.lower()):
+                result[i] = entry
+                matched = True
+                break
+        if not matched:
+            return None
+    if any(r is None for r in result):
+        return None
+    return result
+
 
 @router.get("/stops/{stop_id}/enrich")
 def enrich_place(
@@ -1009,7 +1042,7 @@ def enrich_place(
         try:
             det = client.get(f"{_PLACES_BASE}/details/json", params={
                 "place_id": place_id,
-                "fields": "name,formatted_address,formatted_phone_number,international_phone_number,website,editorial_summary",
+                "fields": "name,formatted_address,formatted_phone_number,international_phone_number,website,editorial_summary,opening_hours",
                 "key": _PLACES_KEY,
             }).json().get("result", {})
         except Exception as e:
@@ -1027,6 +1060,9 @@ def enrich_place(
         suggestions["website"] = det["website"]
     if det.get("editorial_summary", {}).get("overview"):
         suggestions["description"] = det["editorial_summary"]["overview"]
+    opening_hours = _normalize_opening_hours((det.get("opening_hours") or {}).get("weekday_text"))
+    if opening_hours:
+        suggestions["opening_hours"] = opening_hours
 
     return suggestions
 
