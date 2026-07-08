@@ -67,6 +67,25 @@ export function itemDateKey(item) {
   return String(dt).split('T')[0]
 }
 
+// Is a venue closed on the given "YYYY-MM-DD" date, per its stored 7-element
+// Monday-first opening_hours (see backend's enrich endpoint normalization)?
+// Deliberately conservative: any missing/malformed input returns false — a
+// warning chip should only ever appear when we're confident, never as a
+// false positive against a venue that's actually open.
+export function closedOnDay(openingHours, dateStr) {
+  if (!Array.isArray(openingHours) || openingHours.length !== 7) return false
+  if (typeof dateStr !== 'string') return false
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return false
+  const d = new Date(`${dateStr.slice(0, 10)}T12:00:00`)
+  if (isNaN(d)) return false
+  // JS getDay(): 0=Sunday..6=Saturday → Monday-first index (Monday=0..Sunday=6).
+  const idx = (d.getDay() + 6) % 7
+  const entry = openingHours[idx]
+  if (typeof entry !== 'string') return false
+  return entry.toLowerCase().includes('closed')
+}
+
 // Epoch ms when the item is definitively over, or null if undatable. Used by
 // the past-items catch-up banner (TripTimeline.jsx) — a several-hour grace
 // period there absorbs the approximation from ignoring timezone (naive-local,
@@ -453,6 +472,25 @@ export function computeLayovers(sortedItems) {
     out[cur.id] = { duration: fmtConnectionDur(ms), location: _connectionLocation(cur) }
   }
   return out
+}
+
+// Warning chip for cards whose venue's stored opening_hours (from the Places
+// enrich flow) list the item's scheduled date as closed. Renders nothing when
+// there's no opening_hours, no resolvable date, or the day isn't closed.
+function ClosedChip({ item }) {
+  const d = item.details ?? {}
+  const dateKey = itemDateKey(item)
+  if (!closedOnDay(d.opening_hours, dateKey)) return null
+  const weekday = new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
+  return (
+    <span
+      style={{ color: 'var(--warning)' }}
+      className="text-xs"
+      title="This venue's stored hours list this day as closed"
+    >
+      ⚠ Closed on {weekday}
+    </span>
+  )
 }
 
 function LayoverBadge({ duration, location }) {
@@ -1248,6 +1286,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                 </div>
               )}
+              <ClosedChip item={item} />
             </div>
           </div>
         </button>
@@ -1863,6 +1902,7 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
                   {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
                 </div>
               )}
+              <ClosedChip item={item} />
             </div>
           </div>
         </button>
@@ -1935,6 +1975,7 @@ function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
                   {item.cost && !isFullyPaid(item) && <CostDisplay item={item} compact />}
                 </div>
               )}
+              <ClosedChip item={item} />
             </div>
           </div>
         </button>
@@ -2090,6 +2131,7 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
                   {d.booking_ref && <span>Ref: {d.booking_ref}</span>}
                 </div>
               )}
+              <ClosedChip item={item} />
             </div>
           </div>
         </button>

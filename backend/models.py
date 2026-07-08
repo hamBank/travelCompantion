@@ -2,7 +2,7 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, JSON, LargeBinary
 
 
 class StopStatus(str, Enum):
@@ -434,3 +434,36 @@ class ItemHistoryRead(SQLModel):
     snapshot: Optional[dict] = None
     diff: Optional[dict] = None
     source: str = ""
+
+
+# ── ItemAttachment (boarding passes, booking PDFs, QR codes) ──────────────────
+
+class ItemAttachment(SQLModel, table=True):
+    """A file attached to an itinerary item, viewable at the gate even under
+    offline-ish conditions. Stored as a blob directly in the DB (not on disk)
+    so the existing single-database backup story covers attachments too — no
+    separate uploads-directory to back up in sync with the DB.
+
+    item_id IS a real foreign key (unlike ItemHistory) — attachments aren't an
+    audit trail meant to outlive the item; deleting the item removes them too
+    (see delete_item in routers/items.py, which deletes these rows first).
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    item_id: int = Field(foreign_key="itineraryitem.id", index=True)
+    filename: str
+    content_type: str = ""
+    size: int = 0
+    data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ItemAttachmentRead(SQLModel):
+    """API-safe view of an attachment — deliberately omits `data` so listing
+    attachments never ships the raw bytes; those are only served one-at-a-time
+    by GET /attachments/{id}."""
+    id: int
+    item_id: int
+    filename: str
+    content_type: str
+    size: int
+    created_at: datetime

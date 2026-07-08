@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
@@ -67,3 +68,48 @@ def get_current_user(
         }
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# ── iCal feed tokens ───────────────────────────────────────────────────────────
+# Stateless, scope-limited tokens for the public "subscribe in your calendar
+# app" feed (GET /calendar/{token}.ics — see backend/routers/calendar.py).
+# No new schema: same JWT_SECRET/JWT_ALGORITHM as login tokens, just a
+# different (narrower) payload, so no DB lookup is needed to serve the feed.
+
+ICAL_SCOPE = "ical"
+
+
+def create_ical_token(trip_id: int) -> str:
+    """A token that grants read-only access to exactly one trip's calendar
+    feed and nothing else — {"trip_id": N, "scope": "ical"} carries no user
+    identity, so anyone holding the URL can subscribe with no login, same as
+    Google/Apple's own "secret address" ICS links.
+
+    Deliberately has no `exp` claim: the whole point is a link that keeps
+    working whenever the user's calendar app polls it (days/weeks later),
+    and unlike a login session there's no compromised-account blast radius
+    to bound — the token can only ever read this one trip's calendar data.
+    """
+    payload = {"trip_id": trip_id, "scope": ICAL_SCOPE}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def verify_ical_token(token: str) -> Optional[int]:
+    """Return the trip_id encoded in a valid ical-scoped token, or None.
+
+    Returns None (never raises) for every failure mode — bad signature,
+    malformed token, wrong scope — so the caller can 404 uniformly. Callers
+    must not distinguish "invalid" from "wrong trip" in the response: a 401
+    or a different error code would tell an attacker their forged token was
+    at least well-formed.
+    """
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        return None
+    if payload.get("scope") != ICAL_SCOPE:
+        return None
+    trip_id = payload.get("trip_id")
+    if not isinstance(trip_id, int):
+        return None
+    return trip_id

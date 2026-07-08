@@ -52,7 +52,7 @@ def _flight(session, stop, depart, checkin_window="24h", name="QF1", depart_tz=N
 
 
 def _rail(session, stop, depart, name="Eurostar", depart_tz=None,
-          train_number=None, destination=None):
+          train_number=None, destination=None, origin=None, depart_platform=None):
     details = {"depart_time": depart}
     if depart_tz:
         details["depart_tz"] = depart_tz
@@ -60,6 +60,10 @@ def _rail(session, stop, depart, name="Eurostar", depart_tz=None,
         details["train_number"] = train_number
     if destination:
         details["destination"] = destination
+    if origin:
+        details["origin"] = origin
+    if depart_platform:
+        details["depart_platform"] = depart_platform
     item = ItineraryItem(stop_id=stop.id, kind=ItemKind.rail, name=name, details=details)
     session.add(item)
     session.commit()
@@ -504,3 +508,242 @@ def test_flight_alert_window_uses_stop_offset_fallback(session):
 
     send_flight_alerts(session, now=now, sender=_fake_sender([]), fetch=fake_fetch)
     assert fetched == ["SQ1"]
+
+
+# ── send_rail_alerts — live delay/cancellation/platform-change polling ───────
+# Mirrors the send_flight_alerts tests above as closely as the rail data
+# source (backend/rail_live.py, wrapping the free transport.rest API) allows:
+# same window/poll-gap/dedup shape, but cancelled/delay/platform fields
+# instead of AeroDataBox's status/movement/gate ones.
+
+def test_rail_alert_window_uses_stop_offset_fallback(session):
+    from backend.notifications import send_rail_alerts
+
+    trip, stop = _seed_trip(session)
+    stop.lng = "103.82"  # approx UTC+7
+    session.add(stop)
+    session.commit()
+    now = datetime(2026, 8, 1, 12, 0)
+    # Wall now+26h → UTC now+19h: inside the 24h polling window only once the
+    # offset correction is applied (treat-as-UTC put it at 26h → outside).
+    _rail(session, stop, (now + timedelta(hours=26)).isoformat(timespec="minutes"),
+          train_number="ICE123", origin="Singapore")
+
+    fetched = []
+
+    def fake_fetch(train_number, origin, dep_time):
+        fetched.append(train_number)
+        return None  # no live data — we only care that the window opened
+
+    send_rail_alerts(session, now=now, sender=_fake_sender([]), fetch=fake_fetch)
+    assert fetched == ["ICE123"]
+
+
+def test_rail_alert_not_polled_outside_window(session):
+    from backend.notifications import send_rail_alerts
+
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    # Departs in 30h — outside the default 24h alert window.
+    _rail(session, stop, (now + timedelta(hours=30)).isoformat(timespec="minutes"),
+          train_number="ICE123", origin="Berlin")
+
+    fetched = []
+
+    def fake_fetch(train_number, origin, dep_time):
+        fetched.append(train_number)
+        return None
+
+    send_rail_alerts(session, now=now, sender=_fake_sender([]), fetch=fake_fetch)
+    assert fetched == []
+
+
+def test_rail_alert_skipped_without_origin_or_train_number(session):
+    from backend.notifications import send_rail_alerts
+
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"))  # no train_number/origin
+
+    fetched = []
+
+    def fake_fetch(train_number, origin, dep_time):
+        fetched.append(train_number)
+        return None
+
+    n = send_rail_alerts(session, now=now, sender=_fake_sender([]), fetch=fake_fetch)
+    assert n == 0
+    assert fetched == []
+
+
+def test_rail_cancellation_alert(session):
+    from backend.notifications import send_rail_alerts
+
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"),
+          name="Eurostar", train_number="ES9018", origin="London", destination="Paris")
+
+    def fake_fetch(train_number, origin, dep_time):
+        return {"cancelled": True, "when": None, "plannedWhen": "2026-08-01T14:00:00+01:00"}
+
+    calls = []
+    n = send_rail_alerts(session, now=now, sender=_fake_sender(calls), fetch=fake_fetch)
+    assert n == 1
+    assert calls[0][1]["title"] == "Train cancelled"
+    assert "ES9018" in calls[0][1]["body"]
+
+    logs = session.exec(select(NotificationLog)).all()
+    assert [(log.item_id, log.kind) for log in logs] == [(logs[0].item_id, "rail_cancel")]
+
+
+def test_rail_delay_bucket_fires_once_and_escalates(session):
+    from backend.notifications import send_rail_alerts
+
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"),
+          name="Eurostar", train_number="ES9018", origin="London", destination="Paris")
+
+    calls = []
+
+    def fake_fetch_20min_late(train_number, origin, dep_time):
+        return {
+            "cancelled": False,
+            "plannedWhen": "2026-08-01T14:00:00+00:00",
+            "when": "2026-08-01T14:20:00+00:00",  # 20 min late → clears the 15-min bucket
+        }
+
+    n1 = send_rail_alerts(session, now=now, sender=_fake_sender(calls), fetch=fake_fetch_20min_late)
+    assert n1 == 1
+    assert calls[0][1]["title"] == "Train delayed"
+    assert "20m" in calls[0][1]["body"]  # actual delay, not the bucket threshold
+
+    # Re-polling immediately (within the poll gap) shouldn't call fetch again,
+    # let alone re-send the same bucket.
+    n_throttled = send_rail_alerts(session, now=now + timedelta(minutes=5),
+                                    sender=_fake_sender(calls), fetch=fake_fetch_20min_late)
+    assert n_throttled == 0
+    assert len(calls) == 1
+
+    # Past the poll gap, still 20 min late — same bucket, must not re-fire.
+    n2 = send_rail_alerts(session, now=now + timedelta(minutes=31),
+                           sender=_fake_sender(calls), fetch=fake_fetch_20min_late)
+    assert n2 == 0
+    assert len(calls) == 1
+
+    def fake_fetch_45min_late(train_number, origin, dep_time):
+        return {
+            "cancelled": False,
+            "plannedWhen": "2026-08-01T14:00:00+00:00",
+            "when": "2026-08-01T14:45:00+00:00",  # now 45 min late → clears the 30-min bucket too
+        }
+
+    n3 = send_rail_alerts(session, now=now + timedelta(minutes=65),
+                           sender=_fake_sender(calls), fetch=fake_fetch_45min_late)
+    assert n3 == 1
+    assert len(calls) == 2
+    assert calls[1][1]["title"] == "Train delayed"
+    assert "45m" in calls[1][1]["body"]  # actual delay, not the bucket threshold
+
+    logs = session.exec(select(NotificationLog)).all()
+    kinds = {log.kind for log in logs}
+    assert kinds == {"rail_delay:15", "rail_delay:30"}
+
+
+def test_rail_platform_change_alert(session):
+    from backend.notifications import send_rail_alerts
+
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"),
+          name="Eurostar", train_number="ES9018", origin="London", destination="Paris",
+          depart_platform="4")
+
+    def fake_fetch(train_number, origin, dep_time):
+        return {
+            "cancelled": False,
+            "plannedWhen": "2026-08-01T14:00:00+00:00",
+            "when": "2026-08-01T14:00:00+00:00",  # on time, no delay alert
+            "platform": "9",
+        }
+
+    calls = []
+    n = send_rail_alerts(session, now=now, sender=_fake_sender(calls), fetch=fake_fetch)
+    assert n == 1
+    assert calls[0][1]["title"] == "Platform changed"
+    assert "4" in calls[0][1]["body"] and "9" in calls[0][1]["body"]
+
+    logs = session.exec(select(NotificationLog)).all()
+    assert [log.kind for log in logs] == ["rail_platform:9"]
+
+
+def test_rail_no_platform_alert_when_unchanged(session):
+    from backend.notifications import send_rail_alerts
+
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"),
+          name="Eurostar", train_number="ES9018", origin="London", destination="Paris",
+          depart_platform="4")
+
+    def fake_fetch(train_number, origin, dep_time):
+        return {
+            "cancelled": False,
+            "plannedWhen": "2026-08-01T14:00:00+00:00",
+            "when": "2026-08-01T14:00:00+00:00",
+            "platform": "4",  # unchanged
+        }
+
+    n = send_rail_alerts(session, now=now, sender=_fake_sender([]), fetch=fake_fetch)
+    assert n == 0
+
+
+def test_rail_alert_poll_throttled_across_runs(session):
+    from backend.notifications import send_rail_alerts
+
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"),
+          train_number="ICE123", origin="Berlin")
+
+    fetched = []
+
+    def fake_fetch(train_number, origin, dep_time):
+        fetched.append(now)
+        return None
+
+    send_rail_alerts(session, now=now, sender=_fake_sender([]), fetch=fake_fetch)
+    # Same poll gap (30 min default) not yet elapsed — must not call fetch again.
+    send_rail_alerts(session, now=now + timedelta(minutes=10), sender=_fake_sender([]), fetch=fake_fetch)
+    assert len(fetched) == 1
+
+    # Past the poll gap — fetch is attempted again.
+    send_rail_alerts(session, now=now + timedelta(minutes=31), sender=_fake_sender([]), fetch=fake_fetch)
+    assert len(fetched) == 2
+
+
+def test_rail_alert_idempotent_same_bucket_not_resent_after_poll_gap(session):
+    """Re-polling after the poll gap with the same (unescalated) delay must
+    not re-send the already-logged bucket, even though fetch runs again."""
+    from backend.notifications import send_rail_alerts
+
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"),
+          name="Eurostar", train_number="ES9018", origin="London", destination="Paris")
+
+    def fake_fetch(train_number, origin, dep_time):
+        return {
+            "cancelled": False,
+            "plannedWhen": "2026-08-01T14:00:00+00:00",
+            "when": "2026-08-01T14:20:00+00:00",
+        }
+
+    calls = []
+    n1 = send_rail_alerts(session, now=now, sender=_fake_sender(calls), fetch=fake_fetch)
+    assert n1 == 1
+
+    n2 = send_rail_alerts(session, now=now + timedelta(minutes=31), sender=_fake_sender(calls), fetch=fake_fetch)
+    assert n2 == 0
+    assert len(calls) == 1

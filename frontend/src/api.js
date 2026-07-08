@@ -99,6 +99,8 @@ export async function exportTripPdf(id, name) {
   document.body.removeChild(a); URL.revokeObjectURL(url)
 }
 
+export const getCalendarUrl = (id) => req(`/trips/${id}/calendar-url`)
+
 export const getTripMembers = (id) => req(`/trips/${id}/members`)
 export const addTripMember = (id, user_email, role) =>
   req(`/trips/${id}/members`, { method: 'POST', body: JSON.stringify({ user_email, role }) })
@@ -238,4 +240,31 @@ export async function fetchGpxText(id) {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   return r.ok ? r.text() : null
+}
+
+// ── Item attachments (boarding passes, booking PDFs, QR codes) ──────────────
+
+export async function uploadAttachment(itemId, file) {
+  const token = getToken()
+  const form = new FormData()
+  form.append('file', file)
+  const r = await fetch(`/items/${itemId}/attachments`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  const body = await r.json()
+  if (!r.ok) throw new Error(Array.isArray(body.detail) ? body.detail.map(e => e.msg).join('; ') : (body.detail ?? r.statusText))
+  return body
+}
+
+export const listAttachments = (itemId) => req(`/items/${itemId}/attachments`)
+export const deleteAttachment = (id) => req(`/attachments/${id}`, { method: 'DELETE' })
+
+export async function fetchAttachmentBlob(id) {
+  const token = getToken()
+  const r = await fetch(`/attachments/${id}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  return r.ok ? r.blob() : null
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getTripMembers, addTripMember, removeTripMember } from '../api.js'
+import { getTripMembers, addTripMember, removeTripMember, getCalendarUrl } from '../api.js'
 
 const ROLE_LABEL = { owner: 'Owner', editor: 'Editor', viewer: 'Viewer' }
 
@@ -9,6 +9,9 @@ export default function ShareModal({ trip, onClose }) {
   const [role, setRole] = useState('viewer')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [calBusy, setCalBusy] = useState(false)
+  const [calCopied, setCalCopied] = useState(false)
+  const [calError, setCalError] = useState(null)
 
   async function load() {
     try { setMembers(await getTripMembers(trip.id)) }
@@ -32,6 +35,19 @@ export default function ShareModal({ trip, onClose }) {
     setError(null)
     try { await removeTripMember(trip.id, memberEmail); await load() }
     catch (err) { setError(err.message) }
+  }
+
+  async function copyCalendarUrl() {
+    if (calBusy) return
+    setCalBusy(true); setCalError(null)
+    try {
+      const { url } = await getCalendarUrl(trip.id)
+      const absolute = `${window.location.origin}${url}`
+      await navigator.clipboard?.writeText(absolute)
+      setCalCopied(true)
+      setTimeout(() => setCalCopied(false), 1500)
+    } catch (err) { setCalError(err.message) }
+    finally { setCalBusy(false) }
   }
 
   return (
@@ -126,6 +142,23 @@ export default function ShareModal({ trip, onClose }) {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Calendar feed */}
+          <div>
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Calendar feed</p>
+            <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2">
+              Subscribe in Google/Apple Calendar to see this trip's itinerary — no login needed for whoever has the link.
+            </p>
+            <button
+              onClick={copyCalendarUrl}
+              disabled={calBusy}
+              style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}
+              className="text-xs px-3 py-2 rounded-lg disabled:opacity-50 hover:opacity-80 transition-opacity"
+            >
+              {calBusy ? 'Working…' : calCopied ? 'Copied' : 'Copy calendar link'}
+            </button>
+            {calError && <p style={{ color: 'var(--error)' }} className="text-xs mt-1.5">{calError}</p>}
           </div>
         </div>
 

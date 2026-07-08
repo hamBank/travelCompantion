@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, select
 
-from . import flight_live
+from . import flight_live, rail_live
 from .models import ItineraryItem, ItemKind, Stop, TripMembership, PushSubscription, NotificationLog
 from .push import send_push, PushSendError
 from .tzutil import approx_utc_offset_hours
@@ -42,6 +42,16 @@ FLIGHT_ALERT_POLL_MINUTES = float(os.getenv("FLIGHT_ALERT_POLL_MINUTES", "45"))
 # current delay clears is sent, so a steady 45m delay doesn't re-alert every
 # poll, but a growing delay (45m → 70m) still gets a fresh, more urgent alert.
 DELAY_BUCKETS_MIN = [15, 30, 60, 120, 240]
+
+# ── Live rail delay/cancellation/platform-change alerts ───────────────────────
+# transport.rest (backend/rail_live.py) is a free, unauthenticated public API
+# with no published metered quota, unlike AeroDataBox's 600-units/month free
+# tier — so there's no hard ceiling to budget against here the way the flight
+# window/poll-gap comment above does. Defaults are still deliberately bounded
+# (not "poll every train every minute") so a misbehaving cron doesn't hammer
+# someone else's free infrastructure.
+RAIL_ALERT_WINDOW_HOURS = float(os.getenv("RAIL_ALERT_WINDOW_HOURS", "24"))
+RAIL_ALERT_POLL_MINUTES = float(os.getenv("RAIL_ALERT_POLL_MINUTES", "30"))
 
 
 def _parse_checkin_window(s) -> Optional[float]:
@@ -343,6 +353,120 @@ def send_flight_alerts(session: Session, *, now: Optional[datetime] = None,
                 _send(
                     f"flight_gate:{live_gate}", "Gate changed",
                     f"Gate changed: {stored_gate} → {live_gate}",
+                )
+
+        session.commit()
+
+    return sent
+
+
+def _rail_label(details: dict, item: ItineraryItem) -> str:
+    number = details.get("train_number") or ""
+    origin = details.get("origin") or ""
+    destination = details.get("destination") or ""
+    route = f"{origin}→{destination}" if origin and destination else (destination or origin)
+    label = f"{number} {route}".strip()
+    return label or item.name or "Train"
+
+
+def send_rail_alerts(session: Session, *, now: Optional[datetime] = None,
+                      sender=send_push, fetch=None) -> int:
+    """Poll near-departure rail items for live status and push an alert on
+    cancellation, a delay-bucket escalation, or a platform change. Idempotent
+    via NotificationLog like send_flight_alerts — kinds are "rail_cancel",
+    "rail_delay:{bucket}", and "rail_platform:{platform}". Returns alerts sent.
+
+    `fetch` defaults to rail_live.fetch_rail; injectable for tests.
+    """
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    fetch = fetch or rail_live.fetch_rail
+    window = timedelta(hours=RAIL_ALERT_WINDOW_HOURS)
+    poll_gap = timedelta(minutes=RAIL_ALERT_POLL_MINUTES)
+
+    trains = session.exec(
+        select(ItineraryItem).where(ItineraryItem.kind == ItemKind.rail)
+    ).all()
+    logged = {(row.item_id, row.kind) for row in session.exec(select(NotificationLog)).all()}
+
+    sent = 0
+    for item in trains:
+        d = item.details or {}
+        train_number = (d.get("train_number") or "").strip()
+        origin = (d.get("origin") or "").strip()
+        depart_local = d.get("depart_time")
+        if not train_number or not origin or not depart_local:
+            continue  # need a train number + origin station to look up live status
+
+        fallback = None if d.get("depart_tz") else _stop_utc_offset_hours(session, item)
+        depart = _local_to_utc(depart_local, d.get("depart_tz"), fallback_offset_hours=fallback)
+        if not depart or not (now < depart <= now + window):
+            continue  # no depart time, already departed, or outside the alert window
+
+        last_poll_s = d.get("rail_poll_at")
+        if last_poll_s:
+            try:
+                if now - datetime.fromisoformat(last_poll_s) < poll_gap:
+                    continue  # polled recently enough
+            except ValueError:
+                pass  # malformed stored value — treat as never polled
+
+        # Record the poll attempt before calling out, so a failing lookup is
+        # still throttled (an outage shouldn't retry every cron tick).
+        d = {**d, "rail_poll_at": now.isoformat(timespec="minutes")}
+        item.details = d
+        session.add(item)
+        session.commit()
+
+        try:
+            live = fetch(train_number, origin, depart_local)
+        except rail_live.RailLiveError:
+            continue  # one train's failure shouldn't stop the run
+        if live is None:
+            continue
+
+        stop = session.get(Stop, item.stop_id)
+        if not stop:
+            continue
+        recipients = _recipients(session, stop.trip_id)
+        label = _rail_label(d, item)
+
+        def _send(kind: str, title: str, body: str) -> None:
+            nonlocal sent
+            if (item.id, kind) in logged:
+                return
+            payload = {"title": title, "body": body, "url": "/", "urgent": True}
+            for sub in recipients:
+                info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
+                try:
+                    sender(info, payload, urgent=True)
+                except PushSendError as e:
+                    if e.expired:
+                        session.delete(sub)
+            session.add(NotificationLog(item_id=item.id, kind=kind))
+            logged.add((item.id, kind))
+            sent += 1
+
+        if live.get("cancelled"):
+            _send("rail_cancel", "Train cancelled", f"{label} has been cancelled")
+        else:
+            delay = rail_live.delay_min(live)
+            if delay is not None:
+                applicable = [b for b in DELAY_BUCKETS_MIN if b <= delay]
+                if applicable:
+                    bucket = max(applicable)
+                    when_s = live.get("when")
+                    when = when_s[11:16] if when_s else "?"
+                    _send(
+                        f"rail_delay:{bucket}", "Train delayed",
+                        f"{label} now departing {when} ({rail_live.delay_str(delay)})",
+                    )
+
+            live_platform = live.get("platform") or live.get("plannedPlatform")
+            stored_platform = d.get("depart_platform")
+            if live_platform and stored_platform and str(live_platform) != str(stored_platform):
+                _send(
+                    f"rail_platform:{live_platform}", "Platform changed",
+                    f"Platform changed: {stored_platform} → {live_platform}",
                 )
 
         session.commit()
