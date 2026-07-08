@@ -99,6 +99,8 @@ export async function exportTripPdf(id, name) {
   document.body.removeChild(a); URL.revokeObjectURL(url)
 }
 
+export const getCalendarUrl = (id) => req(`/trips/${id}/calendar-url`)
+
 export const getTripMembers = (id) => req(`/trips/${id}/members`)
 export const addTripMember = (id, user_email, role) =>
   req(`/trips/${id}/members`, { method: 'POST', body: JSON.stringify({ user_email, role }) })

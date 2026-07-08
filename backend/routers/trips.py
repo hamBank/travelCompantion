@@ -145,6 +145,17 @@ def export_trip_pdf(trip_id: int, session: Session = Depends(get_session), user:
     )
 
 
+@router.get("/{trip_id}/calendar-url")
+def get_calendar_url(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Path (not absolute URL — the frontend prepends location.origin) for
+    this trip's public, tokenized iCal feed. Viewer access is enough to get
+    the link since it grants no more than viewing already grants."""
+    require_trip_role(session, user, trip_id, TripRole.viewer)
+    from ..auth import create_ical_token
+    token = create_ical_token(trip_id)
+    return {"url": f"/calendar/{token}.ics"}
+
+
 @router.get("/{trip_id}/date-warnings")
 def trip_date_warnings(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """Items whose date falls outside their stop's arrive→depart window."""

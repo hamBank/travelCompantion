@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from .database import create_db_and_tables
-from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me, weather, packing, push, attachments
+from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me, weather, packing, push, attachments, calendar
 from .routers.auth_router import router as auth_router
 from . import metrics as _metrics  # registers all travelcomp_* counters at startup
 
@@ -60,7 +60,10 @@ logger = logging.getLogger(__name__)
 _PUBLIC_PREFIXES = ("/auth/", "/health", "/metrics", "/currency/", "/weather",
                     "/push/vapid-public-key", "/assets/",
                     "/sw.", "/sw-update", "/sw-push", "/workbox-", "/registerSW.", "/manifest.",
-                    "/coverage", "/ingest/")
+                    "/coverage", "/ingest/",
+                    # Tokenized iCal feed (backend/routers/calendar.py) — the token
+                    # itself is the access control, no Bearer JWT is presented.
+                    "/calendar/")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
                     "/favicon.ico", "/icon-192.png", "/icon-512.png",
                     "/apple-touch-icon.png", "/deploy"}
@@ -100,6 +103,7 @@ app.include_router(weather.router, tags=["weather"])
 app.include_router(packing.router, tags=["packing"])
 app.include_router(push.router, tags=["push"])
 app.include_router(attachments.router, tags=["attachments"])
+app.include_router(calendar.router, tags=["calendar"])
 
 
 @app.post("/deploy")
