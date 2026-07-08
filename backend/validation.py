@@ -1,12 +1,24 @@
-"""Date sanity checks — flag items whose date falls outside their stop's window.
+"""Date sanity checks for a trip: items whose date falls outside their stop's
+window, uncovered accommodation nights, missing inter-stop transport, and
+impossible (overlapping) transport connections.
 
 Catches the residual class of bad data (typos, year mistakes, mis-filed items)
 that survives even a clean import — e.g. an item dated 2025 sitting in a 2026 stop.
+
+Design constraint for every check in this module: keep the false-positive rate
+low. When a signal is ambiguous, don't warn — a noisy banner just trains the
+user to stop reading it.
 """
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 from sqlmodel import Session, select
+from sqlalchemy import nullslast, func
 
 from .models import Stop, ItineraryItem
+
+# Items that represent movement between places. Shared by the missing-transport
+# and impossible-connection checks below.
+_TRANSPORT_KINDS = ("flight", "rail", "transfer", "river_transfer")
 
 _DATE_FORMATS = (
     "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M",
@@ -68,6 +80,172 @@ def _item_span(item: ItineraryItem):
     return start, start
 
 
+def _transport_times(item: ItineraryItem):
+    """(depart, arrive) datetimes for a transport item, used by the missing-transport
+    and impossible-connection checks. Falls back to scheduled_at for the departure
+    when a kind-specific depart_time isn't set (e.g. transfer/river_transfer, which
+    aren't covered by `_item_primary_dt`'s flight/rail special-case)."""
+    d = item.details or {}
+    depart = _to_dt(d.get("depart_time")) or _to_dt(item.scheduled_at)
+    arrive = _to_dt(d.get("arrive_time")) or depart
+    return depart, arrive
+
+
+def _ordered_stops(session: Session, trip_id: int):
+    """Same ordering as GET /trips/{id}/stops, so 'consecutive stops' below matches
+    what the user actually sees in the timeline."""
+    return session.exec(
+        select(Stop).where(Stop.trip_id == trip_id)
+        .order_by(nullslast(func.date(Stop.arrive)), nullslast(func.date(Stop.depart)), Stop.sort_order)
+    ).all()
+
+
+def _uncovered_night_warnings(stop: Stop, items: list[ItineraryItem]) -> list[dict]:
+    """Nights within [arrive, depart) not covered by any accommodation item's
+    checkin→checkout span. One warning per contiguous gap, not per night.
+
+    Gated so a same-day (or unbooked one-night) transit stop doesn't nag: we only
+    look at stops with at least one real night (depart after arrive), and among
+    those, only warn when there's either an accommodation item present (so the
+    stop clearly did mean to have lodging — just check the gap) or the stop spans
+    2+ nights (long enough that "no lodging at all" is itself worth a flag)."""
+    if not stop.arrive or not stop.depart:
+        return []
+    arrive_day = stop.arrive.date()
+    depart_day = stop.depart.date()
+    nights_count = (depart_day - arrive_day).days
+    if nights_count < 1:
+        return []
+    accommodations = [it for it in items if it.kind == "accommodation"]
+    if not accommodations and nights_count < 2:
+        return []
+
+    covered = set()
+    for acc in accommodations:
+        d = acc.details or {}
+        checkin = _to_dt(d.get("checkin"))
+        if not checkin:
+            continue
+        checkout = _to_dt(d.get("checkout"))
+        if checkout and checkout < checkin:
+            checkout = None  # contradictory data — treat as open-ended, same as _item_span
+        start_night = max(checkin.date(), arrive_day)
+        end_night = min(checkout.date(), depart_day) if checkout else depart_day
+        n = start_night
+        while n < end_night:
+            covered.add(n)
+            n += timedelta(days=1)
+
+    nights = [arrive_day + timedelta(days=i) for i in range(nights_count)]
+    out = []
+    gap_start = None
+    for i, n in enumerate(nights):
+        is_last = i == len(nights) - 1
+        if n not in covered:
+            if gap_start is None:
+                gap_start = n
+            if is_last:
+                _emit_gap(out, stop, gap_start, n)
+        else:
+            if gap_start is not None:
+                _emit_gap(out, stop, gap_start, nights[i - 1])
+                gap_start = None
+    return out
+
+
+def _emit_gap(out: list[dict], stop: Stop, gap_start, gap_end):
+    count = (gap_end - gap_start).days + 1
+    out.append({
+        "item_id": None,
+        "name": "Uncovered accommodation",
+        "kind": None,
+        "stop_location": stop.location,
+        "item_date": gap_start.isoformat(),
+        "stop_arrive": stop.arrive.isoformat() if stop.arrive else None,
+        "stop_depart": stop.depart.isoformat() if stop.depart else None,
+        "reason": f"{count} night{'s' if count != 1 else ''} uncovered from {gap_start.isoformat()}",
+    })
+
+
+def _missing_transport_warnings(stops: list[Stop], items_by_stop: dict) -> list[dict]:
+    """Consecutive stops with different locations where no transport item (in
+    either stop) departs or arrives on/around the transition day. Skipped when
+    either stop lacks any date at all — there's nothing to anchor "around" to."""
+    out = []
+    for s1, s2 in zip(stops, stops[1:]):
+        if not s1.location or not s2.location or s1.location == s2.location:
+            continue
+        s1_day = s1.depart.date() if s1.depart else (s1.arrive.date() if s1.arrive else None)
+        s2_day = s2.arrive.date() if s2.arrive else (s2.depart.date() if s2.depart else None)
+        if s1_day is None or s2_day is None:
+            continue
+
+        window = set()
+        for day in (s1_day, s2_day):
+            for delta in (-1, 0, 1):
+                window.add(day + timedelta(days=delta))
+
+        candidates = items_by_stop.get(s1.id, []) + items_by_stop.get(s2.id, [])
+        found = False
+        for it in candidates:
+            if it.kind not in _TRANSPORT_KINDS:
+                continue
+            depart, arrive = _transport_times(it)
+            if (depart and depart.date() in window) or (arrive and arrive.date() in window):
+                found = True
+                break
+        if not found:
+            out.append({
+                "item_id": None,
+                "name": "Missing transport",
+                "kind": None,
+                "stop_location": f"{s1.location} → {s2.location}",
+                "item_date": s1_day.isoformat(),
+                "stop_arrive": s2.arrive.isoformat() if s2.arrive else None,
+                "stop_depart": s1.depart.isoformat() if s1.depart else None,
+                "reason": f"No transport found between {s1.location} and {s2.location} around {s1_day.isoformat()}",
+            })
+    return out
+
+
+def _impossible_connection_warnings(all_items: list[tuple]) -> list[dict]:
+    """Two transport items, adjacent in departure order, where the later one departs
+    before the earlier one arrives. Same-stop pairs share a timezone by construction,
+    so any overlap at all is flagged; cross-stop pairs only warn past a 6h cushion,
+    since we don't attempt precise cross-timezone math here (see CLAUDE.md)."""
+    transports = []
+    for stop, it in all_items:
+        if it.kind not in _TRANSPORT_KINDS:
+            continue
+        depart, arrive = _transport_times(it)
+        if not depart:
+            continue
+        transports.append((depart, arrive, stop, it))
+    transports.sort(key=lambda t: t[0])
+
+    out = []
+    for (d1, a1, s1, it1), (d2, a2, s2, it2) in zip(transports, transports[1:]):
+        if not a1:
+            continue
+        overlap = a1 - d2
+        if overlap.total_seconds() <= 0:
+            continue
+        same_stop = s1.id is not None and s1.id == s2.id
+        if not same_stop and overlap < timedelta(hours=6):
+            continue
+        out.append({
+            "item_id": it2.id,
+            "name": it2.name,
+            "kind": it2.kind,
+            "stop_location": s2.location,
+            "item_date": d2.isoformat(),
+            "stop_arrive": None,
+            "stop_depart": None,
+            "reason": f"departs before \"{it1.name}\" arrives",
+        })
+    return out
+
+
 def date_warnings(session: Session, trip_id: int) -> list[dict]:
     """Items whose date sits before their stop's arrival or after its departure.
     Stops without dates are skipped.
@@ -81,17 +259,35 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
 
     The trip's final stop is exempt from "after departure" warnings — the journey
     home (connecting flights, transfers) legitimately departs after the last stop,
-    and there's no later stop for those items to belong to."""
-    stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
+    and there's no later stop for those items to belong to.
+
+    Beyond the per-item range check, this also flags trip-level coverage/conflict
+    issues: uncovered accommodation nights, missing inter-stop transport, and
+    impossible (overlapping) transport connections. `item_id` is null for the
+    gap-style warnings (uncovered nights, missing transport) since they aren't
+    about one specific item."""
+    stops = _ordered_stops(session, trip_id)
     dated = [s for s in stops if s.arrive or s.depart]
     last_stop_id = max(dated, key=lambda s: s.depart or s.arrive).id if dated else None
+
+    items_by_stop: dict = defaultdict(list)
+    if stops:
+        all_items = session.exec(
+            select(ItineraryItem).where(ItineraryItem.stop_id.in_([s.id for s in stops]))
+        ).all()
+        for it in all_items:
+            items_by_stop[it.stop_id].append(it)
+    else:
+        all_items = []
+
     out: list[dict] = []
+
     for stop in stops:
         a = stop.arrive.date() if stop.arrive else None
         d = stop.depart.date() if stop.depart else None
         if not a and not d:
             continue
-        items = session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop.id)).all()
+        items = items_by_stop.get(stop.id, [])
         for it in items:
             start, end = _item_span(it)
             if not start:
@@ -114,4 +310,14 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
                     "stop_depart": stop.depart.isoformat() if stop.depart else None,
                     "reason": reason,
                 })
+
+    for stop in stops:
+        out.extend(_uncovered_night_warnings(stop, items_by_stop.get(stop.id, [])))
+
+    out.extend(_missing_transport_warnings(stops, items_by_stop))
+
+    stop_by_id = {s.id: s for s in stops}
+    all_items_with_stop = [(stop_by_id[it.stop_id], it) for it in all_items if it.stop_id in stop_by_id]
+    out.extend(_impossible_connection_warnings(all_items_with_stop))
+
     return out

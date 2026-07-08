@@ -157,7 +157,10 @@ def test_date_warnings_flags_out_of_range_item(client: TestClient, trip):
         "details": {"depart_time": "2026-08-25T09:00"}
     })
     warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
-    names = {w["name"]: w["reason"] for w in warnings}
+    # Scope to the out-of-range-item category — this fixture's undated gap
+    # (Lyon → Home with no transport, and Home's un-lodged 2-night span) also
+    # trips the newer coverage/transport checks, which are covered separately below.
+    names = {w["name"]: w["reason"] for w in warnings if w["reason"] in ("before stop arrival", "after stop departure")}
     assert names == {"Typo": "before stop arrival", "LateTrain": "after stop departure"}
 
 
@@ -183,7 +186,7 @@ def test_date_warnings_accommodation_span_overlaps_window(client: TestClient, tr
         "details": {"checkin": "2025-08-13T15:00", "checkout": "2025-08-17T10:00"},
     })
     warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
-    names = {w["name"]: w["reason"] for w in warnings}
+    names = {w["name"]: w["reason"] for w in warnings if w["reason"] in ("before stop arrival", "after stop departure")}
     assert names == {"Wrong Year Hotel": "before stop arrival"}
 
 
@@ -209,7 +212,7 @@ def test_date_warnings_accommodation_without_checkout_not_flagged(client: TestCl
         "details": {"checkin": "2026-08-12T15:00"},
     })
     warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
-    names = {w["name"]: w["reason"] for w in warnings}
+    names = {w["name"]: w["reason"] for w in warnings if w["reason"] in ("before stop arrival", "after stop departure")}
     assert names == {"Way Late Hotel": "after stop departure"}
 
 
@@ -256,8 +259,176 @@ def test_date_warnings_transit_span_overlaps_window(client: TestClient, trip):
         "details": {"depart_time": "2026-08-09T09:00", "arrive_time": "2026-08-09T12:00"},
     })
     warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
-    names = {w["name"]: w["reason"] for w in warnings}
+    names = {w["name"]: w["reason"] for w in warnings if w["reason"] in ("before stop arrival", "after stop departure")}
     assert names == {"Late Train": "after stop departure"}
+
+
+def test_date_warnings_uncovered_accommodation_gap(client: TestClient, trip):
+    # Rome: 4 nights (1-5 Aug). One accommodation only covers the first two;
+    # the last two nights have nothing booked — a single gap warning, not two.
+    rome = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "arrive": "2026-08-01T00:00:00", "depart": "2026-08-05T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/stops/{rome['id']}/items", json={
+        "kind": "accommodation", "name": "Hotel Roma", "status": "pending",
+        "details": {"checkin": "2026-08-01T14:00", "checkout": "2026-08-03T10:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    gaps = [w for w in warnings if w["name"] == "Uncovered accommodation"]
+    assert len(gaps) == 1
+    assert gaps[0]["item_id"] is None
+    assert gaps[0]["stop_location"] == "Rome"
+    assert gaps[0]["reason"] == "2 nights uncovered from 2026-08-03"
+
+
+def test_date_warnings_uncovered_accommodation_fully_covered_not_flagged(client: TestClient, trip):
+    # Rome: 3 nights, one accommodation item spanning exactly checkin==arrive,
+    # checkout==depart — every night covered, no gap warning.
+    rome = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "arrive": "2026-08-01T00:00:00", "depart": "2026-08-04T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/stops/{rome['id']}/items", json={
+        "kind": "accommodation", "name": "Hotel Roma", "status": "pending",
+        "details": {"checkin": "2026-08-01T14:00", "checkout": "2026-08-04T10:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    gaps = [w for w in warnings if w["name"] == "Uncovered accommodation"]
+    assert gaps == []
+
+
+def test_date_warnings_same_day_stop_no_accommodation_not_flagged(client: TestClient, trip):
+    # A same-day transit stop (arrive and depart the same calendar day) has zero
+    # nights — must never nag for "uncovered" nights regardless of accommodation.
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Transit", "arrive": "2026-08-10T06:00:00", "depart": "2026-08-10T20:00:00", "status": "planned"
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    gaps = [w for w in warnings if w["name"] == "Uncovered accommodation"]
+    assert gaps == []
+
+
+def test_date_warnings_one_night_stop_no_accommodation_not_flagged(client: TestClient, trip):
+    # A single-night stop with no accommodation item at all could just be an
+    # overnight layover filed without a hotel — not enough signal to nag.
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Layover", "arrive": "2026-08-10T00:00:00", "depart": "2026-08-11T00:00:00", "status": "planned"
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    gaps = [w for w in warnings if w["name"] == "Uncovered accommodation"]
+    assert gaps == []
+
+
+def test_date_warnings_multi_night_stop_no_accommodation_flagged(client: TestClient, trip):
+    # A 2+ night stop with literally no accommodation item is worth flagging even
+    # though there's no accommodation item to compare gaps against.
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Madrid", "arrive": "2026-08-10T00:00:00", "depart": "2026-08-12T00:00:00", "status": "planned"
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    gaps = [w for w in warnings if w["name"] == "Uncovered accommodation"]
+    assert len(gaps) == 1
+    assert gaps[0]["reason"] == "2 nights uncovered from 2026-08-10"
+
+
+def test_date_warnings_missing_inter_stop_transport(client: TestClient, trip):
+    # Nice → Turin, different locations, no transport item anywhere near the
+    # transition day (4 Aug, where Nice departs and Turin arrives).
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Nice", "arrive": "2026-09-01T00:00:00", "depart": "2026-09-04T00:00:00", "status": "planned"
+    })
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Turin", "arrive": "2026-09-04T00:00:00", "depart": "2026-09-07T00:00:00", "status": "planned"
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    missing = [w for w in warnings if w["name"] == "Missing transport"]
+    assert len(missing) == 1
+    assert missing[0]["item_id"] is None
+    assert missing[0]["stop_location"] == "Nice → Turin"
+    assert missing[0]["reason"] == "No transport found between Nice and Turin around 2026-09-04"
+
+
+def test_date_warnings_transport_present_on_transition_day_not_flagged(client: TestClient, trip):
+    # Same Nice → Turin transition, but this time a transfer is filed on the
+    # transition day — must not nag.
+    nice = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Nice", "arrive": "2026-09-01T00:00:00", "depart": "2026-09-04T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Turin", "arrive": "2026-09-04T00:00:00", "depart": "2026-09-07T00:00:00", "status": "planned"
+    })
+    client.post(f"/stops/{nice['id']}/items", json={
+        "kind": "transfer", "name": "Car to Turin", "status": "pending",
+        "details": {"depart_time": "2026-09-04T09:00", "arrive_time": "2026-09-04T13:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    missing = [w for w in warnings if w["name"] == "Missing transport"]
+    assert missing == []
+
+
+def test_date_warnings_impossible_connection_same_stop(client: TestClient, trip):
+    # Two flights filed on the same stop: the second departs while the first is
+    # still in the air — an impossible connection, same-timezone assumption holds.
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Zurich", "status": "planned"
+    }).json()
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "First Flight", "status": "pending",
+        "details": {"depart_time": "2026-08-05T08:00", "arrive_time": "2026-08-05T12:00"},
+    })
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "Second Flight", "status": "pending",
+        "details": {"depart_time": "2026-08-05T10:00", "arrive_time": "2026-08-05T14:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    impossible = [w for w in warnings if "departs before" in w["reason"]]
+    assert len(impossible) == 1
+    assert impossible[0]["name"] == "Second Flight"
+    assert impossible[0]["reason"] == 'departs before "First Flight" arrives'
+
+
+def test_date_warnings_cross_stop_overlap_under_6h_not_flagged(client: TestClient, trip):
+    # Different stops (timezone skew is possible), overlap is only 3h — within the
+    # cushion, must not be flagged as an impossible connection.
+    stop_a = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "CityA", "status": "planned"
+    }).json()
+    stop_b = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "CityB", "status": "planned"
+    }).json()
+    client.post(f"/stops/{stop_a['id']}/items", json={
+        "kind": "flight", "name": "Flight A", "status": "pending",
+        "details": {"depart_time": "2026-08-06T08:00", "arrive_time": "2026-08-06T12:00"},
+    })
+    client.post(f"/stops/{stop_b['id']}/items", json={
+        "kind": "flight", "name": "Flight B", "status": "pending",
+        "details": {"depart_time": "2026-08-06T09:00", "arrive_time": "2026-08-06T13:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    impossible = [w for w in warnings if "departs before" in w["reason"]]
+    assert impossible == []
+
+
+def test_date_warnings_cross_stop_overlap_over_6h_flagged(client: TestClient, trip):
+    # Different stops, but the overlap (8h) is well past the timezone-skew cushion —
+    # still a real conflict.
+    stop_a = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "CityA", "status": "planned"
+    }).json()
+    stop_b = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "CityB", "status": "planned"
+    }).json()
+    client.post(f"/stops/{stop_a['id']}/items", json={
+        "kind": "flight", "name": "Flight A", "status": "pending",
+        "details": {"depart_time": "2026-08-06T04:00", "arrive_time": "2026-08-06T12:00"},
+    })
+    client.post(f"/stops/{stop_b['id']}/items", json={
+        "kind": "flight", "name": "Flight B", "status": "pending",
+        "details": {"depart_time": "2026-08-06T04:30", "arrive_time": "2026-08-06T13:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    impossible = [w for w in warnings if "departs before" in w["reason"]]
+    assert len(impossible) == 1
+    assert impossible[0]["name"] == "Flight B"
 
 
 def test_delete_stop(client: TestClient, trip):
