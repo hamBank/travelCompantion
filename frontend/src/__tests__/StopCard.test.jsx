@@ -410,6 +410,38 @@ describe('computeCrossStopLayover', () => {
     const result = computeCrossStopLayover(stopA, stopB)
     expect(result.duration).toBe('1h 35m') // from 06:00 not 12:00
   })
+
+  const mkCycling = (id, scheduled_at, start = 'Alberobello', end = 'Ostuni') => ({
+    id, kind: 'cycling', scheduled_at,
+    details: { start_location: start, end_location: end },
+  })
+
+  it('treats a cycling leg into stop A as its transport arrival', () => {
+    // Multi-day cycling trip: stop A was reached by bike, not flight/rail —
+    // previously invisible to TRANSPORT_KINDS, so this pair looked disconnected.
+    const stopA = { items: [mkCycling(1, '2026-07-28T09:00', 'Matera', 'Alberobello')] }
+    const stopB = { items: [{ id: 2, kind: 'accommodation', details: {}, scheduled_at: '2026-07-28T15:00' }] }
+    const result = computeCrossStopLayover(stopA, stopB)
+    expect(result).not.toBeNull()
+    expect(result.duration).toBe('6h')
+    expect(result.location).toBe('Alberobello')
+  })
+
+  it('treats a cycling leg out of stop A as stop B\'s transport departure', () => {
+    const stopA = { items: [mkFlight(1, '2026-07-27T21:35', '2026-07-28T06:00', 'Bari')] }
+    const stopB = { items: [mkCycling(2, '2026-07-28T09:00')] }
+    const result = computeCrossStopLayover(stopA, stopB)
+    expect(result).not.toBeNull()
+    expect(result.duration).toBe('3h')
+  })
+
+  it('connects two stops joined only by cycling legs (the reported Alberobello → Ostuni case)', () => {
+    const stopA = { items: [mkCycling(1, '2026-07-28T09:00', 'Matera', 'Alberobello')] }
+    const stopB = { items: [mkCycling(2, '2026-07-29T08:00', 'Alberobello', 'Ostuni')] }
+    const result = computeCrossStopLayover(stopA, stopB)
+    expect(result).not.toBeNull()
+    expect(result.location).toBe('Alberobello')
+  })
 })
 
 // ── HideTimeCtx — framed vs frameless ────────────────────────────────────────
