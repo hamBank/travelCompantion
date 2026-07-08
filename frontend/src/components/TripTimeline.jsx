@@ -6,7 +6,7 @@ import RailDetailModal from './RailDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import DocumentImportModal from './DocumentImportModal.jsx'
 import PendingReview from './PendingReview.jsx'
-import { RoleContext, canEdit } from '../roles.js'
+import { RoleContext, canEdit, effectiveRole } from '../roles.js'
 import { useShowInbound, useHideStopFrames } from '../settings.js'
 import { fmtDay } from '../dates.js'
 import { getCurrentModal } from '../modalNav.js'
@@ -202,9 +202,12 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   async function load({ background = false, remount = background } = {}) {
     if (!background) setLoading(true)
     try {
-      const tl = background
-        ? await getTripTimeline(tripId, { sync: Date.now() })  // cache-bust query param for background refreshes
-        : await getTripTimeline(tripId)
+      // Plain URL for background refreshes too (no cache-buster): req() already
+      // sends cache:'no-store' so the browser HTTP cache is bypassed, and the
+      // service worker's NetworkFirst handler only refreshes its offline copy
+      // for the plain URL — a ?sync=-busted one would leave the offline cache
+      // frozen at whatever the initial page load fetched.
+      const tl = await getTripTimeline(tripId)
       setTimeline(tl)
       if (remount) setRenderKey(k => k + 1)
       // Legacy accommodation backfill — editors only (timeline also lazy-migrates).
@@ -367,11 +370,14 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
     }
   }
 
-  const editable = canEdit(timeline.role)
+  // Offline, the whole timeline is read-only whatever the trip role — the
+  // provider cascade hides every edit affordance in StopCard/detail modals.
+  const role = effectiveRole(timeline.role, online)
+  const editable = canEdit(role)
 
   return (
     <>
-    <RoleContext.Provider value={timeline.role ?? 'owner'}>
+    <RoleContext.Provider value={role}>
       <div>
         {!online && (
           <p style={{ color: 'var(--text-faint)' }} className="text-xs mb-3">Showing cached data</p>
