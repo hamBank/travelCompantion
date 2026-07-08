@@ -413,11 +413,15 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
               <span style={{ color: 'var(--warning)' }} className="text-sm">⚠</span>
               <div className="flex-1 min-w-0">
                 <p style={{ color: 'var(--text)' }} className="text-xs font-medium mb-1">
-                  {warnings.length} item{warnings.length > 1 ? 's' : ''} dated outside their stop
+                  {warnings.length} date/coverage warning{warnings.length > 1 ? 's' : ''}
                 </p>
                 <ul style={{ color: 'var(--text-faint)' }} className="text-xs space-y-0.5">
-                  {warnings.map(w => (
-                    <li key={w.item_id}>
+                  {warnings.map((w, i) => (
+                    // item_id is null for gap-style warnings (uncovered nights, missing
+                    // transport) — they aren't about one specific item, so fall back to a
+                    // position-based key (the list is re-fetched wholesale on each load,
+                    // never reordered in place, so this is stable enough for React's diff).
+                    <li key={w.item_id ?? `gap-${i}`}>
                       <span style={{ color: 'var(--text-muted)' }}>{w.stop_location}:</span>{' '}
                       {w.name} — {fmtDay(w.item_date)} ({w.reason})
                     </li>

@@ -1845,6 +1845,42 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
           ) : (
             <GenericForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           )}
+          {/* Shared across every kind (unlike the per-kind forms above) — needs_booking
+              is an optional detail any item can carry, so it lives in the common chrome
+              rather than being duplicated into each kind-specific form. */}
+          <div style={{ borderTop: '1px solid var(--border)' }} className="mt-4 pt-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={!!details.needs_booking}
+                onChange={e => {
+                  const checked = e.target.checked
+                  setDetails(d => {
+                    // Unchecking clears both fields rather than leaving a stale book_by
+                    // behind a now-false needs_booking — confusing if re-checked later,
+                    // and the backend trigger keys off needs_booking anyway.
+                    if (!checked) {
+                      const { needs_booking: _a, book_by: _b, ...rest } = d
+                      return rest
+                    }
+                    return { ...d, needs_booking: true }
+                  })
+                }}
+                className="rounded"
+              />
+              <span style={{ color: 'var(--text-muted)' }} className="text-sm">Needs booking</span>
+            </label>
+            {details.needs_booking && (
+              <div className="mt-2 max-w-[10rem]">
+                <Field
+                  label="Book by"
+                  type="date"
+                  value={details.book_by ?? ''}
+                  onChange={v => setDetails(d => ({ ...d, book_by: v || undefined }))}
+                />
+              </div>
+            )}
+          </div>
           <div style={{ borderTop: '1px solid var(--border)' }} className="mt-4 pt-4">
             <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Payment</p>
             <div className="grid grid-cols-2 gap-3">

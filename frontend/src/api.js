@@ -101,6 +101,25 @@ export async function exportTripPdf(id, name) {
 
 export const getCalendarUrl = (id) => req(`/trips/${id}/calendar-url`)
 
+// ── Public share link ────────────────────────────────────────────────────────
+export const getShareToken    = (id) => req(`/trips/${id}/share-token`)
+export const createShareToken = (id) => req(`/trips/${id}/share-token`, { method: 'POST' })
+export const revokeShareToken = (id) => req(`/trips/${id}/share-token`, { method: 'DELETE' })
+
+// Public, unauthenticated fetch of a shared trip's read-only timeline — no
+// token/Authorization header attached (deliberately bypasses req()'s
+// tc-token attachment; a share link works with no login at all).
+export async function getSharedTimeline(token) {
+  const r = await fetch(`/shared/${token}/timeline`, { cache: 'no-store' })
+  if (!r.ok) {
+    const text = await r.text().catch(() => '')
+    let detail
+    try { detail = JSON.parse(text).detail } catch { /* ignore */ }
+    throw new Error(detail ?? (r.status === 404 ? 'This link is no longer valid.' : r.statusText))
+  }
+  return r.json()
+}
+
 export const getTripMembers = (id) => req(`/trips/${id}/members`)
 export const addTripMember = (id, user_email, role) =>
   req(`/trips/${id}/members`, { method: 'POST', body: JSON.stringify({ user_email, role }) })

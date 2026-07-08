@@ -61,6 +61,14 @@ class Trip(TripBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     stops: List["Stop"] = Relationship(back_populates="trip")
+    # Revocable public read-only share link — GET /shared/{share_token}/timeline.
+    # None means sharing is off. Regenerating (POST /trips/{id}/share-token)
+    # replaces the value, invalidating any previously shared link; revoking
+    # (DELETE) sets it back to None. Deliberately NOT part of TripBase/TripRead/
+    # TripTimeline — it's a capability secret, not trip data, and must never
+    # round-trip through any endpoint a non-owner (or the public timeline
+    # response itself) can read.
+    share_token: Optional[str] = Field(default=None, index=True, unique=True)
 
 
 class TripCreate(TripBase):
@@ -394,6 +402,7 @@ class NotificationLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     item_id: int = Field(index=True)
     kind: str                                    # "checkin_heads_up" | "checkin" | "departure"
+                                                  # | "booking_soon" | "booking_due" | ...
     sent_at: datetime = Field(default_factory=datetime.utcnow)
 
 

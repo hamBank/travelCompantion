@@ -1,4 +1,5 @@
 import re
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import Session, select
 from sqlalchemy import nullslast, func
@@ -156,6 +157,41 @@ def get_calendar_url(trip_id: int, session: Session = Depends(get_session), user
     return {"url": f"/calendar/{token}.ics"}
 
 
+@router.get("/{trip_id}/share-token")
+def get_share_token(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Current public-link state, if any. Owner-only — same gate as the
+    member-management endpoints above, since a share link grants read access
+    to the whole trip, same as adding a viewer member would."""
+    require_trip_role(session, user, trip_id, TripRole.owner)
+    trip = session.get(Trip, trip_id)
+    token = trip.share_token
+    return {"token": token, "url": f"/shared/{token}" if token else None}
+
+
+@router.post("/{trip_id}/share-token")
+def create_share_token(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """(Re)generate the trip's public read-only share link, replacing any
+    previous token — the old link stops working immediately since lookups
+    are by exact token match."""
+    require_trip_role(session, user, trip_id, TripRole.owner)
+    trip = session.get(Trip, trip_id)
+    token = secrets.token_urlsafe(24)
+    trip.share_token = token
+    session.add(trip)
+    session.commit()
+    return {"token": token, "url": f"/shared/{token}"}
+
+
+@router.delete("/{trip_id}/share-token", status_code=204)
+def revoke_share_token(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Turn off the public link entirely (share_token -> None)."""
+    require_trip_role(session, user, trip_id, TripRole.owner)
+    trip = session.get(Trip, trip_id)
+    trip.share_token = None
+    session.add(trip)
+    session.commit()
+
+
 @router.get("/{trip_id}/date-warnings")
 def trip_date_warnings(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """Items whose date falls outside their stop's arrive→depart window."""
@@ -174,9 +210,14 @@ class TripTimeline(TripReadWithRole):
     stops: List[StopWithItems] = []
 
 
-@router.get("/{trip_id}/timeline", response_model=TripTimeline)
-def trip_timeline(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
-    role = require_trip_role(session, user, trip_id, TripRole.viewer)
+def build_trip_timeline(session: Session, trip_id: int, role: TripRole) -> TripTimeline:
+    """Assemble the full timeline payload for a trip. Shared by the
+    authenticated GET /trips/{id}/timeline below and the public
+    GET /shared/{token}/timeline (backend/routers/shared.py) — the public
+    endpoint calls this with role forced to TripRole.viewer rather than
+    duplicating the stop/item assembly (and the lazy accommodation-item
+    migration it performs) a second time.
+    """
     trip = session.get(Trip, trip_id)
     trip_data = trip.model_dump()  # capture before any lazy-migration commit expires attributes
 
@@ -232,3 +273,9 @@ def trip_timeline(trip_id: int, session: Session = Depends(get_session), user: d
         session.commit()
 
     return TripTimeline(**trip_data, role=role, stops=stops_with_items)
+
+
+@router.get("/{trip_id}/timeline", response_model=TripTimeline)
+def trip_timeline(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    role = require_trip_role(session, user, trip_id, TripRole.viewer)
+    return build_trip_timeline(session, trip_id, role)
