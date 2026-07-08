@@ -5,13 +5,14 @@ import {
 } from '../api.js'
 import PackItemEditModal from './PackItemEditModal.jsx'
 import BagEditModal from './BagEditModal.jsx'
+import { offlineQueue } from '../offlineQueue.js'
 
 export const isPacked = (it) => it.packed_count >= it.quantity && it.quantity > 0
 export const isShared = (it) => !it.owner_email
 
 const NO_BAG = '__nobag__'
 
-export default function PackingList({ tripId, userEmail, canEdit }) {
+export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit = false }) {
   const [data, setData] = useState({ bags: [], items: [], counts: { total: 0, packed: 0 } })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -58,7 +59,22 @@ export default function PackingList({ tripId, userEmail, canEdit }) {
     load()
   }
 
-  async function patch(id, body) { await updatePackItem(id, body); load() }
+  async function patch(id, body) {
+    if (canQueueEdit) {
+      const before = items.find(i => i.id === id) || {}
+      const base = Object.fromEntries(Object.keys(body).map(k => [k, before[k]]))
+      await offlineQueue.enqueue({ entity: 'packing', entityId: id, changes: body, base })
+      // Optimistic local update — offline, so there's nothing fresher to load().
+      setData(d => {
+        const nextItems = d.items.map(i => i.id === id ? { ...i, ...body } : i)
+        const total = nextItems.reduce((a, i) => a + i.quantity, 0)
+        const packed = nextItems.reduce((a, i) => a + i.packed_count, 0)
+        return { ...d, items: nextItems, counts: { total, packed } }
+      })
+      return
+    }
+    await updatePackItem(id, body); load()
+  }
   async function toggle(it)  { await patch(it.id, { packed_count: isPacked(it) ? 0 : it.quantity }) }
   async function step(it, d) { await patch(it.id, { packed_count: it.packed_count + d }) }
   async function remove(id)  { await deletePackItem(id); load() }

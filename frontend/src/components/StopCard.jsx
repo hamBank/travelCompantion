@@ -3,7 +3,8 @@ import { updateStopStatus, updateItemStatus, getWeather, fetchRiverMapBlob, fetc
 import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
-import { useCanEdit } from '../roles.js'
+import { useCanEdit, useCanQueueEdit } from '../roles.js'
+import { offlineQueue } from '../offlineQueue.js'
 import ItemRow from './ItemRow.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
@@ -543,6 +544,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const [busy, setBusy] = useState(false)
   const [itemEdits, setItemEdits] = useState({})  // Only track local edits, not synced items
   const canEdit = useCanEdit()
+  const canQueueEdit = useCanQueueEdit()
 
   // Use stop.items directly instead of syncing to local state—this ensures fresh data
   const items = stop.items
@@ -630,11 +632,20 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
 
   async function cycleStatus(e) {
     e.stopPropagation()
-    if (busy) return
+    if (busy || (!canEdit && !canQueueEdit)) return
     const next = STATUS_CYCLE[status]
+    const prev = status
     setStatus(next); setBusy(true)
-    try { await updateStopStatus(stop.id, next); onUpdate() }
-    catch { setStatus(status) }
+    try {
+      if (canQueueEdit) {
+        // Offline: queue the write and apply it optimistically — no network
+        // round trip, no onUpdate() (there's nothing fresher to refetch).
+        await offlineQueue.enqueue({ entity: 'stop', entityId: stop.id, changes: { status: next }, base: { status: prev } })
+      } else {
+        await updateStopStatus(stop.id, next); onUpdate()
+      }
+    }
+    catch { setStatus(prev) }
     finally { setBusy(false) }
   }
 
@@ -835,23 +846,31 @@ function Section({ label, children }) {
 // Viewers (no edit rights) see a static icon with no toggle.
 function CardIcon({ item, icon, color, setItem, onItemSaved }) {
   const canEdit = useCanEdit()
+  const canQueueEdit = useCanQueueEdit()
+  const clickable = canEdit || canQueueEdit
   const done = item.status === 'done'
   async function toggle(e) {
     e.stopPropagation()
-    if (!canEdit) return
+    if (!clickable) return
     const next = done ? 'pending' : 'done'
     const prev = item
     const updated = { ...item, status: next }
     setItem(updated); onItemSaved?.(updated)
-    try { await updateItemStatus(item.id, next) }
+    try {
+      if (canQueueEdit) {
+        await offlineQueue.enqueue({ entity: 'item', entityId: item.id, changes: { status: next }, base: { status: item.status } })
+      } else {
+        await updateItemStatus(item.id, next)
+      }
+    }
     catch { setItem(prev); onItemSaved?.(prev) }
   }
   return (
     <span
-      onClick={canEdit ? toggle : undefined}
-      title={canEdit ? (done ? 'Mark as not done' : 'Mark as done') : undefined}
-      style={{ color: done ? 'var(--success)' : color, fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0, cursor: canEdit ? 'pointer' : 'default' }}
-      className={canEdit ? 'hover:opacity-70 transition-opacity' : ''}
+      onClick={clickable ? toggle : undefined}
+      title={clickable ? (done ? 'Mark as not done' : 'Mark as done') : undefined}
+      style={{ color: done ? 'var(--success)' : color, fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0, cursor: clickable ? 'pointer' : 'default' }}
+      className={clickable ? 'hover:opacity-70 transition-opacity' : ''}
     >
       {done ? '✓' : icon}
     </span>

@@ -6,7 +6,7 @@ import RailDetailModal from './RailDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import DocumentImportModal from './DocumentImportModal.jsx'
 import PendingReview from './PendingReview.jsx'
-import { RoleContext, canEdit, effectiveRole } from '../roles.js'
+import { RoleContext, RealRoleContext, canEdit, effectiveRole } from '../roles.js'
 import { useShowInbound, useHideStopFrames } from '../settings.js'
 import { fmtDay } from '../dates.js'
 import { getCurrentModal } from '../modalNav.js'
@@ -378,6 +378,7 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   return (
     <>
     <RoleContext.Provider value={role}>
+    <RealRoleContext.Provider value={timeline.role}>
       <div>
         {!online && (
           <p style={{ color: 'var(--text-faint)' }} className="text-xs mb-3">Showing cached data</p>
@@ -497,6 +498,7 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
           </div>
         )}
       </div>
+    </RealRoleContext.Provider>
     </RoleContext.Provider>
 
     {navItem && (() => {

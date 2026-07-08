@@ -4,6 +4,11 @@ import { render, screen, waitFor } from '@testing-library/react'
 vi.mock('../api.js', () => ({
   getSharedTimeline: vi.fn(),
   getWeather: vi.fn(() => Promise.resolve({ weather: {} })),
+  // Unused by this read-only view — stubbed only because StopCard.jsx
+  // (via offlineQueue.js) imports these named exports at module load time.
+  updateItem: vi.fn(),
+  updateStop: vi.fn(),
+  updatePackItem: vi.fn(),
 }))
 import { getSharedTimeline } from '../api.js'
 import SharedTripView from '../components/SharedTripView.jsx'
