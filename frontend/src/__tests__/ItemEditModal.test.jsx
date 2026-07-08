@@ -1,5 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+
+vi.mock('../offlineQueue.js', () => ({
+  offlineQueue: { enqueue: vi.fn() },
+}))
 
 vi.mock('../api.js', () => ({
   createItem: vi.fn(),
@@ -17,11 +21,47 @@ vi.mock('../api.js', () => ({
   moveItem: vi.fn(),
   generateRiverPath: vi.fn(),
   getBookingPrimary: vi.fn(),
+  // Unused by these tests — stubbed only because ItemEditModal.jsx (via
+  // offlineQueue.js) imports these named exports at module load time.
+  updateStop: vi.fn(),
+  updatePackItem: vi.fn(),
 }))
 import { enrichPlace, getItemStops, getBookingPrimary } from '../api.js'
-import ItemEditModal from '../components/ItemEditModal.jsx'
+import { offlineQueue } from '../offlineQueue.js'
+import ItemEditModal, { diffItemChanges } from '../components/ItemEditModal.jsx'
 
 beforeEach(() => vi.clearAllMocks())
+
+describe('diffItemChanges', () => {
+  const original = { core: { kind: 'activity', name: 'Old', cost: '', link: '', notes: '', scheduled_at: null }, details: { foo: 'bar' } }
+
+  it('returns no changes when nothing was edited', () => {
+    const { changes, base } = diffItemChanges(original, original.core, original.details)
+    expect(changes).toEqual({})
+    expect(base).toEqual({})
+  })
+
+  it('captures only the edited scalar fields, with their original values as base', () => {
+    const core = { ...original.core, name: 'New' }
+    const { changes, base } = diffItemChanges(original, core, original.details)
+    expect(changes).toEqual({ name: 'New' })
+    expect(base).toEqual({ name: 'Old' })
+  })
+
+  it('captures only the changed details keys, leaving unrelated keys out', () => {
+    const details = { foo: 'bar', extra: 'new' }
+    const { changes, base } = diffItemChanges(original, original.core, details)
+    expect(changes).toEqual({ details: { extra: 'new' } })
+    expect(base).toEqual({ details: { extra: undefined } })
+  })
+
+  it('detects a changed details value via deep (JSON) equality, not reference equality', () => {
+    const orig = { core: original.core, details: { passengers: [{ name: 'A' }] } }
+    const details = { passengers: [{ name: 'A' }] }  // same content, new array/object identity
+    const { changes } = diffItemChanges(orig, orig.core, details)
+    expect(changes).toEqual({})
+  })
+})
 
 describe('ItemEditModal backdrop click', () => {
   it('does not close the modal when clicking outside it', () => {
@@ -130,5 +170,72 @@ describe('ItemEditModal flight booking-primary cost lock', () => {
       />
     )
     expect(getBookingPrimary).not.toHaveBeenCalled()
+  })
+})
+
+describe('ItemEditModal offline Save (routes through the offline queue)', () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true })
+  })
+  afterEach(() => {
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true })
+  })
+
+  it('enqueues only the changed fields, with base = the modal-open snapshot, and applies optimistically', async () => {
+    getItemStops.mockResolvedValue([])
+    const onSave = vi.fn()
+    render(
+      <ItemEditModal
+        item={{ id: 42, stop_id: 7, kind: 'activity', name: 'Pantheon', status: 'pending', cost: '', link: '', notes: '', details: { foo: 'bar' } }}
+        onSave={onSave}
+        onClose={() => {}}
+      />
+    )
+    fireEvent.change(screen.getByDisplayValue('Pantheon'), { target: { value: 'Pantheon (renamed)' } })
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => expect(offlineQueue.enqueue).toHaveBeenCalledWith({
+      entity: 'item', entityId: 42,
+      changes: { name: 'Pantheon (renamed)' },
+      base: { name: 'Pantheon' },
+    }))
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: 42, name: 'Pantheon (renamed)' }))
+  })
+
+  it('does not enqueue anything when nothing changed', async () => {
+    getItemStops.mockResolvedValue([])
+    const onSave = vi.fn()
+    render(
+      <ItemEditModal
+        item={{ id: 42, stop_id: 7, kind: 'activity', name: 'Pantheon', details: {} }}
+        onSave={onSave}
+        onClose={() => {}}
+      />
+    )
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    expect(offlineQueue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('blocks a stop move while offline instead of queueing it (moves are out of scope for the queue)', async () => {
+    getItemStops.mockResolvedValue([
+      { id: 7, location: 'Rome' },
+      { id: 8, location: 'Florence' },
+    ])
+    const onSave = vi.fn()
+    render(
+      <ItemEditModal
+        item={{ id: 42, stop_id: 7, kind: 'activity', name: 'Pantheon', details: {} }}
+        onSave={onSave}
+        onClose={() => {}}
+      />
+    )
+    await screen.findByText('Move to stop')
+    fireEvent.change(screen.getByDisplayValue('Rome (current)'), { target: { value: '8' } })
+    fireEvent.click(screen.getByText('Save'))
+
+    expect(await screen.findByText(/internet connection/)).toBeInTheDocument()
+    expect(offlineQueue.enqueue).not.toHaveBeenCalled()
+    expect(onSave).not.toHaveBeenCalled()
   })
 })

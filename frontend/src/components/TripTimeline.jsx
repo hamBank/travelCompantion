@@ -12,6 +12,7 @@ import { fmtDay } from '../dates.js'
 import { getCurrentModal } from '../modalNav.js'
 import { isEditing, onEditChange } from '../editState.js'
 import { useOnline } from '../online.js'
+import { offlineQueue, sendOp } from '../offlineQueue.js'
 import { useSwipeNav } from '../swipeNav.js'
 import { approxLocalDateStr } from '../tzutil.js'
 
@@ -202,6 +203,12 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   async function load({ background = false, remount = background } = {}) {
     if (!background) setLoading(true)
     try {
+      // Flush any queued offline writes before refetching — otherwise a
+      // remount (the poller's default) rebuilds every StopCard straight from
+      // the server's still-pre-edit snapshot, discarding local optimistic
+      // state that only the queue (not the server) knows about yet. A no-op
+      // when the queue is empty, which is the common case.
+      await offlineQueue.flush(sendOp)
       // Plain URL for background refreshes too (no cache-buster): req() already
       // sends cache:'no-store' so the browser HTTP cache is bypassed, and the
       // service worker's NetworkFirst handler only refreshes its offline copy
