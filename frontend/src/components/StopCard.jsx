@@ -877,9 +877,13 @@ function CardIcon({ item, icon, color, setItem, onItemSaved }) {
   )
 }
 
-// Hover edit pencil — renders nothing for viewers.
+// Hover edit pencil — renders nothing for viewers. Also stays available
+// offline for a real editor (useCanQueueEdit): the modal it opens routes
+// Save through the offline queue for them.
 function EditPencil({ onClick, absolute = true }) {
-  if (!useCanEdit()) return null
+  const canEdit = useCanEdit()
+  const canQueueEdit = useCanQueueEdit()
+  if (!canEdit && !canQueueEdit) return null
   return (
     <button
       onClick={onClick}

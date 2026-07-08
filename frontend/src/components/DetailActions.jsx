@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { deleteItem } from '../api.js'
-import { useCanEdit } from '../roles.js'
+import { useCanEdit, useCanQueueEdit } from '../roles.js'
 
 /**
  * Shared footer for detail modals — History + Edit + Delete actions.
@@ -18,9 +18,13 @@ export default function DetailActions({ item, onEdit, onDeleted, onClose, onHist
   const [error, setError] = useState(null)
 
   const canEdit = useCanEdit()
+  // Edit (unlike Delete) is queueable offline for a real editor — see
+  // ItemEditModal's Save, which routes through the offline queue.
+  const canQueueEdit = useCanQueueEdit()
+  const canEditOrQueue = canEdit || canQueueEdit
 
   // Render nothing if there's nothing to show.
-  if (!onHistory && !canEdit) return null
+  if (!onHistory && !canEditOrQueue) return null
   if (!onHistory && !onEdit && !onDeleted) return null
 
   async function handleDelete() {
@@ -83,7 +87,7 @@ export default function DetailActions({ item, onEdit, onDeleted, onClose, onHist
               Delete
             </button>
           )}
-          {canEdit && onEdit && (
+          {canEditOrQueue && onEdit && (
             <button
               onClick={onEdit}
               style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}

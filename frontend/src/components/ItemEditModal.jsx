@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { createItem, updateItem, enrichPlace, washLookup, uploadGpx, lookupAirline, fetchRouteElevation, fetchGeocode, deleteItem, routeDistance, routeToGpx, getItemStops, moveItem, generateRiverPath, getBookingPrimary } from '../api.js'
 import { setEditing } from '../editState.js'
+import { useCanQueueEdit } from '../roles.js'
+import { offlineQueue } from '../offlineQueue.js'
 import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 import { fmtDay } from '../dates.js'
@@ -40,6 +42,38 @@ function durationBetween(departLocal, arriveLocal, departTz, arriveTz) {
     ? (arr - arrOff) - (dep - depOff)
     : arr - dep
   return diff > 0 ? diff : null
+}
+
+// Diff the modal's edited core/details state against a snapshot taken at
+// modal-open time, for the offline queue's compare-and-set `base`. Scalar
+// core fields are compared directly; `details` is compared key-by-key (via
+// JSON equality, so array/object-valued keys like `passengers` or
+// `opening_hours` are handled too) so unrelated keys never enter `changes`
+// and can't spuriously conflict with a concurrent edit to a different key.
+export function diffItemChanges(original, core, details) {
+  const changes = {}, base = {}
+  const normCore = { ...core, scheduled_at: core.scheduled_at || null }
+  const normOrig = { ...original.core, scheduled_at: original.core.scheduled_at || null }
+  for (const key of Object.keys(normOrig)) {
+    if (normCore[key] !== normOrig[key]) {
+      changes[key] = normCore[key]
+      base[key] = normOrig[key]
+    }
+  }
+  const detailKeys = new Set([...Object.keys(original.details || {}), ...Object.keys(details || {})])
+  const changedDetails = {}, baseDetails = {}
+  for (const key of detailKeys) {
+    const mine = details?.[key], theirs = original.details?.[key]
+    if (JSON.stringify(mine) !== JSON.stringify(theirs)) {
+      changedDetails[key] = mine
+      baseDetails[key] = theirs
+    }
+  }
+  if (Object.keys(changedDetails).length) {
+    changes.details = changedDetails
+    base.details = baseDetails
+  }
+  return { changes, base }
 }
 
 // Calculate real road/path distance + duration via Google Routes API.
@@ -1585,10 +1619,16 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
   // that leg carries the fare for the whole booking, so cost/paid are read-only
   // here rather than inviting a second, conflicting entry for the same booking.
   const [bookingPrimary, setBookingPrimary] = useState(null)
+  const canQueueEdit = useCanQueueEdit()
 
   // Snapshot the initial form state once, so any close attempt (backdrop
   // click, ✕, Cancel) can warn before silently discarding real edits.
   const initialSnapshot = useRef(JSON.stringify({ core, details, targetStop }))
+  // Same initial state, kept as objects (not stringified) for diffItemChanges
+  // to compare against on Save — the offline queue's `base` needs to be each
+  // changed field's value as seen when this modal was opened, not whatever
+  // it's since been edited to.
+  const openedAt = useRef({ core, details })
   function requestClose() {
     const dirty = JSON.stringify({ core, details, targetStop }) !== initialSnapshot.current
     if (dirty && !confirm('Discard unsaved changes?')) return
@@ -1625,6 +1665,32 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
     if (pair && pair[0] && pair[1] && toLocalInput(pair[1]) < toLocalInput(pair[0])) {
       setError(pair[2]); return
     }
+
+    // Offline: queue the write (compare-and-set against the modal-open
+    // snapshot) instead of PATCHing directly, and apply it optimistically.
+    // Creates and moves aren't queueable (plan 11's explicit non-goals —
+    // temp-ID reconciliation and edit-vs-move semantics), so those still
+    // require a connection.
+    if (canQueueEdit && !isNew) {
+      if (targetStop && targetStop !== item.stop_id) {
+        setError('Moving items requires an internet connection')
+        return
+      }
+      setSaving(true); setError(null)
+      try {
+        const { changes, base } = diffItemChanges(openedAt.current, core, details)
+        if (Object.keys(changes).length > 0) {
+          await offlineQueue.enqueue({ entity: 'item', entityId: item.id, changes, base })
+        }
+        onSave({ ...item, ...changes, details: { ...(item.details || {}), ...(changes.details || {}) } })
+      } catch (e) {
+        setError(e.message)
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
     setSaving(true); setSavingMsg(''); setError(null)
     try {
       let finalDetails = { ...details }
