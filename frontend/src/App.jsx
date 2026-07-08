@@ -10,6 +10,7 @@ import ShareModal from './components/ShareModal.jsx'
 import SharedTripView from './components/SharedTripView.jsx'
 import PendingReview from './components/PendingReview.jsx'
 import PackingList from './components/PackingList.jsx'
+import OfflineQueueBanner from './components/OfflineQueueBanner.jsx'
 import BudgetSummary from './components/BudgetSummary.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf, getPending } from './api.js'
@@ -90,6 +91,7 @@ function AppShell({ user, onLogout }) {
           Offline — read-only
         </div>
       )}
+      <OfflineQueueBanner />
 
       <header
         className="px-3 sm:px-6 py-1.5 flex items-center gap-2 sticky top-0 z-20"
@@ -152,7 +154,11 @@ function AppShell({ user, onLogout }) {
       <main className="w-full px-4 sm:px-8 lg:px-16 py-6">
         {selectedTrip
           ? packing
-            ? <PackingList tripId={selectedTrip.id} userEmail={user?.email} canEdit={online && canEdit(selectedTrip.role)} />
+            ? <PackingList
+              tripId={selectedTrip.id} userEmail={user?.email}
+              canEdit={online && canEdit(selectedTrip.role)}
+              canQueueEdit={!online && canEdit(selectedTrip.role)}
+            />
             : editing
               ? <EditTrip
                   trip={selectedTrip}
@@ -208,7 +214,7 @@ function AppShell({ user, onLogout }) {
               📅 {today ? 'All days' : 'Today'}
             </button>
           )}
-          {selectedTrip && online && (
+          {selectedTrip && (
             <button
               onClick={() => { setPacking(p => !p); setEditing(false); setToday(false) }}
               style={{

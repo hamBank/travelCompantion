@@ -16,11 +16,16 @@ async function req(path, opts = {}) {
   let body
   try { body = JSON.parse(text) }
   catch { throw new Error(`Server error ${r.status}`) }
-  if (!r.ok) throw new Error(
-    Array.isArray(body.detail)
-      ? body.detail.map(e => e.msg).join('; ')
-      : (body.detail ?? r.statusText)
-  )
+  if (!r.ok) {
+    const detail = body.detail
+    const message = Array.isArray(detail)
+      ? detail.map(e => e.msg).join('; ')
+      : (detail == null || typeof detail === 'string' ? (detail ?? r.statusText) : JSON.stringify(detail))
+    const err = new Error(message)
+    err.status = r.status
+    err.detail = detail
+    throw err
+  }
   return body
 }
 

@@ -152,6 +152,9 @@ class StopUpdate(SQLModel):
     lng: Optional[str] = None
     sort_order: Optional[int] = None
     status: Optional[StopStatus] = None
+    # Offline queue replay (plan 11): base value of each changed field as seen
+    # by the client at edit time, for compare-and-set conflict detection.
+    base: Optional[dict] = None
 
 
 class StopRead(StopBase):
@@ -191,6 +194,10 @@ class ItemUpdate(SQLModel):
     notes: Optional[str] = None
     status: Optional[ItemStatus] = None
     details: Optional[dict] = None
+    # Offline queue replay (plan 11): base value of each changed top-level
+    # field, and of each changed `details` key, as seen by the client at edit
+    # time. See backend/compare_and_set.py.
+    base: Optional[dict] = None
 
 
 class ItemRead(ItemBase):
@@ -364,6 +371,9 @@ class PackingItemUpdate(SQLModel):
     bag_id: Optional[int] = None
     quantity: Optional[int] = None
     packed_count: Optional[int] = None
+    # Offline queue replay (plan 11): base value of each changed field as seen
+    # by the client at edit time, for compare-and-set conflict detection.
+    base: Optional[dict] = None
 
 
 class PackingItemRead(SQLModel):

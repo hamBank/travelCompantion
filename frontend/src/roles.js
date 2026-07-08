@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import { useOnline } from './online.js'
 
 const RANK = { viewer: 1, editor: 2, owner: 3 }
 
@@ -20,3 +21,19 @@ export const RoleContext = createContext('owner')
 export const useRole      = () => useContext(RoleContext)
 export const useCanEdit   = () => canEdit(useContext(RoleContext))
 export const useCanManage = () => canManage(useContext(RoleContext))
+
+// The trip's real role, untouched by effectiveRole's offline viewer-forcing.
+// Only useCanQueueEdit should read this — everything else must keep using
+// RoleContext/useCanEdit so non-queueable affordances stay hidden offline.
+export const RealRoleContext = createContext('owner')
+
+// True while offline for the specific, queue-wired affordances (status
+// cycling, packing toggles) — gated on the user's *real* trip role, not the
+// forced-viewer effective role, so going offline doesn't hand out edit
+// rights a viewer never had. Online, this is always false: online writes go
+// through the normal direct-PATCH path, not the queue.
+export function useCanQueueEdit() {
+  const online = useOnline()
+  const realRole = useContext(RealRoleContext)
+  return !online && canEdit(realRole)
+}

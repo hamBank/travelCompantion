@@ -12,6 +12,7 @@ from ..permissions import require_stop_role, require_item_role
 from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, ItemAttachment, ItemKind, Stop, StopRead, TripRole
 from ..river_path import estimate_river_path, NoPlausiblePath
 from ..metrics import record_external_call
+from ..compare_and_set import resolve_fields
 from .. import flight_live
 
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -80,14 +81,52 @@ def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(ge
     require_item_role(session, user, item_id, TripRole.editor)
     item = session.get(ItineraryItem, item_id)
     before = _item_snapshot(item)
-    for field, value in item_in.model_dump(exclude_unset=True).items():
+    data = item_in.model_dump(exclude_unset=True)
+    base = data.pop("base", None)
+
+    if base is None:
+        # Online path: unchanged wholesale-set semantics.
+        for field, value in data.items():
+            setattr(item, field, value)
+            if field == 'details':
+                flag_modified(item, 'details')
+        session.add(item)
+        session.commit()
+        session.refresh(item)
+        record_item_history(session, item, "update", user["email"], before=before)
+        session.commit()
+        return item
+
+    # Offline queue replay: compare-and-set against the base the client saw.
+    changes_details = data.pop("details", None)
+    to_apply, conflicts = resolve_fields(before, base, data)
+
+    details_to_apply = {}
+    if changes_details is not None:
+        base_details = base.get("details") or {}
+        details_to_apply, details_conflicts = resolve_fields(
+            item.details or {}, base_details, changes_details, prefix="details.")
+        conflicts += details_conflicts
+
+    if conflicts:
+        raise HTTPException(status_code=409, detail={
+            "conflicts": conflicts,
+            "current": {**_item_snapshot(item), "id": item.id, "stop_id": item.stop_id},
+        })
+
+    if not to_apply and not details_to_apply:
+        return item  # every field already matches the server — idempotent no-op
+
+    for field, value in to_apply.items():
         setattr(item, field, value)
-        if field == 'details':
-            flag_modified(item, 'details')
+    if details_to_apply:
+        item.details = {**(item.details or {}), **details_to_apply}
+        flag_modified(item, 'details')
+
     session.add(item)
     session.commit()
     session.refresh(item)
-    record_item_history(session, item, "update", user["email"], before=before)
+    record_item_history(session, item, "update", user["email"], before=before, source="offline-sync")
     session.commit()
     return item
 

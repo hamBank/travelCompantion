@@ -19,6 +19,7 @@ from ..models import (
     PackingItem, PackingItemCreate, PackingItemUpdate, PackingItemRead,
     TripRole,
 )
+from ..compare_and_set import resolve_fields
 
 router = APIRouter()
 
@@ -102,6 +103,16 @@ def _get_writable_item(session: Session, user: dict, item_id: int) -> PackingIte
     return item
 
 
+def _packing_snapshot(item: PackingItem) -> dict:
+    return {
+        "name": item.name,
+        "shared": item.owner_email == "",
+        "bag_id": item.bag_id,
+        "quantity": item.quantity,
+        "packed_count": item.packed_count,
+    }
+
+
 @router.patch("/packing/{item_id}", response_model=PackingItemRead)
 def update_item(
     item_id: int, body: PackingItemUpdate,
@@ -110,6 +121,20 @@ def update_item(
 ):
     item = _get_writable_item(session, user, item_id)
     data = body.model_dump(exclude_unset=True)
+    base = data.pop("base", None)
+
+    if base is not None:
+        # Offline queue replay: compare-and-set against the base the client saw.
+        current = _packing_snapshot(item)
+        to_apply, conflicts = resolve_fields(current, base, data)
+        if conflicts:
+            raise HTTPException(status_code=409, detail={
+                "conflicts": conflicts,
+                "current": {**current, "id": item.id, "trip_id": item.trip_id},
+            })
+        if not to_apply:
+            return PackingItemRead(**item.model_dump())  # idempotent no-op
+        data = to_apply
 
     if "shared" in data:
         # Toggling shared changes ownership; requires editor (shared write).
