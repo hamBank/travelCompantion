@@ -11,7 +11,7 @@ import RichText from './RichText.jsx'
 import { relevantDayIndices, filterHoursByDays } from '../washHours.js'
 import { registerModal, unregisterModal } from '../modalNav.js'
 import { useSwipeNav } from '../swipeNav.js'
-import { fmtDayTime } from '../dates.js'
+import { fmtDayTime, fmtDay } from '../dates.js'
 import { useCanEdit } from '../roles.js'
 
 const fmtDateTime = fmtDayTime
@@ -867,7 +867,21 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNa
         >
           <div>
             <div className="font-semibold text-base">{item.name}</div>
-            <div style={{ color: kindColor }} className="text-xs mt-0.5 capitalize">{item.kind}</div>
+            <div className="flex items-center gap-2 flex-wrap mt-0.5">
+              <span style={{ color: kindColor }} className="text-xs capitalize">{item.kind}</span>
+              {item.details?.needs_booking && (
+                <span
+                  style={{
+                    color: 'var(--warning)',
+                    border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
+                    fontSize: '0.6rem',
+                  }}
+                  className="shrink-0 px-1.5 py-0.5 rounded uppercase tracking-wide font-medium"
+                >
+                  Needs booking{item.details.book_by ? ` · book by ${fmtDay(item.details.book_by)}` : ''}
+                </span>
+              )}
+            </div>
           </div>
           <button
             onClick={onClose}

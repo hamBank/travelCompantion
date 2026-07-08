@@ -5,10 +5,10 @@ import pytest
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from backend.models import (
-    Trip, Stop, ItineraryItem, ItemKind, TripMembership, TripRole,
+    Trip, Stop, ItineraryItem, ItemKind, ItemStatus, TripMembership, TripRole,
     PushSubscription, NotificationLog,
 )
-from backend.notifications import send_due_notifications
+from backend.notifications import send_due_notifications, send_booking_reminders
 from backend.push import PushSendError
 
 
@@ -76,6 +76,20 @@ def _transfer(session, stop, depart, name="Airport transfer", end_location=None)
     if end_location:
         details["end_location"] = end_location
     item = ItineraryItem(stop_id=stop.id, kind=ItemKind.transfer, name=name, details=details)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+def _bookable(session, stop, kind=ItemKind.activity, name="Museum tickets",
+              needs_booking=True, book_by=None, status=ItemStatus.pending):
+    details = {}
+    if needs_booking:
+        details["needs_booking"] = True
+    if book_by:
+        details["book_by"] = book_by
+    item = ItineraryItem(stop_id=stop.id, kind=kind, name=name, details=details, status=status)
     session.add(item)
     session.commit()
     session.refresh(item)
@@ -747,3 +761,100 @@ def test_rail_alert_idempotent_same_bucket_not_resent_after_poll_gap(session):
     n2 = send_rail_alerts(session, now=now + timedelta(minutes=31), sender=_fake_sender(calls), fetch=fake_fetch)
     assert n2 == 0
     assert len(calls) == 1
+# ── send_booking_reminders — needs_booking / book_by deadline reminders ──────
+# Unlike the transport triggers above, these apply to ANY item kind (the
+# frontend's "Needs booking" row is shared chrome every kind's edit form
+# gets, not a per-kind field) — _bookable above defaults to a plain
+# "activity" item to make that point.
+
+def test_booking_due_fires_at_9am_destination_local_and_is_idempotent(session):
+    trip, stop = _seed_trip(session)
+    # No stop timezone/lng hints → offset falls back to UTC, so 09:00
+    # destination-local is 09:00 UTC.
+    _bookable(session, stop, book_by="2026-08-05")
+
+    calls = []
+    n = send_booking_reminders(session, now=datetime(2026, 8, 5, 9, 0), sender=_fake_sender(calls))
+    assert n == 1
+    assert calls[0][1]["title"] == "Booking deadline"
+    assert "Museum tickets" in calls[0][1]["body"]
+
+    # Re-running at/after the same instant must not re-send.
+    n2 = send_booking_reminders(session, now=datetime(2026, 8, 5, 10, 0), sender=_fake_sender(calls))
+    assert n2 == 0
+    assert len(calls) == 1
+
+
+def test_booking_soon_fires_seven_days_before_the_due_date(session):
+    trip, stop = _seed_trip(session)
+    _bookable(session, stop, book_by="2026-08-12")  # 7 days after Aug 5
+
+    calls = []
+    n = send_booking_reminders(session, now=datetime(2026, 8, 5, 9, 0), sender=_fake_sender(calls))
+    assert n == 1
+    assert calls[0][1]["title"] == "Booking deadline approaching"
+    assert "one week" in calls[0][1]["body"]
+
+    # The "due today" trigger for Aug 12 isn't due yet.
+    n2 = send_booking_reminders(session, now=datetime(2026, 8, 5, 10, 0), sender=_fake_sender(calls))
+    assert n2 == 0
+
+
+def test_unchecked_needs_booking_does_not_fire(session):
+    """A leftover book_by with needs_booking now false/absent — e.g. the user
+    unchecked the box — must not fire. (The frontend clears book_by too when
+    unchecking, but the backend doesn't rely on that.)"""
+    trip, stop = _seed_trip(session)
+    _bookable(session, stop, needs_booking=False, book_by="2026-08-05")
+
+    n = send_booking_reminders(session, now=datetime(2026, 8, 5, 9, 0), sender=_fake_sender([]))
+    assert n == 0
+
+
+def test_done_item_does_not_fire(session):
+    trip, stop = _seed_trip(session)
+    _bookable(session, stop, book_by="2026-08-05", status=ItemStatus.done)
+
+    n = send_booking_reminders(session, now=datetime(2026, 8, 5, 9, 0), sender=_fake_sender([]))
+    assert n == 0
+
+
+def test_skipped_item_does_not_fire(session):
+    trip, stop = _seed_trip(session)
+    _bookable(session, stop, book_by="2026-08-05", status=ItemStatus.skipped)
+
+    n = send_booking_reminders(session, now=datetime(2026, 8, 5, 9, 0), sender=_fake_sender([]))
+    assert n == 0
+
+
+def test_stale_booking_trigger_is_skipped(session):
+    trip, stop = _seed_trip(session)
+    _bookable(session, stop, book_by="2026-08-01")  # due trigger was 09:00 Aug 1
+
+    # Two days after the due trigger — well beyond GRACE_HOURS(6).
+    n = send_booking_reminders(session, now=datetime(2026, 8, 3, 9, 0), sender=_fake_sender([]))
+    assert n == 0
+
+
+def test_stop_offset_affects_booking_trigger_instant(session):
+    """Regression-style test mirroring test_rail_without_tz_uses_stop_longitude_offset:
+    book_by has no timezone of its own, so the trigger must use the stop's
+    offset (here, longitude-approximated) rather than silently treating
+    09:00 destination-local as if it were 09:00 UTC."""
+    trip, stop = _seed_trip(session)
+    stop.lng = "103.82"  # Singapore-ish → approx UTC+7
+    session.add(stop)
+    session.commit()
+    _bookable(session, stop, book_by="2026-08-05")
+
+    # Just before the true (offset-corrected) trigger instant (09:00 local ==
+    # 02:00 UTC at UTC+7) — not due yet.
+    n_before = send_booking_reminders(session, now=datetime(2026, 8, 5, 1, 59), sender=_fake_sender([]))
+    assert n_before == 0
+
+    # At the true trigger instant — due. Under a treat-as-UTC bug this would
+    # still be 7 hours away and wrongly not fire.
+    calls = []
+    n = send_booking_reminders(session, now=datetime(2026, 8, 5, 2, 0), sender=_fake_sender(calls))
+    assert n == 1
+    assert calls[0][1]["title"] == "Booking deadline"

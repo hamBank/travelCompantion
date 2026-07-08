@@ -394,6 +394,7 @@ class NotificationLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     item_id: int = Field(index=True)
     kind: str                                    # "checkin_heads_up" | "checkin" | "departure"
+                                                  # | "booking_soon" | "booking_due" | ...
     sent_at: datetime = Field(default_factory=datetime.utcnow)
 
 

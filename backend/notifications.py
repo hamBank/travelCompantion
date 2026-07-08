@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, select
 
 from . import flight_live, rail_live
-from .models import ItineraryItem, ItemKind, Stop, TripMembership, PushSubscription, NotificationLog
+from .models import ItineraryItem, ItemKind, ItemStatus, Stop, TripMembership, PushSubscription, NotificationLog
 from .push import send_push, PushSendError
 from .tzutil import approx_utc_offset_hours
 
@@ -231,6 +231,117 @@ def send_due_notifications(session: Session, *, now: Optional[datetime] = None, 
         if not stop:
             continue
         payload = _notification_payload(item, kind, depart)
+        for sub in _recipients(session, stop.trip_id):
+            info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
+            try:
+                sender(info, payload, urgent=True)
+            except PushSendError as e:
+                if e.expired:
+                    session.delete(sub)
+        session.add(NotificationLog(item_id=item.id, kind=kind))
+        processed += 1
+    session.commit()
+    return processed
+
+
+# ── Booking-deadline reminders ────────────────────────────────────────────────
+# Unlike the transport triggers above (keyed to a real depart_time on flight/
+# rail/transfer/river_transfer items), needs_booking/book_by are generic
+# details ANY item kind can carry (see ItemEditModal.jsx's shared "Needs
+# booking" row, which every kind's edit form gets) — so these triggers scan
+# every item, not just transiting ones.
+
+def _due_booking_triggers(session: Session, now: datetime):
+    """Yield (item, kind, book_by) for items whose booking-deadline trigger
+    has fired, isn't logged yet, and isn't too stale to still be useful.
+
+    Two triggers per item, independently logged/deduped:
+      - "booking_due": fires at 09:00 destination-local on book_by itself.
+        book_by is a date only (no wall-clock time to key off, unlike
+        depart_time elsewhere in this file) — 09:00 is just a reasonable
+        "start of day" nudge, not a precise deadline instant, so getting the
+        hour exactly right doesn't matter the way it does for check-in/
+        departure triggers.
+      - "booking_soon": fires 7 days before that ("book-by date in a week").
+        We don't persist when needs_booking was first set, so "only if
+        book_by was >=7 days away at creation" isn't checked directly against
+        a creation timestamp — it falls out of the ordinary staleness check
+        below instead: if the 7-day-early instant is already more than
+        GRACE_HOURS in the past the first time this runs (i.e. needs_booking
+        was checked with under a week left on book_by), it's simply too
+        stale and never fires — exactly "don't send a week-out reminder days
+        after the week was already up".
+
+    Skipped entirely when needs_booking is falsy — including "since
+    unchecked", which looks identical to "never checked" once the flag is
+    gone from details — or when the item's status isn't ItemStatus.pending;
+    "done" or "skipped" (see ItemStatus) both mean the item no longer needs
+    a booking nudge.
+    """
+    items = session.exec(select(ItineraryItem)).all()
+    logged = {(row.item_id, row.kind) for row in session.exec(select(NotificationLog)).all()}
+
+    for item in items:
+        if item.status != ItemStatus.pending:
+            continue
+        d = item.details or {}
+        if not d.get("needs_booking"):
+            continue
+        book_by = d.get("book_by")
+        if not book_by:
+            continue
+        try:
+            book_by_date = datetime.fromisoformat(str(book_by)[:10])
+        except ValueError:
+            continue
+
+        # Anchor at 09:00 destination-local, converted to UTC via the same
+        # stop-offset fallback used for departure triggers (this item has no
+        # depart_tz concept of its own — it isn't necessarily a transit
+        # item) — defaulting to UTC when the stop can't say either, the same
+        # last-resort used everywhere else in this module.
+        offset = _stop_utc_offset_hours(session, item) or 0.0
+        due_at = book_by_date.replace(hour=9, minute=0) - timedelta(hours=offset)
+
+        candidates = [
+            ("booking_soon", due_at - timedelta(days=7)),
+            ("booking_due", due_at),
+        ]
+        for kind, notify_at in candidates:
+            if (item.id, kind) in logged:
+                continue
+            if notify_at > now:
+                continue  # not due yet
+            if notify_at < now - timedelta(hours=GRACE_HOURS):
+                continue  # too stale
+
+            yield item, kind, book_by
+
+
+def _booking_payload(item: ItineraryItem, kind: str, book_by: str, stop_name: str) -> dict:
+    name = item.name or item.kind.value
+    where = f" ({stop_name})" if stop_name else ""
+
+    if kind == "booking_soon":
+        body = f"{name}{where} needs to be booked — book by {book_by}, one week left"
+        return {"title": "Booking deadline approaching", "body": body, "url": "/", "urgent": True}
+
+    body = f"{name}{where} needs to be booked — book-by date is today ({book_by})"
+    return {"title": "Booking deadline", "body": body, "url": "/", "urgent": True}
+
+
+def send_booking_reminders(session: Session, *, now: Optional[datetime] = None, sender=send_push) -> int:
+    """Send every due booking-deadline (item, kind) trigger to all of that
+    trip's subscribed devices — see _due_booking_triggers. Idempotent via
+    NotificationLog exactly like send_due_notifications; kinds are
+    "booking_due" and "booking_soon". Returns triggers processed."""
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    processed = 0
+    for item, kind, book_by in list(_due_booking_triggers(session, now)):
+        stop = session.get(Stop, item.stop_id)
+        if not stop:
+            continue
+        payload = _booking_payload(item, kind, book_by, stop.location)
         for sub in _recipients(session, stop.trip_id):
             info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
             try:
