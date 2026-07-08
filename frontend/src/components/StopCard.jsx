@@ -12,6 +12,7 @@ import CostDisplay from './CostDisplay.jsx'
 import RichText from './RichText.jsx'
 import { isFullyPaid } from '../currency.js'
 import { countryFlag, countryCode } from '../countryFlag.js'
+import { countryFacts } from '../countryFacts.js'
 import { airportName } from '../airportNames.js'
 import RailDetailModal from './RailDetailModal.jsx'
 
@@ -241,6 +242,29 @@ export function FlagMark({ country }) {
   }
   const emoji = countryFlag(country)
   return emoji ? <span className="text-base leading-none shrink-0">{emoji}</span> : null
+}
+
+// Compact one-line offline-friendly facts (plug, emergency number, driving
+// side, currency, tipping norm) for the stop's country. Renders nothing when
+// the country doesn't resolve to a known entry — deliberately no toggle/border,
+// just a subtle faint-text line. Callers should skip any layout wrapper (e.g.
+// OffsetRow) entirely when this would render null, so an unknown country
+// doesn't leave a stray empty row.
+function CountryFactsRow({ country }) {
+  const facts = countryFacts(countryCode(country))
+  if (!facts) return null
+  const tipping = facts.tipping ? facts.tipping.charAt(0).toLowerCase() + facts.tipping.slice(1) : ''
+  return (
+    <div style={{ color: 'var(--text-faint)' }} className="text-xs">
+      🔌 {facts.plug} · {facts.voltage} ⚡ · 🚨 {facts.emergency} · 🚗 {facts.driving} · 💰 {facts.currency} · tip: {tipping}
+    </div>
+  )
+}
+
+// Does the stop's country resolve to a known countryFacts entry? Used to
+// decide whether to render CountryFactsRow's layout wrapper at all.
+function hasCountryFacts(country) {
+  return !!countryFacts(countryCode(country))
 }
 
 // Cards inside a TimeRow consume this to suppress their internal time display.
@@ -611,6 +635,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     return (
       <>
       <div className="space-y-2">
+        {hasCountryFacts(stop.country) && <OffsetRow><CountryFactsRow country={stop.country} /></OffsetRow>}
         {inbound && <OffsetRow><InboundBanner inbound={inbound} onUpdate={onUpdate} /></OffsetRow>}
         {inboundConnection && <OffsetRow><LayoverBadge {...inboundConnection} /></OffsetRow>}
         {timeline.length > 0 && (() => {
@@ -702,6 +727,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
 
       {contentVisible && (
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
+          <CountryFactsRow country={stop.country} />
           <InboundBanner inbound={inbound} onUpdate={onUpdate} />
           {inboundConnection && <LayoverBadge {...inboundConnection} />}
 
