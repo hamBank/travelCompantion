@@ -12,6 +12,7 @@ assigned plan.** Each plan is one PR-sized unit of work.
 | [plan-5-budget-dashboard.md](plan-5-budget-dashboard.md) | Per-trip budget + spend rollup | M | — |
 | [plan-8-auto-complete-past-items.md](plan-8-auto-complete-past-items.md) | One-click catch-up for past items | S | — |
 | [plan-10-aircraft-position.md](plan-10-aircraft-position.md) | "Where is my plane" position display | S | plan-2 (shares `backend/flight_live.py`) |
+| [plan-11-offline-write-queue.md](plan-11-offline-write-queue.md) | Offline write queue + basic conflict resolution | M–L | read-only offline (shipped, PR #57) |
 
 If implementing both plan-2 and plan-10, do plan-2 first — it extracts the
 AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
