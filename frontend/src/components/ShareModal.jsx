@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getTripMembers, addTripMember, removeTripMember, getCalendarUrl } from '../api.js'
+import { getTripMembers, addTripMember, removeTripMember, getCalendarUrl, getShareToken, createShareToken, revokeShareToken } from '../api.js'
 
 const ROLE_LABEL = { owner: 'Owner', editor: 'Editor', viewer: 'Viewer' }
 
@@ -12,12 +12,20 @@ export default function ShareModal({ trip, onClose }) {
   const [calBusy, setCalBusy] = useState(false)
   const [calCopied, setCalCopied] = useState(false)
   const [calError, setCalError] = useState(null)
+  const [shareToken, setShareToken] = useState(undefined)  // undefined = loading, null = off
+  const [shareBusy, setShareBusy] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
+  const [shareError, setShareError] = useState(null)
 
   async function load() {
     try { setMembers(await getTripMembers(trip.id)) }
     catch (e) { setError(e.message) }
   }
   useEffect(() => { load() }, [trip.id])
+
+  useEffect(() => {
+    getShareToken(trip.id).then(r => setShareToken(r.token)).catch(() => setShareToken(null))
+  }, [trip.id])
 
   async function add() {
     const e = email.trim()
@@ -48,6 +56,32 @@ export default function ShareModal({ trip, onClose }) {
       setTimeout(() => setCalCopied(false), 1500)
     } catch (err) { setCalError(err.message) }
     finally { setCalBusy(false) }
+  }
+
+  async function copyShareUrl(token) {
+    const absolute = `${window.location.origin}/shared/${token}`
+    await navigator.clipboard?.writeText(absolute)
+    setShareCopied(true)
+    setTimeout(() => setShareCopied(false), 1500)
+  }
+
+  async function createOrRegenerateShare() {
+    if (shareBusy) return
+    setShareBusy(true); setShareError(null)
+    try {
+      const { token } = await createShareToken(trip.id)
+      setShareToken(token)
+      await copyShareUrl(token)
+    } catch (err) { setShareError(err.message) }
+    finally { setShareBusy(false) }
+  }
+
+  async function revokeShare() {
+    if (shareBusy) return
+    setShareBusy(true); setShareError(null)
+    try { await revokeShareToken(trip.id); setShareToken(null) }
+    catch (err) { setShareError(err.message) }
+    finally { setShareBusy(false) }
   }
 
   return (
@@ -159,6 +193,63 @@ export default function ShareModal({ trip, onClose }) {
               {calBusy ? 'Working…' : calCopied ? 'Copied' : 'Copy calendar link'}
             </button>
             {calError && <p style={{ color: 'var(--error)' }} className="text-xs mt-1.5">{calError}</p>}
+          </div>
+
+          {/* Public link */}
+          <div>
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Public link</p>
+            <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2">
+              Anyone with this link can view the trip (read-only, no sign-in) until you revoke it.
+            </p>
+            {shareToken === undefined && (
+              <p style={{ color: 'var(--text-faint)' }} className="text-xs">Loading…</p>
+            )}
+            {shareToken !== undefined && !shareToken && (
+              <button
+                onClick={createOrRegenerateShare}
+                disabled={shareBusy}
+                style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}
+                className="text-xs px-3 py-2 rounded-lg disabled:opacity-50 hover:opacity-80 transition-opacity"
+              >
+                {shareBusy ? 'Working…' : 'Create public link'}
+              </button>
+            )}
+            {shareToken && (
+              <div className="space-y-1.5">
+                <div
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                  className="rounded-lg px-3 py-2 text-xs truncate"
+                >
+                  {`${window.location.origin}/shared/${shareToken}`}
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => copyShareUrl(shareToken)}
+                    style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}
+                    className="text-xs px-3 py-2 rounded-lg hover:opacity-80 transition-opacity"
+                  >
+                    {shareCopied ? 'Copied' : 'Copy link'}
+                  </button>
+                  <button
+                    onClick={createOrRegenerateShare}
+                    disabled={shareBusy}
+                    style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                    className="text-xs px-3 py-2 rounded-lg disabled:opacity-50 hover:opacity-80 transition-opacity"
+                  >
+                    {shareBusy ? 'Working…' : 'Regenerate'}
+                  </button>
+                  <button
+                    onClick={revokeShare}
+                    disabled={shareBusy}
+                    style={{ color: 'var(--error)', border: '1px solid color-mix(in srgb, var(--error) 35%, transparent)' }}
+                    className="text-xs px-3 py-2 rounded-lg disabled:opacity-50 hover:opacity-80 transition-opacity"
+                  >
+                    Revoke
+                  </button>
+                </div>
+              </div>
+            )}
+            {shareError && <p style={{ color: 'var(--error)' }} className="text-xs mt-1.5">{shareError}</p>}
           </div>
         </div>
 

@@ -7,6 +7,7 @@ import ThemePicker from './components/ThemePicker.jsx'
 import LoginPage from './components/LoginPage.jsx'
 import UserSettings from './components/UserSettings.jsx'
 import ShareModal from './components/ShareModal.jsx'
+import SharedTripView from './components/SharedTripView.jsx'
 import PendingReview from './components/PendingReview.jsx'
 import PackingList from './components/PackingList.jsx'
 import BudgetSummary from './components/BudgetSummary.jsx'
@@ -311,7 +312,29 @@ function AppShell({ user, onLogout }) {
   )
 }
 
+// This app has no client-side router at all — everything below decides what
+// to render purely from React state (selectedTrip, editing, etc.), never
+// from location.pathname. The public share link is the one exception: it
+// must be reachable by a bare URL with no login, so it's the one place this
+// app looks at the path directly. Kept as a separate top-level dispatch
+// (rather than an early-return inside AuthenticatedApp) specifically so it
+// stays outside the hooks in AuthenticatedApp below — an early return
+// before useState/useEffect would violate the rules of hooks. The path
+// itself is only ever read once at mount: this SPA never client-side-
+// navigates between a normal session and a shared one (a real browser
+// navigation reloads the page), so there's no scenario where this needs to
+// react to the pathname changing under a mounted instance.
+const SHARED_PATH_RE = /^\/shared\/([^/]+)\/?$/
+
 export default function App() {
+  const sharedMatch = typeof window !== 'undefined' ? window.location.pathname.match(SHARED_PATH_RE) : null
+  if (sharedMatch) {
+    return <SharedTripView token={sharedMatch[1]} />
+  }
+  return <AuthenticatedApp />
+}
+
+function AuthenticatedApp() {
   const [authReady, setAuthReady] = useState(false)
   const [authEnabled, setAuthEnabled] = useState(false)
   const [googleClientId, setGoogleClientId] = useState('')
