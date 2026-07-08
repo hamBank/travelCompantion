@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
-from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, ItemKind, Stop, StopRead, TripRole
+from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, ItemAttachment, ItemKind, Stop, StopRead, TripRole
 from ..river_path import estimate_river_path, NoPlausiblePath
 from ..metrics import record_external_call
 from .. import flight_live
@@ -106,6 +106,14 @@ def delete_item(item_id: int, session: Session = Depends(get_session), user: dic
             stop.accommodation_link = ""
             stop.accommodation_notes = ""
             session.add(stop)
+    # Attachments aren't an audit trail (unlike ItemHistory) — they don't
+    # survive the item they're attached to, so clean them up explicitly
+    # rather than leaving orphaned blobs (or a dangling FK a later
+    # GET /attachments/{id} would 404 on anyway).
+    for attachment in session.exec(
+        select(ItemAttachment).where(ItemAttachment.item_id == item_id)
+    ).all():
+        session.delete(attachment)
     record_item_history(session, item, "delete", user["email"], before=before)
     session.delete(item)
     session.commit()

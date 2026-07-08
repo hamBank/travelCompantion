@@ -1,5 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
-import { fetchGpxText, downloadGpx, fetchRiverMapBlob } from '../api.js'
+import {
+  fetchGpxText, downloadGpx, fetchRiverMapBlob,
+  listAttachments, uploadAttachment, deleteAttachment, fetchAttachmentBlob,
+} from '../api.js'
 import CostDisplay from './CostDisplay.jsx'
 import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
@@ -9,6 +12,7 @@ import { relevantDayIndices, filterHoursByDays } from '../washHours.js'
 import { registerModal, unregisterModal } from '../modalNav.js'
 import { useSwipeNav } from '../swipeNav.js'
 import { fmtDayTime } from '../dates.js'
+import { useCanEdit } from '../roles.js'
 
 const fmtDateTime = fmtDayTime
 
@@ -680,6 +684,132 @@ function RiverTransferBody({ item }) {
   )
 }
 
+function formatAttachmentSize(bytes) {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)}KB`
+  return `${(bytes / 1048576).toFixed(1)}MB`
+}
+
+function AttachmentsSection({ itemId }) {
+  const [attachments, setAttachments] = useState([])
+  const [loaded, setLoaded] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState(null)
+  const [preview, setPreview] = useState(null)   // { id, url } — inline image preview
+  const fileInputRef = useRef(null)
+  const canEdit = useCanEdit()
+
+  function refresh() {
+    return listAttachments(itemId)
+      .then(setAttachments)
+      .catch(e => setError(e.message))
+      .finally(() => setLoaded(true))
+  }
+
+  useEffect(() => { refresh() }, [itemId])
+
+  // Revoke the previous preview's object URL whenever it changes or the
+  // section unmounts, so opening several images in a row doesn't leak them.
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url) }, [preview])
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploading(true); setError(null)
+    try {
+      await uploadAttachment(itemId, file)
+      await refresh()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleOpen(att) {
+    setError(null)
+    if (preview?.id === att.id) { setPreview(null); return }   // toggle closed
+    const blob = await fetchAttachmentBlob(att.id)
+    if (!blob) { setError('Could not load attachment'); return }
+    const url = URL.createObjectURL(blob)
+    if ((att.content_type || '').startsWith('image/')) {
+      setPreview({ id: att.id, url })
+    } else {
+      window.open(url, '_blank', 'noopener')
+    }
+  }
+
+  async function handleDelete(id) {
+    setError(null)
+    try {
+      await deleteAttachment(id)
+      setAttachments(prev => prev.filter(a => a.id !== id))
+      if (preview?.id === id) setPreview(null)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  if (!loaded) return null
+  if (!attachments.length && !canEdit) return null
+
+  return (
+    <div className="mt-4" style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2 font-medium">
+        Attachments
+      </p>
+      {attachments.map(att => (
+        <div key={att.id} className="flex items-center gap-2 py-1">
+          <button
+            onClick={() => handleOpen(att)}
+            style={{ color: 'var(--accent)' }}
+            className="hover:underline text-left text-sm flex-1 min-w-0 truncate"
+          >
+            📎 {att.filename}
+          </button>
+          <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0">
+            {formatAttachmentSize(att.size)}
+          </span>
+          {canEdit && (
+            <button
+              onClick={() => handleDelete(att.id)}
+              style={{ color: 'var(--text-faint)' }}
+              className="text-xs hover:opacity-70 shrink-0"
+              title="Delete attachment"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      ))}
+      {preview && (
+        <div className="mt-2">
+          <img
+            src={preview.url}
+            alt="Attachment preview"
+            style={{ maxWidth: '100%', borderRadius: '0.5rem', border: '1px solid var(--border)', display: 'block' }}
+          />
+        </div>
+      )}
+      {error && <div style={{ color: 'var(--error)' }} className="text-xs mt-1">{error}</div>}
+      {canEdit && (
+        <div className="mt-2">
+          <input ref={fileInputRef} type="file" onChange={handleFileChange} style={{ display: 'none' }} />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            style={{ color: 'var(--accent)' }}
+            className="text-sm hover:underline disabled:opacity-50"
+          >
+            {uploading ? 'Uploading…' : '+ Add attachment'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const KIND_COLOR = {
   activity:      'var(--kind-activity)',
   restaurant:    'var(--kind-restaurant)',
@@ -759,6 +889,7 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNa
           {item.kind === 'river_transfer' && <RiverTransferBody item={item} />}
           {/* Notes apply to every kind — shown only when filled (note items show it as their body). */}
           {item.kind !== 'note' && item.notes && <Row label="Notes">{item.notes}</Row>}
+          <AttachmentsSection itemId={item.id} />
         </div>
 
         <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose}
