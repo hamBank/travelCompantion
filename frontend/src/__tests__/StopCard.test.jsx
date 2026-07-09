@@ -776,4 +776,49 @@ describe('dayMapPoints', () => {
     expect(dayMapPoints([])).toEqual([])
     expect(dayMapPoints(undefined)).toEqual([])
   })
+
+  describe('flight crossing midnight', () => {
+    const redeye = {
+      kind: 'flight', name: 'SIN → HEL',
+      details: { origin: 'SIN', destination: 'HEL', depart_time: '2026-08-19T23:30', arrive_time: '2026-08-20T06:15' },
+    }
+
+    it('on the departure day, includes only the origin', () => {
+      expect(dayMapPoints([redeye], '2026-08-19')).toEqual([
+        { location: 'Singapore', item: redeye, role: 'start' },
+      ])
+    })
+
+    it('on the arrival day, includes only the destination', () => {
+      expect(dayMapPoints([redeye], '2026-08-20')).toEqual([
+        { location: 'Helsinki', item: redeye, role: 'end' },
+      ])
+    })
+
+    it('places the arrival-day destination first, ahead of same-day items', () => {
+      const activity = { kind: 'activity', name: 'Design Museum', details: { location: 'Helsinki Design Museum' } }
+      expect(dayMapPoints([activity, redeye], '2026-08-20')).toEqual([
+        { location: 'Helsinki', item: redeye, role: 'end' },
+        { location: 'Helsinki Design Museum', item: activity, role: null },
+      ])
+    })
+
+    it('includes both ends when no activeDay is given (non-Today callers)', () => {
+      expect(dayMapPoints([redeye])).toEqual([
+        { location: 'Singapore', item: redeye, role: 'start' },
+        { location: 'Helsinki', item: redeye, role: 'end' },
+      ])
+    })
+
+    it('does not split a same-day flight', () => {
+      const sameDay = {
+        kind: 'flight', name: 'CDG → FCO',
+        details: { origin: 'CDG', destination: 'FCO', depart_time: '2026-08-19T09:00', arrive_time: '2026-08-19T11:00' },
+      }
+      expect(dayMapPoints([sameDay], '2026-08-19')).toEqual([
+        { location: 'Paris Charles de Gaulle', item: sameDay, role: 'start' },
+        { location: 'Rome Fiumicino', item: sameDay, role: 'end' },
+      ])
+    })
+  })
 })

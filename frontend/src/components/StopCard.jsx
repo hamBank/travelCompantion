@@ -200,6 +200,17 @@ const DAY_MAP_MARKER_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 // get a pin at all, so the legend shouldn't claim one for them either.
 const DAY_MAP_MAX_LOCATIONS = 12
 
+// A flight's two pins are the same item ("SIN → HEL") with a "(start)"/
+// "(end)" suffix, which doesn't say which city is which — labeling each with
+// its own city (already what `location` holds; see itemLocations) is more
+// useful. Every other start/end kind (rail, transfer, walk, cycling, hire)
+// keeps the item-name-plus-role label, since their `location` values are
+// often long freeform addresses rather than short place names.
+function _dayMapPointLabel(p) {
+  if (p.item.kind === 'flight' && p.role) return p.location
+  return p.role ? `${p.item.name} (${p.role})` : p.item.name
+}
+
 // One Static Maps pin per distinct location touched by a day's items, plus a
 // small legend overlay translating each lettered pin back to the item (and
 // kind) it came from — the letters alone gave no way to tell A from B.
@@ -243,7 +254,7 @@ export function DayMap({ stopId, points }) {
         <div
           style={{
             position: 'absolute', left: '0.5rem', bottom: '0.5rem', right: '0.5rem',
-            background: 'rgba(255,255,255,0.94)', color: '#1e1e2e',
+            background: 'rgba(255,255,255,0.55)', color: '#1e1e2e',
             borderRadius: '0.375rem', padding: '0.35rem 0.5rem',
             maxHeight: '45%', overflowY: 'auto',
             boxShadow: '0 1px 4px rgba(0,0,0,0.35)', fontSize: '0.68rem', lineHeight: 1.5,
@@ -255,9 +266,7 @@ export function DayMap({ stopId, points }) {
                 {DAY_MAP_MARKER_LABELS[i]}
               </span>
               <span style={{ flexShrink: 0 }}>{KIND_ICON[p.item.kind] ?? '📍'}</span>
-              <span className="truncate">
-                {p.item.name}{p.role ? ` (${p.role})` : ''}
-              </span>
+              <span className="truncate">{_dayMapPointLabel(p)}</span>
             </div>
           ))}
         </div>
@@ -429,21 +438,44 @@ export function dayLocations(items) {
 // day map's legend labels its lettered pins with. dayLocations itself stays
 // string-only: the Static Maps request (and its own tests) depend on that
 // exact shape.
-export function dayMapPoints(items) {
+//
+// `activeDay` (the Today view's selected "YYYY-MM-DD") is only used for a
+// flight that crosses midnight (depart/arrive dates differ): itemOccursOn
+// already includes such a flight in both the departure day's and the
+// arrival day's item list, which would otherwise plot the same two-city
+// route redundantly on both days. Instead, the departure day's map gets only
+// the origin, and the arrival day's map gets only the destination — placed
+// first, since it's the first thing to happen on that arrival day.
+export function dayMapPoints(items, activeDay) {
   const seen = new Set()
-  const out = []
+  const arrivals = []
+  const rest = []
   for (const item of items || []) {
     const locs = itemLocations(item)
     const isPair = locs.length > 1
+    const d = item.details || {}
+    const crossesMidnight = item.kind === 'flight' && isPair && d.depart_time && d.arrive_time &&
+      String(d.depart_time).split('T')[0] !== String(d.arrive_time).split('T')[0]
+
     locs.forEach((loc, i) => {
+      const role = isPair ? (i === 0 ? 'start' : 'end') : null
+      let isCrossDayArrival = false
+      if (crossesMidnight && activeDay) {
+        const depDate = String(d.depart_time).split('T')[0]
+        const arrDate = String(d.arrive_time).split('T')[0]
+        if (role === 'start' && activeDay !== depDate) return  // arrival day's map: skip the origin
+        if (role === 'end' && activeDay !== arrDate) return    // departure day's map: skip the destination
+        if (role === 'end') isCrossDayArrival = true
+      }
       const key = _normLoc(loc)
       if (key && !seen.has(key)) {
         seen.add(key)
-        out.push({ location: loc, item, role: isPair ? (i === 0 ? 'start' : 'end') : null })
+        const point = { location: loc, item, role }
+        ;(isCrossDayArrival ? arrivals : rest).push(point)
       }
     })
   }
-  return out
+  return [...arrivals, ...rest]
 }
 
 // A stop's weather is normally fetched once for its own location/date span.

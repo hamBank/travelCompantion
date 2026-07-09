@@ -481,7 +481,7 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
             activeDay are combined into one map, shown below all of today's
             item cards and above the Import-from-document button. */}
         {activeDay && visibleStops.length > 0 && (
-          <DayMap stopId={visibleStops[0].id} points={dayMapPoints(visibleStops.flatMap(s => s.items))} />
+          <DayMap stopId={visibleStops[0].id} points={dayMapPoints(visibleStops.flatMap(s => s.items), activeDay)} />
         )}
 
         {editable && (
