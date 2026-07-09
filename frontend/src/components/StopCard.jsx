@@ -446,13 +446,37 @@ export function dayLocations(items) {
 // route redundantly on both days. Instead, the departure day's map gets only
 // the origin, and the arrival day's map gets only the destination — placed
 // first, since it's the first thing to happen on that arrival day.
+//
+// A road transfer whose start AND end both already have a pin from some
+// other (non-transfer) item that day — e.g. hotel -> restaurant, when the
+// accommodation and restaurant items already plot those same two points —
+// adds nothing new to the map, so it's dropped rather than drawing a
+// redundant already-there-to-already-there pair. This is scoped to plain
+// road transfers only (not rail/river_transfer/walk/cycling/hire): those
+// still show even when their endpoints coincide with another pin.
 export function dayMapPoints(items, activeDay) {
+  const list = items || []
+  const otherLocs = new Set()
+  for (const item of list) {
+    if (item.kind === 'transfer') continue
+    for (const loc of itemLocations(item)) {
+      const key = _normLoc(loc)
+      if (key) otherLocs.add(key)
+    }
+  }
+
   const seen = new Set()
   const arrivals = []
   const rest = []
-  for (const item of items || []) {
+  for (const item of list) {
     const locs = itemLocations(item)
     const isPair = locs.length > 1
+
+    if (item.kind === 'transfer' && isPair &&
+        otherLocs.has(_normLoc(locs[0])) && otherLocs.has(_normLoc(locs[1]))) {
+      continue
+    }
+
     const d = item.details || {}
     const crossesMidnight = item.kind === 'flight' && isPair && d.depart_time && d.arrive_time &&
       String(d.depart_time).split('T')[0] !== String(d.arrive_time).split('T')[0]
