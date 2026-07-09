@@ -15,6 +15,7 @@ import { isFullyPaid } from '../currency.js'
 import { countryFlag, countryCode } from '../countryFlag.js'
 import { countryFacts } from '../countryFacts.js'
 import { airportName } from '../airportNames.js'
+import { KIND_ICON } from '../kinds.js'
 import RailDetailModal from './RailDetailModal.jsx'
 
 const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 'planned', cancelled: 'planned' }
@@ -191,12 +192,24 @@ export function DayBanner({ dateKey, weather }) {
   )
 }
 
-// One Static Maps pin per distinct location touched by a day's items.
+// Static Maps only accepts a single A-Z/0-9 char per marker — mirrors the
+// backend's own _MARKER_LABELS (backend/routers/items.py's day_map), so the
+// legend below lines up letter-for-letter with the pins actually drawn.
+const DAY_MAP_MARKER_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+// Mirrors the backend's _DAY_MAP_MAX_LOCATIONS — points beyond this don't
+// get a pin at all, so the legend shouldn't claim one for them either.
+const DAY_MAP_MAX_LOCATIONS = 12
+
+// One Static Maps pin per distinct location touched by a day's items, plus a
+// small legend overlay translating each lettered pin back to the item (and
+// kind) it came from — the letters alone gave no way to tell A from B.
 // Single-day (Today) view only — rendered inline, below the day's item cards
 // and above the Import-from-document button, at its natural ~640x400 size
 // (capped so it doesn't outgrow the content column on wide screens).
-export function DayMap({ stopId, locations }) {
+export function DayMap({ stopId, points }) {
   const [mapUrl, setMapUrl] = useState(null)
+  const shown = points.slice(0, DAY_MAP_MAX_LOCATIONS)
+  const locations = shown.map(p => p.location)
   const key = locations.join('|')
 
   useEffect(() => {
@@ -216,13 +229,39 @@ export function DayMap({ stopId, locations }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopId, key])
 
-  if (locations.length === 0) return null
+  if (shown.length === 0) return null
 
   return (
-    <div style={{ maxWidth: '640px', margin: '0.75rem auto 0', borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid var(--border)' }}>
+    <div style={{ maxWidth: '640px', margin: '0.75rem auto 0', borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid var(--border)', position: 'relative' }}>
       {mapUrl
         ? <img src={mapUrl} alt="Day locations map" style={{ display: 'block', width: '100%', height: 'auto' }} />
         : <div style={{ color: 'var(--text-faint)' }} className="text-xs px-3 py-2">Loading map…</div>}
+      {/* Fixed light styling (not theme vars) — this overlays a Google
+          roadmap PNG, whose own light background doesn't follow the app's
+          theme, so a dark-mode-aware panel could end up unreadable on it. */}
+      {mapUrl && (
+        <div
+          style={{
+            position: 'absolute', left: '0.5rem', bottom: '0.5rem', right: '0.5rem',
+            background: 'rgba(255,255,255,0.94)', color: '#1e1e2e',
+            borderRadius: '0.375rem', padding: '0.35rem 0.5rem',
+            maxHeight: '45%', overflowY: 'auto',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.35)', fontSize: '0.68rem', lineHeight: 1.5,
+          }}
+        >
+          {shown.map((p, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <span style={{ fontWeight: 700, width: '1rem', textAlign: 'center', flexShrink: 0 }}>
+                {DAY_MAP_MARKER_LABELS[i]}
+              </span>
+              <span style={{ flexShrink: 0 }}>{KIND_ICON[p.item.kind] ?? '📍'}</span>
+              <span className="truncate">
+                {p.item.name}{p.role ? ` (${p.role})` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -381,6 +420,28 @@ export function dayLocations(items) {
       const key = _normLoc(loc)
       if (key && !seen.has(key)) { seen.add(key); out.push(loc) }
     }
+  }
+  return out
+}
+
+// Same dedup as dayLocations, but keeps each pin's originating item (and,
+// for start/end pairs like a flight or transfer, which end it is) — what the
+// day map's legend labels its lettered pins with. dayLocations itself stays
+// string-only: the Static Maps request (and its own tests) depend on that
+// exact shape.
+export function dayMapPoints(items) {
+  const seen = new Set()
+  const out = []
+  for (const item of items || []) {
+    const locs = itemLocations(item)
+    const isPair = locs.length > 1
+    locs.forEach((loc, i) => {
+      const key = _normLoc(loc)
+      if (key && !seen.has(key)) {
+        seen.add(key)
+        out.push({ location: loc, item, role: isPair ? (i === 0 ? 'start' : 'end') : null })
+      }
+    })
   }
   return out
 }

@@ -16,6 +16,27 @@ export const KIND_VAR = {
   river_transfer:'var(--kind-river_transfer)',
 }
 
+// Same icon each kind's card uses for its CardIcon (StopCard.jsx) — kept
+// here too so the day map's legend (DayMap) can label pins without
+// duplicating the mapping or importing the whole card component tree.
+export const KIND_ICON = {
+  activity:      '⭐',
+  walk:          '🥾',
+  transfer:      '🚗',
+  cycling:       '🚴',
+  tour:          '🎟️',
+  rail:          '🚄',
+  restaurant:    '🍽',
+  food:          '🍴',
+  purchase:      '🛍️',
+  note:          '📝',
+  accommodation: '🛏',
+  flight:        '✈',
+  show:          '🎭',
+  hire:          '🚐',
+  river_transfer:'⛴',
+}
+
 export const KIND_LABEL = {
   activity:      'Activity',
   walk:          'Walk / Hike',

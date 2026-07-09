@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, DayBanner, closedOnDay } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, dayMapPoints, DayBanner, closedOnDay } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -735,5 +735,45 @@ describe('dayLocations', () => {
   it('returns an empty array for no items or an empty day', () => {
     expect(dayLocations([])).toEqual([])
     expect(dayLocations(undefined)).toEqual([])
+  })
+})
+
+describe('dayMapPoints', () => {
+  it('pairs each pin with its originating item, for the day map legend', () => {
+    const accom = { kind: 'accommodation', name: 'Hotel Lutetia', details: { location: 'Hotel Lutetia' } }
+    const rest = { kind: 'restaurant', name: 'Trattoria Roma', details: { location: 'Trattoria Roma' } }
+    expect(dayMapPoints([accom, rest])).toEqual([
+      { location: 'Hotel Lutetia', item: accom, role: null },
+      { location: 'Trattoria Roma', item: rest, role: null },
+    ])
+  })
+
+  it('labels a start/end pair (transit-like kinds) with its role', () => {
+    const rail = { kind: 'rail', name: 'TGV to Lyon', details: { origin: 'Paris Gare de Lyon', destination: 'Lyon Part-Dieu' } }
+    expect(dayMapPoints([rail])).toEqual([
+      { location: 'Paris Gare de Lyon', item: rail, role: 'start' },
+      { location: 'Lyon Part-Dieu', item: rail, role: 'end' },
+    ])
+  })
+
+  it('dedupes case/whitespace-insensitively, keeping the first item seen at that location', () => {
+    const a = { kind: 'restaurant', name: 'Colosseum Cafe', details: { location: 'Colosseum, Rome' } }
+    const b = { kind: 'activity', name: 'Colosseum Tour', details: { location: '  colosseum, rome  ' } }
+    expect(dayMapPoints([a, b])).toEqual([
+      { location: 'Colosseum, Rome', item: a, role: null },
+    ])
+  })
+
+  it('skips items with no location without breaking the rest', () => {
+    const note = { kind: 'note', name: 'Reminder', details: { description: 'Pack sunscreen' } }
+    const rest = { kind: 'restaurant', name: 'Trattoria Roma', details: { location: 'Trattoria Roma' } }
+    expect(dayMapPoints([note, rest])).toEqual([
+      { location: 'Trattoria Roma', item: rest, role: null },
+    ])
+  })
+
+  it('returns an empty array for no items or an empty day', () => {
+    expect(dayMapPoints([])).toEqual([])
+    expect(dayMapPoints(undefined)).toEqual([])
   })
 })
