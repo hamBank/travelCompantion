@@ -821,4 +821,49 @@ describe('dayMapPoints', () => {
       ])
     })
   })
+
+  describe('road transfers whose endpoints are already on the map', () => {
+    const hotel = { kind: 'accommodation', name: 'Hotel Lutetia', details: { location: 'Hotel Lutetia' } };
+    const dinner = { kind: 'restaurant', name: 'Trattoria Roma', details: { location: 'Trattoria Roma' } };
+
+    it('drops a transfer whose start AND end both match another item\'s location', () => {
+      const transfer = { kind: 'transfer', name: 'Taxi to dinner', details: { start_location: 'Hotel Lutetia', end_location: 'Trattoria Roma' } }
+      expect(dayMapPoints([hotel, transfer, dinner])).toEqual([
+        { location: 'Hotel Lutetia', item: hotel, role: null },
+        { location: 'Trattoria Roma', item: dinner, role: null },
+      ])
+    })
+
+    it('is order-independent — the transfer is still dropped even listed before both endpoints', () => {
+      const transfer = { kind: 'transfer', name: 'Taxi to dinner', details: { start_location: 'Hotel Lutetia', end_location: 'Trattoria Roma' } }
+      expect(dayMapPoints([transfer, hotel, dinner])).toEqual([
+        { location: 'Hotel Lutetia', item: hotel, role: null },
+        { location: 'Trattoria Roma', item: dinner, role: null },
+      ])
+    })
+
+    it('keeps a transfer when only one end matches another item (the other end is new information)', () => {
+      const transfer = { kind: 'transfer', name: 'Taxi to the station', details: { start_location: 'Hotel Lutetia', end_location: 'Termini Station' } }
+      expect(dayMapPoints([hotel, transfer])).toEqual([
+        { location: 'Hotel Lutetia', item: hotel, role: null },
+        { location: 'Termini Station', item: transfer, role: 'end' },
+      ])
+    })
+
+    it('keeps a transfer whose endpoints match nothing else that day', () => {
+      const transfer = { kind: 'transfer', name: 'Airport transfer', details: { start_location: 'Airport', end_location: 'City Center' } }
+      expect(dayMapPoints([transfer])).toEqual([
+        { location: 'Airport', item: transfer, role: 'start' },
+        { location: 'City Center', item: transfer, role: 'end' },
+      ])
+    })
+
+    it('does not apply the exclusion to other start/end kinds (rail, river_transfer, walk, cycling, hire)', () => {
+      const rail = { kind: 'rail', name: 'Train to dinner', details: { origin: 'Hotel Lutetia', destination: 'Trattoria Roma' } }
+      expect(dayMapPoints([hotel, rail, dinner])).toEqual([
+        { location: 'Hotel Lutetia', item: hotel, role: null },
+        { location: 'Trattoria Roma', item: rail, role: 'end' },
+      ])
+    })
+  })
 })
