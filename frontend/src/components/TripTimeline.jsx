@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending, updateItemStatus } from '../api.js'
-import StopCard, { computeCrossStopLayover, itemDateKey, itemEndMs, itemOccursOn, DayMap, dayLocations } from './StopCard.jsx'
+import StopCard, { computeCrossStopLayover, itemDateKey, itemEndMs, itemOccursOn, DayMap, dayMapPoints } from './StopCard.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import RailDetailModal from './RailDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
@@ -481,7 +481,7 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
             activeDay are combined into one map, shown below all of today's
             item cards and above the Import-from-document button. */}
         {activeDay && visibleStops.length > 0 && (
-          <DayMap stopId={visibleStops[0].id} locations={dayLocations(visibleStops.flatMap(s => s.items))} />
+          <DayMap stopId={visibleStops[0].id} points={dayMapPoints(visibleStops.flatMap(s => s.items))} />
         )}
 
         {editable && (
