@@ -1,8 +1,10 @@
+import io
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from backend.models import Trip, Stop, ItineraryItem
+from backend.models import Trip, Stop, ItineraryItem, TripMembership, Bag, PackingItem, ItemAttachment
 
 
 def test_create_trip(client: TestClient):
@@ -128,6 +130,40 @@ def test_delete_trip_cascades_stops_and_items(client: TestClient, session: Sessi
 
     assert session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all() == []
     assert session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop["id"])).all() == []
+
+
+def test_delete_trip_cascades_membership_bags_packing_and_attachments(client: TestClient, session: Session):
+    """Regression test: TripMembership/Bag/PackingItem/ItemAttachment all have
+    a real FK to trip/item but no ORM Relationship() linking them, so nothing
+    tells SQLAlchemy's unit-of-work to delete them before the parent row —
+    this silently "worked" on SQLite (no FK enforcement by default) but 500s
+    with a ForeignKeyViolation on Postgres. Exercises every one of those in a
+    single trip delete so a regression here is caught regardless of which
+    kind of dependent row triggers it."""
+    trip = client.post("/trips/", json={"name": "Fully Loaded Trip"}).json()
+    trip_id = trip["id"]
+
+    # A second member — TripMembership beyond the owner's own row.
+    client.post(f"/trips/{trip_id}/members", json={"user_email": "friend@example.com", "role": "viewer"})
+
+    # A nested bag (parent_id self-reference) with a packing item inside.
+    outer_bag = client.post(f"/trips/{trip_id}/bags", json={"name": "Suitcase"}).json()
+    inner_bag = client.post(f"/trips/{trip_id}/bags", json={"name": "Packing cube", "parent_id": outer_bag["id"]}).json()
+    client.post(f"/trips/{trip_id}/packing", json={"name": "Socks", "bag_id": inner_bag["id"]})
+
+    # An item with a file attachment.
+    stop = client.post(f"/trips/{trip_id}/stops", json={"location": "Rome", "status": "planned"}).json()
+    item = client.post(f"/stops/{stop['id']}/items", json={"kind": "activity", "name": "Colosseum", "status": "pending"}).json()
+    client.post(f"/items/{item['id']}/attachments",
+                files={"file": ("ticket.pdf", io.BytesIO(b"%PDF-1.4 fake"), "application/pdf")})
+
+    r = client.delete(f"/trips/{trip_id}")
+    assert r.status_code == 204
+
+    assert session.exec(select(TripMembership).where(TripMembership.trip_id == trip_id)).all() == []
+    assert session.exec(select(Bag).where(Bag.trip_id == trip_id)).all() == []
+    assert session.exec(select(PackingItem).where(PackingItem.trip_id == trip_id)).all() == []
+    assert session.exec(select(ItemAttachment).where(ItemAttachment.item_id == item["id"])).all() == []
 
 
 def test_trip_timeline_returns_stops_and_items(client: TestClient):

@@ -10,8 +10,9 @@ from ..permissions import require_trip_role, user_role_for_trip
 from ..models import (
     Trip, TripCreate, TripRead, TripReadWithRole, TripUpdate,
     Stop, StopRead,
-    ItineraryItem, ItemRead, ItemKind, ItemStatus,
+    ItineraryItem, ItemRead, ItemKind, ItemStatus, ItemAttachment,
     TripMembership, TripRole, MembershipRead, MembershipCreate,
+    Bag, PackingItem,
 )
 
 router = APIRouter()
@@ -68,15 +69,46 @@ def update_trip(trip_id: int, trip_in: TripUpdate, session: Session = Depends(ge
 
 @router.delete("/{trip_id}", status_code=204)
 def delete_trip(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Deletes a trip and every row that FK-references it, explicitly and in
+    dependency order — rather than relying on SQLAlchemy to infer it.
+    TripMembership/Bag/PackingItem/ItemAttachment all have a real `trip_id`/
+    `item_id` FK but no ORM Relationship() linking them back to Trip/
+    ItineraryItem, so the unit-of-work has no dependency information to order
+    their deletes against the parent row's delete. Without an explicit
+    session.flush() per stage, this silently worked on SQLite (which doesn't
+    enforce FKs by default) but 500s with a ForeignKeyViolation on Postgres —
+    caught by the Postgres CI job (docs/postgres-migration.md).
+    """
     require_trip_role(session, user, trip_id, TripRole.owner)
     trip = session.get(Trip, trip_id)
-    stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
-    for stop in stops:
+
+    for stop in session.exec(select(Stop).where(Stop.trip_id == trip_id)).all():
         for item in session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop.id)).all():
+            for attachment in session.exec(select(ItemAttachment).where(ItemAttachment.item_id == item.id)).all():
+                session.delete(attachment)
+            session.flush()
             session.delete(item)
         session.delete(stop)
+    session.flush()
+
     for m in session.exec(select(TripMembership).where(TripMembership.trip_id == trip_id)).all():
         session.delete(m)
+    session.flush()
+
+    # Packing items reference bags (bag_id); bags can nest via parent_id —
+    # break any nesting first so deleting bags never trips a self-referential FK.
+    for item in session.exec(select(PackingItem).where(PackingItem.trip_id == trip_id)).all():
+        session.delete(item)
+    session.flush()
+    bags = session.exec(select(Bag).where(Bag.trip_id == trip_id)).all()
+    for bag in bags:
+        bag.parent_id = None
+        session.add(bag)
+    session.flush()
+    for bag in bags:
+        session.delete(bag)
+    session.flush()
+
     session.delete(trip)
     session.commit()
 

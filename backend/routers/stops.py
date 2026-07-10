@@ -6,7 +6,7 @@ from ..database import get_session
 from sqlmodel import SQLModel as _SQLModel
 from ..auth import get_current_user
 from ..permissions import require_trip_role, require_stop_role
-from ..models import Stop, StopCreate, StopRead, StopUpdate, Trip, ItineraryItem, TripRole
+from ..models import Stop, StopCreate, StopRead, StopUpdate, Trip, ItineraryItem, ItemAttachment, TripRole
 from ..compare_and_set import resolve_fields
 
 router = APIRouter()
@@ -88,7 +88,18 @@ def update_stop(stop_id: int, stop_in: StopUpdate, session: Session = Depends(ge
 def delete_stop(stop_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     require_stop_role(session, user, stop_id, TripRole.editor)
     stop = session.get(Stop, stop_id)
-    for item in session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop_id)).all():
+    items = session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop_id)).all()
+    # ItemAttachment has a real FK to the item but no ORM Relationship()
+    # linking them, so the unit-of-work has no dependency info to order these
+    # deletes correctly on its own — flush this stage before deleting the
+    # items themselves. This silently worked on SQLite (which doesn't enforce
+    # FKs by default) and 500s with a ForeignKeyViolation on Postgres; see the
+    # identical fix in trips.py's delete_trip for the full story.
+    for item in items:
+        for attachment in session.exec(select(ItemAttachment).where(ItemAttachment.item_id == item.id)).all():
+            session.delete(attachment)
+    session.flush()
+    for item in items:
         session.delete(item)
     session.delete(stop)
     session.commit()

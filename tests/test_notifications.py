@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 
 import pytest
-from sqlmodel import SQLModel, Session, create_engine, select
+from sqlmodel import select
 
 from backend.models import (
     Trip, Stop, ItineraryItem, ItemKind, ItemStatus, TripMembership, TripRole,
@@ -11,13 +11,12 @@ from backend.models import (
 from backend import notifications as notifications_mod
 from backend.notifications import send_due_notifications, send_booking_reminders
 from backend.push import PushSendError
+from tests.conftest import make_test_session
 
 
 @pytest.fixture
 def session():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    SQLModel.metadata.create_all(engine)
-    with Session(engine) as s:
+    with make_test_session() as s:
         yield s
 
 

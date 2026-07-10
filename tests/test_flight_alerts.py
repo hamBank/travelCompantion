@@ -4,18 +4,16 @@ triggers in test_notifications.py."""
 from datetime import datetime, timedelta
 
 import pytest
-from sqlmodel import SQLModel, Session, create_engine
 
 from backend.models import Trip, Stop, ItineraryItem, ItemKind, TripMembership, TripRole, PushSubscription
 from backend.notifications import send_flight_alerts
 from backend.flight_live import FlightLiveError
+from tests.conftest import make_test_session
 
 
 @pytest.fixture
 def session():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
-    SQLModel.metadata.create_all(engine)
-    with Session(engine) as s:
+    with make_test_session() as s:
         yield s
 
 

@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from backend import auth
 from backend.routers import auth_router
-from backend.models import TripMembership
+from backend.models import Trip, TripMembership
 
 
 def _bearer(token: str) -> HTTPAuthorizationCredentials:
@@ -231,7 +231,11 @@ def test_google_auth_allows_email_with_existing_trip_membership(
         auth_router, "verify_google_token",
         lambda credential: {"email": "shared@example.com", "name": "Shared", "picture": ""},
     )
-    session.add(TripMembership(trip_id=1, user_email="shared@example.com", role="viewer"))
+    trip = Trip(name="Existing Trip")
+    session.add(trip)
+    session.commit()
+    session.refresh(trip)
+    session.add(TripMembership(trip_id=trip.id, user_email="shared@example.com", role="viewer"))
     session.commit()
 
     r = client.post("/auth/google", json={"credential": "good"})
