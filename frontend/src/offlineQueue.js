@@ -152,10 +152,17 @@ export class OfflineQueue {
    *    remaining ops stay queued for the next trigger.
    * Idempotent: replaying an already-synced op is a no-op on the server
    * (value-equality — see backend/compare_and_set.py), so flushing twice
-   * (duplicate tabs, flaky reconnects) is harmless. */
+   * (duplicate tabs, flaky reconnects) is harmless.
+   *
+   * A 401 (JWT_EXPIRE_DAYS elapsed while a device sat offline — see
+   * CLAUDE.md's Weather cache / offline sections and backend/auth.py) is
+   * reported back via `authExpired` rather than left to look like an
+   * ordinary network failure: the ops involved aren't wrong, the session
+   * just needs refreshing, so the UI can say "sign in to sync" instead of
+   * silently doing nothing forever. */
   async flush(sender) {
     const ops = (await this.pending()).sort((a, b) => a.ts - b.ts)
-    let synced = 0, conflicted = 0
+    let synced = 0, conflicted = 0, authExpired = false
     for (const op of ops) {
       try {
         await sender(op)
@@ -168,11 +175,12 @@ export class OfflineQueue {
           conflicted++
           continue
         }
+        if (e && e.status === 401) authExpired = true
         break
       }
     }
     if (synced || conflicted) notifyChanged()
-    return { synced, conflicted }
+    return { synced, conflicted, authExpired }
   }
 
   /** Resolve a parked conflict. 'theirs' just discards the op (server value
@@ -223,10 +231,16 @@ export const offlineQueue = new OfflineQueue(idbAdapter())
 /** Drives the "n changes waiting to sync" badge and the conflict banner/list.
  * Flushes on mount and on the `online` event (the two triggers from plan 11;
  * the third — before the data_version poller's refetch — is step 5, not
- * wired here). */
+ * wired here).
+ *
+ * `authExpired` reflects only the *last* flush attempt — it's cleared at the
+ * start of each new one, so a flush that succeeds after a fresh sign-in
+ * (a plain remount: AppShell/this hook unmount on logout and mount again on
+ * the next login) clears it with no separate wiring needed. */
 export function useOfflineQueue(queue = offlineQueue) {
   const [count, setCount] = useState(0)
   const [conflicts, setConflicts] = useState([])
+  const [authExpired, setAuthExpired] = useState(false)
 
   const refresh = useCallback(async () => {
     setCount(await queue.count())
@@ -234,7 +248,8 @@ export function useOfflineQueue(queue = offlineQueue) {
   }, [queue])
 
   const flush = useCallback(async () => {
-    await queue.flush(sendOp)
+    const result = await queue.flush(sendOp)
+    setAuthExpired(result.authExpired)
     await refresh()
   }, [queue, refresh])
 
@@ -257,5 +272,5 @@ export function useOfflineQueue(queue = offlineQueue) {
     await refresh()
   }, [queue, refresh])
 
-  return { count, conflicts, flush, resolve }
+  return { count, conflicts, authExpired, flush, resolve }
 }
