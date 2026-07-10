@@ -91,7 +91,7 @@ function AppShell({ user, onLogout }) {
           Offline — read-only
         </div>
       )}
-      <OfflineQueueBanner />
+      <OfflineQueueBanner onLogout={onLogout} />
 
       <header
         className="px-3 sm:px-6 py-1.5 flex items-center gap-2 sticky top-0 z-20"

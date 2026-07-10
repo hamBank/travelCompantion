@@ -52,6 +52,32 @@ describe('useOfflineQueue', () => {
     expect(result.current.conflicts).toHaveLength(0)
   })
 
+  it('exposes authExpired on a 401 instead of silently stalling', async () => {
+    const err = new Error('Not authenticated')
+    err.status = 401
+    api.updateItem.mockRejectedValue(err)
+    await queue.enqueue({ entity: 'item', entityId: 1, changes: { status: 'done' }, base: { status: 'pending' } })
+
+    const { result } = renderHook(() => useOfflineQueue(queue))
+    await waitFor(() => expect(result.current.authExpired).toBe(true))
+    expect(result.current.count).toBe(1)  // the op stays queued, not dropped
+  })
+
+  it('clears authExpired once a later flush succeeds (e.g. after signing back in)', async () => {
+    const err = new Error('Not authenticated')
+    err.status = 401
+    api.updateItem.mockRejectedValueOnce(err)
+    await queue.enqueue({ entity: 'item', entityId: 1, changes: { status: 'done' }, base: { status: 'pending' } })
+
+    const { result } = renderHook(() => useOfflineQueue(queue))
+    await waitFor(() => expect(result.current.authExpired).toBe(true))
+
+    api.updateItem.mockResolvedValueOnce({ id: 1, status: 'done' })
+    await act(async () => { await result.current.flush() })
+    expect(result.current.authExpired).toBe(false)
+    expect(result.current.count).toBe(0)
+  })
+
   it('flushes again when the browser fires an online event', async () => {
     api.updateItem.mockResolvedValue({ id: 1, status: 'done' })
     const { result } = renderHook(() => useOfflineQueue(queue))

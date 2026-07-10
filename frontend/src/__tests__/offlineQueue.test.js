@@ -68,7 +68,7 @@ describe('OfflineQueue', () => {
       const order = []
       const result = await queue.flush(async (op) => { order.push(op.entityId) })
       expect(order).toEqual([1, 2])
-      expect(result).toEqual({ synced: 2, conflicted: 0 })
+      expect(result).toEqual({ synced: 2, conflicted: 0, authExpired: false })
       expect(await queue.count()).toBe(0)
     })
 
@@ -83,7 +83,7 @@ describe('OfflineQueue', () => {
           throw err
         }
       })
-      expect(result).toEqual({ synced: 1, conflicted: 1 })
+      expect(result).toEqual({ synced: 1, conflicted: 1, authExpired: false })
       expect(await queue.count()).toBe(0)
       const conflicts = await queue.conflicts()
       expect(conflicts).toHaveLength(1)
@@ -95,7 +95,19 @@ describe('OfflineQueue', () => {
       await queue.enqueue({ entity: 'item', entityId: 1, changes: { status: 'done' }, base: { status: 'pending' } })
       await queue.enqueue({ entity: 'item', entityId: 2, changes: { status: 'done' }, base: { status: 'pending' } })
       const result = await queue.flush(async () => { throw new Error('network down') })
-      expect(result).toEqual({ synced: 0, conflicted: 0 })
+      expect(result).toEqual({ synced: 0, conflicted: 0, authExpired: false })
+      expect(await queue.count()).toBe(2)
+    })
+
+    it('reports authExpired on a 401 and stops, leaving ops queued', async () => {
+      await queue.enqueue({ entity: 'item', entityId: 1, changes: { status: 'done' }, base: { status: 'pending' } })
+      await queue.enqueue({ entity: 'item', entityId: 2, changes: { status: 'done' }, base: { status: 'pending' } })
+      const result = await queue.flush(async () => {
+        const err = new Error('Not authenticated')
+        err.status = 401
+        throw err
+      })
+      expect(result).toEqual({ synced: 0, conflicted: 0, authExpired: true })
       expect(await queue.count()).toBe(2)
     })
 
