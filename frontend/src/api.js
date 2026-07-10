@@ -73,6 +73,7 @@ export const updatePending  = (id, data) => req(`/pending/${id}`, { method: 'PAT
 export const applyPending   = (id) => req(`/pending/${id}/apply`, { method: 'POST' })
 export const discardPending = (id) => req(`/pending/${id}/discard`, { method: 'POST' })
 export const getImportAddress  = () => req('/me/import-address')
+export const regenerateImportAddress = () => req('/me/import-address/regenerate', { method: 'POST' })
 export const getIngestedEmail  = (id) => req(`/me/emails/${id}`)
 
 export async function downloadIngestedEmail(id) {

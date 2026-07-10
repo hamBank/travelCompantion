@@ -8,6 +8,7 @@ from backend.models import (
     Trip, Stop, ItineraryItem, ItemKind, ItemStatus, TripMembership, TripRole,
     PushSubscription, NotificationLog,
 )
+from backend import notifications as notifications_mod
 from backend.notifications import send_due_notifications, send_booking_reminders
 from backend.push import PushSendError
 
@@ -158,6 +159,43 @@ def test_rail_departure_not_yet_due(session):
     calls = []
     n = send_due_notifications(session, now=now, sender=_fake_sender(calls))
     assert n == 0
+
+
+def test_departure_lead_hours_defaults_to_3_with_no_env_var(monkeypatch):
+    monkeypatch.delenv("DEPARTURE_LEAD_HOURS", raising=False)
+    import importlib
+    reloaded = importlib.reload(notifications_mod)
+    try:
+        assert reloaded.DEPARTURE_LEAD_HOURS == 3.0
+    finally:
+        importlib.reload(notifications_mod)  # restore for later tests in this process
+
+
+def test_departure_lead_hours_reads_env_var_at_import(monkeypatch):
+    monkeypatch.setenv("DEPARTURE_LEAD_HOURS", "5")
+    import importlib
+    reloaded = importlib.reload(notifications_mod)
+    try:
+        assert reloaded.DEPARTURE_LEAD_HOURS == 5.0
+    finally:
+        monkeypatch.delenv("DEPARTURE_LEAD_HOURS", raising=False)
+        importlib.reload(notifications_mod)  # restore the default for later tests
+
+
+def test_configured_departure_lead_hours_changes_trigger_timing(session, monkeypatch):
+    """A wider configured lead time makes a departure due earlier than the
+    3h default would allow — exercised via send_due_notifications (imported
+    once at module load) rather than the reloaded module, since that's what
+    scripts/send_notifications.py actually calls."""
+    monkeypatch.setattr(notifications_mod, "DEPARTURE_LEAD_HOURS", 5.0)
+    trip, stop = _seed_trip(session)
+    now = datetime(2026, 8, 1, 12, 0)
+    _rail(session, stop, (now + timedelta(hours=4)).isoformat(timespec="minutes"))
+
+    calls = []
+    n = send_due_notifications(session, now=now, sender=_fake_sender(calls))
+    assert n == 1
+    assert "Departure" in calls[0][1]["title"]
 
 
 def test_stale_trigger_is_skipped(session):

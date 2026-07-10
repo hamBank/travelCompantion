@@ -18,8 +18,13 @@ from .push import send_push, PushSendError
 from .tzutil import approx_utc_offset_hours
 
 # How far before departure to alert for non-flight transport (rail/transfer).
-# TODO: make configurable (per-item or per-user) — fixed default for now.
-DEPARTURE_LEAD_HOURS = 3
+# Per-item or per-user configurability would need a new settings surface this
+# app doesn't have server-side today (every other user preference — home
+# currency, font scale, hide-completed — lives in browser localStorage, which
+# this cron job can't reach at all). An env var matches the tuning knobs
+# already used for the flight/rail live-alert windows just below, without
+# introducing that new surface for a single number.
+DEPARTURE_LEAD_HOURS = float(os.getenv("DEPARTURE_LEAD_HOURS", "3"))
 
 # How long before check-in actually opens to send a "get ready" heads-up. Some
 # airlines assign seats in check-in order, so arriving even a few minutes late
