@@ -106,20 +106,24 @@ Add to `/opt/travelcomp/.env`:
 DATABASE_URL=postgresql+psycopg://travelcomp:<pw>@localhost/travelcomp
 ```
 
-`deploy.sh` additions (Phase 2 work, not yet applied):
-- install `postgresql` package (first deploy only)
-- run `alembic upgrade head` **before** restarting the service
-- replace the implicit SQLite-file backup with `pg_dump` in the backup step
-- add a CI job running the full pytest suite against a real Postgres (catches
-  JSON/enum/datetime dialect issues the sqlite suite can't)
+`deploy.sh` now does all of this (see "Live-server bootstrap mechanism" above
+for the actual sentinel-driven mechanics — this list is the original plan,
+kept for reference against what shipped):
+- installs the `postgresql` package if missing (first deploy only) ✅
+- runs `alembic upgrade head` **before** restarting the service ✅
+- replaced the implicit SQLite-file backup with `pg_dump` in the backup step ✅
+- add a CI job running the full pytest suite against a real Postgres — **not
+  done**; `.github/workflows/ci.yml`'s `backend` job still only runs against
+  SQLite (no `DATABASE_URL` set). Tracked as
+  [#68](https://github.com/hamBank/travelCompantion/issues/68).
 
 ## Phase 3 — One-time data copy
 
-`scripts/migrate_to_postgres.py` (to be written): open both engines, copy tables
-in FK order (Trip → Stop → ItineraryItem → TripMembership → PendingChange →
-IngestedEmail → ProcessedDocument → UserImportToken → ItemHistory) via SQLModel,
-then reset Postgres sequences to `max(id)+1`. Dataset is small and single-user,
-so a straight ORM copy is enough — no pgloader.
+`scripts/migrate_to_postgres.py` (written, see the script): opens both engines,
+copies tables in FK order (Trip → Stop → ItineraryItem → TripMembership →
+PendingChange → IngestedEmail → ProcessedDocument → UserImportToken →
+ItemHistory) via SQLModel, then resets Postgres sequences to `max(id)+1`.
+Dataset is small and single-user, so a straight ORM copy is enough — no pgloader.
 
 ```bash
 # fresh schema on Postgres first
