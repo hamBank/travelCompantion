@@ -249,24 +249,22 @@ The endpoint:
 
 Frontend flow:
 - **Settings → "Forward bookings by email"** (`ImportAddress` component in
-  `UserSettings`) shows the stable forwarding address with a Copy button.
+  `UserSettings`) shows the stable forwarding address with a Copy button, and
+  a "Regenerate address" button (confirm-gated — the old address stops
+  working immediately) that calls `POST /me/import-address/regenerate`.
 - `App.jsx` polls `GET /pending` every 60 seconds; when `pendingCount > 0` a
   `📥 Imports (N)` footer badge appears.
 - Clicking the badge opens `PendingReview` modal: trip/stop/kind selectors,
-  parsed fields, confidence score, and Apply / Discard buttons.
+  parsed fields, confidence score, and Apply / Discard buttons. For an
+  email-sourced change it also has a "View source email" toggle (subject,
+  from, extracted body text) and a "Download raw .eml" link, backed by
+  `GET /me/emails/{id}` and `GET /me/emails/{id}/raw`.
 - `TripTimeline` also shows a per-trip "Review pending" button.
 
 Env vars: `MAIL_INGEST_SECRET`, `MAIL_DOMAIN` (default `tripplan.hups.club`),
 `MAIL_STORE_DIR` (default `/opt/travelcomp/mail_store`), `ANTHROPIC_API_KEY`.
 
 See `docs/email-ingestion.md` for the full Postfix/DNS setup runbook.
-
-**Known gaps (not yet implemented):**
-- No `DELETE /me/import-token` endpoint or in-app "Regenerate address" button —
-  token rotation requires a manual DB delete.
-- `PendingReview` does not display the `source` field or link back to the
-  originating email — the data is captured in `PendingChange.source_email_id`
-  but the UI does not surface it yet.
 
 ## Build & deploy workflow
 

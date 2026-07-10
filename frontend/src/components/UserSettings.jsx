@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { HOME_CURRENCY_KEY } from '../currency.js'
 import { useState as useReactState, useEffect } from 'react'
 import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound, getHideStopFrames, setHideStopFrames, getFontScale, setFontScale, FONT_SCALE_OPTIONS } from '../settings.js'
-import { getImportAddress } from '../api.js'
+import { getImportAddress, regenerateImportAddress } from '../api.js'
 import { isPushSupported, getPushEnabled, enablePush, disablePush, showLocalTestNotification } from '../push.js'
 
 function NotificationsSection() {
@@ -61,10 +61,25 @@ function NotificationsSection() {
 function ImportAddress() {
   const [addr, setAddr] = useReactState(null)
   const [copied, setCopied] = useReactState(false)
+  const [regenerating, setRegenerating] = useReactState(false)
+  const [confirming, setConfirming] = useReactState(false)
+  const [error, setError] = useReactState(null)
   useEffect(() => { getImportAddress().then(r => setAddr(r.address)).catch(() => {}) }, [])
   if (!addr) return null
   function copy() {
     navigator.clipboard?.writeText(addr).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
+  }
+  async function regenerate() {
+    setRegenerating(true); setError(null)
+    try {
+      const r = await regenerateImportAddress()
+      setAddr(r.address)
+      setConfirming(false)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setRegenerating(false)
+    }
   }
   return (
     <div>
@@ -78,6 +93,38 @@ function ImportAddress() {
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
+      {confirming ? (
+        <div className="flex items-center gap-2 mt-2">
+          <span style={{ color: 'var(--text-muted)' }} className="text-xs flex-1">
+            The old address stops working immediately. Continue?
+          </span>
+          <button
+            onClick={() => setConfirming(false)}
+            disabled={regenerating}
+            style={{ color: 'var(--text-faint)' }}
+            className="text-xs hover:opacity-70 transition-opacity"
+          >
+            Never mind
+          </button>
+          <button
+            onClick={regenerate}
+            disabled={regenerating}
+            style={{ color: 'var(--error)', border: '1px solid color-mix(in srgb, var(--error) 35%, transparent)' }}
+            className="text-xs px-2 py-1.5 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-50 shrink-0"
+          >
+            {regenerating ? 'Regenerating…' : 'Confirm'}
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          style={{ color: 'var(--text-faint)' }}
+          className="text-xs hover:opacity-70 transition-opacity mt-1.5 underline"
+        >
+          Regenerate address
+        </button>
+      )}
+      {error && <p style={{ color: 'var(--error)' }} className="text-xs mt-1">{error}</p>}
     </div>
   )
 }

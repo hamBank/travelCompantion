@@ -96,3 +96,41 @@ def test_import_address_is_generated_and_stable(client):
     addr = r.json()["address"]
     assert addr.startswith("import+") and addr.endswith("@tripplan.hups.club")
     assert r.json()["address"] == client.get("/me/import-address").json()["address"]
+
+
+def test_regenerate_import_address_changes_the_token(client, session):
+    original = client.get("/me/import-address").json()["address"]
+
+    r = client.post("/me/import-address/regenerate")
+    assert r.status_code == 200
+    rotated = r.json()["address"]
+    assert rotated.startswith("import+") and rotated.endswith("@tripplan.hups.club")
+    assert rotated != original
+
+    # Persisted — a subsequent GET sees the same rotated address, not the original.
+    assert client.get("/me/import-address").json()["address"] == rotated
+
+    # Exactly one row for the user (rotation updates in place, doesn't leave a stale row).
+    rows = session.exec(select(UserImportToken).where(UserImportToken.user_email == "dev@local")).all()
+    assert len(rows) == 1
+
+
+def test_regenerate_import_address_invalidates_the_old_token(client, session, ingest_env):
+    original = client.get("/me/import-address").json()["address"]
+    original_token = original.split("+", 1)[1].split("@", 1)[0]
+
+    client.post("/me/import-address/regenerate")
+
+    # A forward to the now-rotated-away token no longer resolves to the user.
+    r = _post(client, to=f"import+{original_token}@tripplan.hups.club")
+    assert r.status_code == 202
+    assert r.json()["resolved"] is False
+
+
+def test_regenerate_import_address_works_with_no_prior_token(client):
+    """A user who never opened Settings (so /me/import-address was never
+    called) has no UserImportToken row yet — regenerate should still work,
+    not 404/500 on a missing row."""
+    r = client.post("/me/import-address/regenerate")
+    assert r.status_code == 200
+    assert r.json()["address"].startswith("import+")

@@ -28,6 +28,22 @@ def import_address(session: Session = Depends(get_session), user: dict = Depends
     return {"address": f"import+{tok.token}@{_MAIL_DOMAIN}", "domain": _MAIL_DOMAIN}
 
 
+@router.post("/me/import-address/regenerate")
+def regenerate_import_address(session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Rotate the user's forwarding address token — invalidates the old address
+    immediately (anyone still forwarding to it gets an "unknown recipient
+    token" error, same as docs/email-ingestion.md's manual-delete rotation
+    path) and returns the new one."""
+    email = user["email"].lower()
+    tok = session.exec(select(UserImportToken).where(UserImportToken.user_email == email)).first()
+    if tok:
+        tok.token = secrets.token_urlsafe(9)
+    else:
+        tok = UserImportToken(user_email=email, token=secrets.token_urlsafe(9))
+    session.add(tok); session.commit(); session.refresh(tok)
+    return {"address": f"import+{tok.token}@{_MAIL_DOMAIN}", "domain": _MAIL_DOMAIN}
+
+
 @router.get("/me/emails/{email_id}", response_model=IngestedEmailRead)
 def get_ingested_email(
     email_id: int,

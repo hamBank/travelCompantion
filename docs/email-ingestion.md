@@ -231,8 +231,9 @@ PY
 **Security & housekeeping**
 - The endpoint is localhost-only — Apache never proxies `/ingest/`. Keep it that way.
 - The `+token` is a low-value bearer string: it can only create *pending* items
-  for that user, which still require manual review. Rotate by deleting the
-  user's `UserImportToken` row (a new one is generated on next Settings view).
+  for that user, which still require manual review. Rotate it in-app (Settings
+  → "Regenerate address") or, without app access, by deleting the user's
+  `UserImportToken` row (a new one is generated on next Settings view).
 - `mail_store/` grows one directory per email and is git-ignored. Prune old
   entries periodically (e.g. a cron `find /opt/travelcomp/mail_store -mtime +90
   -type d -empty -delete` after a retention policy is agreed).
