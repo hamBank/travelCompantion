@@ -112,10 +112,15 @@ kept for reference against what shipped):
 - installs the `postgresql` package if missing (first deploy only) ✅
 - runs `alembic upgrade head` **before** restarting the service ✅
 - replaced the implicit SQLite-file backup with `pg_dump` in the backup step ✅
-- add a CI job running the full pytest suite against a real Postgres — **not
-  done**; `.github/workflows/ci.yml`'s `backend` job still only runs against
-  SQLite (no `DATABASE_URL` set). Tracked as
-  [#68](https://github.com/hamBank/travelCompantion/issues/68).
+- a CI job running the full pytest suite against a real Postgres ✅ —
+  `.github/workflows/ci.yml`'s `backend-postgres` job (closes
+  [#68](https://github.com/hamBank/travelCompantion/issues/68)). It caught a
+  real bug on the first run: `delete_trip`/`delete_stop` left
+  `TripMembership`/`Bag`/`PackingItem`/`ItemAttachment` rows behind (they
+  have a real FK but no ORM `Relationship()`, so nothing ordered their
+  deletes against the parent row) — silently fine on SQLite, which doesn't
+  enforce FKs by default, but a `ForeignKeyViolation` 500 on Postgres. Fixed
+  in `backend/routers/trips.py` and `stops.py`.
 
 ## Phase 3 — One-time data copy
 

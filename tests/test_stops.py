@@ -1,8 +1,10 @@
+import io
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from backend.models import ItineraryItem
+from backend.models import ItineraryItem, ItemAttachment
 
 
 @pytest.fixture
@@ -474,6 +476,27 @@ def test_delete_stop_cascades_items(client: TestClient, trip, session: Session):
         select(ItineraryItem).where(ItineraryItem.stop_id == stop["id"])
     ).all()
     assert remaining == []
+
+
+def test_delete_stop_cascades_item_attachments(client: TestClient, trip, session: Session):
+    """Regression test: ItemAttachment has a real FK to the item but no ORM
+    Relationship() linking it back, so nothing tells SQLAlchemy's
+    unit-of-work to delete attachments before the item — this silently
+    "worked" on SQLite (no FK enforcement by default) but 500s with a
+    ForeignKeyViolation on Postgres."""
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Naples", "status": "planned"
+    }).json()
+    item = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "activity", "name": "Pompeii", "status": "pending"
+    }).json()
+    client.post(f"/items/{item['id']}/attachments",
+                files={"file": ("ticket.pdf", io.BytesIO(b"%PDF-1.4 fake"), "application/pdf")})
+
+    r = client.delete(f"/stops/{stop['id']}")
+    assert r.status_code == 204
+
+    assert session.exec(select(ItemAttachment).where(ItemAttachment.item_id == item["id"])).all() == []
 
 
 def test_reorder_stop(client: TestClient, trip):

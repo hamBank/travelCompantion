@@ -24,6 +24,48 @@ jobs:
       - name: Run backend tests
         run: python -m pytest tests/ -q
 
+  # Prod runs Postgres, but the job above always runs against SQLite (see
+  # tests/conftest.py). SQLite doesn't enforce foreign keys by default and
+  # differs from Postgres on JSON/enum/datetime dialect behavior, so a
+  # dialect-specific bug can pass the fast job above and only surface in
+  # production. This is deliberately a second, slower pass rather than a
+  # replacement — see docs/postgres-migration.md and issue #68.
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: travelcomp
+          POSTGRES_PASSWORD: travelcomp
+          POSTGRES_DB: travelcomp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U travelcomp"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql+psycopg://travelcomp:travelcomp@localhost:5432/travelcomp
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Apply migrations to Postgres
+        run: alembic upgrade head
+
+      - name: Run backend tests against Postgres
+        run: python -m pytest tests/ -q
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
