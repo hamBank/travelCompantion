@@ -232,6 +232,18 @@ if [[ -n "$PG_BOOT" ]] && command -v psql &>/dev/null; then
   ok "Postgres role/database ready"
 fi
 
+# ── 4a-ocr. Ensure tesseract-ocr present (root) ─────────────────────────────────
+# Local passport-MRZ OCR (plan-13, backend/passport_ocr.py) shells out to the
+# tesseract binary — a system package, not something pip can install. Same
+# idempotent install-if-missing shape as the Postgres step above. Without
+# this, the feature just 503s cleanly rather than being silently broken, but
+# it should still be a deploy-time step, not a surprise found in production.
+if ! command -v tesseract &>/dev/null; then
+  info "Installing tesseract-ocr"
+  apt-get update -qq && apt-get install -y -qq tesseract-ocr \
+    && ok "tesseract-ocr installed" || warn "tesseract-ocr install failed"
+fi
+
 # ── 4a. Database schema migrations (Postgres) ─────────────────────────────────
 # On Postgres, Alembic owns the schema. Back up first, then upgrade to head
 # BEFORE the service restarts so new code never meets an old schema. On SQLite

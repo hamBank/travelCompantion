@@ -507,6 +507,11 @@ class UserDocument(SQLModel, table=True):
     issued_date: Optional[datetime] = None
     expiry_date: Optional[datetime] = None
     notes: str = ""
+    # Fernet-encrypted JSON: {"holder_name", "nationality", "date_of_birth"
+    # (YYYY-MM-DD), "sex"} — sourced from passport MRZ OCR (plan-13) or
+    # manual entry. Same tier as document_number_encrypted: never queried
+    # directly, never in UserDocumentRead, decrypted only via GET .../holder.
+    holder_data_encrypted: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

@@ -17,6 +17,7 @@ assigned plan.** Each plan is one PR-sized unit of work.
 | [plan-12a-document-vault-crud.md](plan-12a-document-vault-crud.md) | Document vault — backend data model, encryption, CRUD API only | M | plan-12 (subplan; UI/offline cache/expiry cron deferred) |
 | [plan-12b-document-vault-expiry.md](plan-12b-document-vault-expiry.md) | Document vault — expiry reminder push notification cron | S | plan-12a |
 | [plan-12c-document-vault-ui.md](plan-12c-document-vault-ui.md) | Document vault — Settings UI, viewer, offline cache | M | plan-12a |
+| [plan-13-passport-ocr.md](plan-13-passport-ocr.md) | Passport MRZ OCR (local Tesseract, no cloud call) with per-field selectable review | M | plan-12a, plan-12c (reads/writes the Documents section) |
 
 If implementing both plan-2 and plan-10, do plan-2 first — it extracts the
 AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.

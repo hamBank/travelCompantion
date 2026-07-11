@@ -123,7 +123,7 @@ def test_updating_document_number_reencrypts(client):
 
 # ── cross-user isolation (security-critical) ────────────────────────────────
 
-@pytest.mark.parametrize("action", ["get", "delete", "download_file", "delete_file", "list_files"])
+@pytest.mark.parametrize("action", ["get", "delete", "download_file", "delete_file", "list_files", "scan", "holder"])
 def test_cross_user_isolation_404s_not_leaks(client, action):
     _as(OWNER)
     doc_id = _create(client).json()["id"]
@@ -138,6 +138,10 @@ def test_cross_user_isolation_404s_not_leaks(client, action):
         r = client.get(f"/me/documents/{doc_id}/files/{file_id}")
     elif action == "list_files":
         r = client.get(f"/me/documents/{doc_id}/files")
+    elif action == "scan":
+        r = client.post(f"/me/documents/{doc_id}/files/{file_id}/scan")
+    elif action == "holder":
+        r = client.get(f"/me/documents/{doc_id}/holder")
     else:
         r = client.delete(f"/me/documents/{doc_id}/files/{file_id}")
     assert r.status_code == 404
@@ -213,3 +217,130 @@ def test_max_ten_files_per_document(client):
         assert r.status_code == 201
     r = _upload(client, doc_id, name="page11.jpg", content=b"eleventh")
     assert r.status_code == 400
+
+
+# ── holder data (name/nationality/DOB/sex) — encrypted, decrypt-on-demand ──
+
+def test_holder_fields_roundtrip_via_patch_and_holder_route(client):
+    doc_id = _create(client).json()["id"]
+    r = client.patch(f"/me/documents/{doc_id}", json={
+        "holder_name": "ANNA MARIA ERIKSSON", "nationality": "UTO",
+        "date_of_birth": "1974-08-12", "sex": "F",
+    })
+    assert r.status_code == 200
+    assert "holder_name" not in r.json()
+
+    holder = client.get(f"/me/documents/{doc_id}/holder")
+    assert holder.status_code == 200
+    assert holder.json() == {
+        "holder_name": "ANNA MARIA ERIKSSON", "nationality": "UTO",
+        "date_of_birth": "1974-08-12", "sex": "F",
+    }
+
+
+def test_holder_fields_never_in_list_or_detail(client):
+    doc_id = _create(client).json()["id"]
+    client.patch(f"/me/documents/{doc_id}", json={"holder_name": "Someone"})
+
+    detail = client.get(f"/me/documents/{doc_id}").json()
+    assert "holder_name" not in detail
+    assert "holder_data_encrypted" not in detail
+
+    listed = client.get("/me/documents").json()[0]
+    assert "holder_name" not in listed
+    assert "holder_data_encrypted" not in listed
+
+
+def test_holder_route_404_when_none_stored(client):
+    doc_id = _create(client).json()["id"]
+    assert client.get(f"/me/documents/{doc_id}/holder").status_code == 404
+
+
+def test_partial_holder_patch_merges_not_clobbers(client):
+    doc_id = _create(client).json()["id"]
+    client.patch(f"/me/documents/{doc_id}", json={
+        "holder_name": "ANNA MARIA ERIKSSON", "nationality": "UTO",
+        "date_of_birth": "1974-08-12", "sex": "F",
+    })
+    # Only correct one field -- the other three must survive untouched.
+    client.patch(f"/me/documents/{doc_id}", json={"sex": "X"})
+
+    holder = client.get(f"/me/documents/{doc_id}/holder").json()
+    assert holder == {
+        "holder_name": "ANNA MARIA ERIKSSON", "nationality": "UTO",
+        "date_of_birth": "1974-08-12", "sex": "X",
+    }
+
+
+def test_503_on_holder_route_when_key_unset(client, monkeypatch):
+    doc_id = _create(client).json()["id"]
+    client.patch(f"/me/documents/{doc_id}", json={"holder_name": "Someone"})
+    monkeypatch.setattr(document_crypto, "DOCUMENT_ENCRYPTION_KEY", "")
+    assert client.get(f"/me/documents/{doc_id}/holder").status_code == 503
+
+
+# ── passport scan (local OCR) ────────────────────────────────────────────────
+
+def test_scan_requires_image_content_type(client):
+    doc_id = _create(client).json()["id"]
+    file_id = _upload(client, doc_id, name="doc.pdf", content=b"%PDF-1.4", ctype="application/pdf").json()["id"]
+    r = client.post(f"/me/documents/{doc_id}/files/{file_id}/scan")
+    assert r.status_code == 415
+
+
+def test_scan_503_when_vault_key_unset(client, monkeypatch):
+    doc_id = _create(client).json()["id"]
+    file_id = _upload(client, doc_id).json()["id"]
+    monkeypatch.setattr(document_crypto, "DOCUMENT_ENCRYPTION_KEY", "")
+    r = client.post(f"/me/documents/{doc_id}/files/{file_id}/scan")
+    assert r.status_code == 503
+
+
+def test_scan_503_when_tesseract_unavailable(client, monkeypatch):
+    from backend.routers import vault as vault_mod
+    doc_id = _create(client).json()["id"]
+    file_id = _upload(client, doc_id).json()["id"]
+    monkeypatch.setattr(vault_mod.passport_ocr, "tesseract_available", lambda: False)
+    r = client.post(f"/me/documents/{doc_id}/files/{file_id}/scan")
+    assert r.status_code == 503
+
+
+def test_scan_422_when_no_mrz_found(client, monkeypatch):
+    from backend.routers import vault as vault_mod
+    from backend import passport_ocr as passport_ocr_mod
+    doc_id = _create(client).json()["id"]
+    file_id = _upload(client, doc_id).json()["id"]
+    monkeypatch.setattr(vault_mod.passport_ocr, "tesseract_available", lambda: True)
+
+    def _raise(content):
+        raise passport_ocr_mod.PassportOcrError("no mrz")
+    monkeypatch.setattr(vault_mod.passport_ocr, "extract_mrz", _raise)
+
+    r = client.post(f"/me/documents/{doc_id}/files/{file_id}/scan")
+    assert r.status_code == 422
+
+
+def test_scan_returns_extraction_and_does_not_write_to_document(client, monkeypatch):
+    from backend.routers import vault as vault_mod
+    doc_id = _create(client).json()["id"]
+    file_id = _upload(client, doc_id).json()["id"]
+    monkeypatch.setattr(vault_mod.passport_ocr, "tesseract_available", lambda: True)
+
+    fake_result = {
+        "document_number": "L898902C3", "document_number_valid": True,
+        "holder_name": "ANNA MARIA ERIKSSON", "nationality": "UTO",
+        "date_of_birth": "1974-08-12", "date_of_birth_valid": True,
+        "sex": "F", "issuing_country": "UTO",
+        "expiry_date": "2012-04-15", "expiry_date_valid": True,
+        "overall_valid": True,
+    }
+    monkeypatch.setattr(vault_mod.passport_ocr, "extract_mrz", lambda content: fake_result)
+
+    r = client.post(f"/me/documents/{doc_id}/files/{file_id}/scan")
+    assert r.status_code == 200
+    assert r.json() == fake_result
+
+    # No DB write happened -- the document is unchanged, no holder data stored.
+    detail = client.get(f"/me/documents/{doc_id}").json()
+    assert detail["label"] == "US Passport"
+    assert client.get(f"/me/documents/{doc_id}/holder").status_code == 404
