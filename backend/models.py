@@ -486,3 +486,71 @@ class ItemAttachmentRead(SQLModel):
     content_type: str
     size: int
     created_at: datetime
+
+
+# ── UserDocument vault (passport/licence/visa scans, encrypted at rest) ───────
+
+class UserDocument(SQLModel, table=True):
+    """A user's own travel document (passport, driver's licence, visa) —
+    never trip-scoped, owner-only, keyed directly on user_email like
+    UserImportToken (there's no separate Users table to FK against).
+
+    document_number_encrypted is the sensitive payload; doc_type/label/
+    country/expiry_date stay in the clear so they can be queried/rendered
+    without a decrypt round-trip (e.g. by the expiry-reminder cron)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_email: str = Field(index=True)
+    doc_type: str
+    label: str = ""
+    country: str = ""
+    document_number_encrypted: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
+    issued_date: Optional[datetime] = None
+    expiry_date: Optional[datetime] = None
+    notes: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class UserDocumentRead(SQLModel):
+    """API-safe view of a document — omits document_number_encrypted; the
+    plaintext number is only ever served by GET /me/documents/{id}/number."""
+    id: int
+    user_email: str
+    doc_type: str
+    label: str
+    country: str
+    issued_date: Optional[datetime]
+    expiry_date: Optional[datetime]
+    notes: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserDocumentFile(SQLModel, table=True):
+    """One or more encrypted scans per document (passport photo page, a visa
+    stamp page, a licence's front+back) — same one-to-many blob-in-DB shape
+    as ItemAttachment, scoped to UserDocument instead of ItineraryItem.
+
+    document_id is a real FK with no ORM Relationship() — the same shape
+    issue #68's Postgres CI job caught as a live delete-ordering bug
+    elsewhere (SQLAlchemy's unit-of-work doesn't order relationship-less FK
+    deletes correctly). Flush between deleting these rows and deleting the
+    parent UserDocument."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    document_id: int = Field(foreign_key="userdocument.id", index=True)
+    filename: str
+    content_type: str = ""
+    size: int = 0
+    data_encrypted: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class UserDocumentFileRead(SQLModel):
+    """API-safe view of a document file — omits data_encrypted; the decrypted
+    bytes are only ever served by GET /me/documents/{id}/files/{file_id}."""
+    id: int
+    document_id: int
+    filename: str
+    content_type: str
+    size: int
+    created_at: datetime
