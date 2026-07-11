@@ -13,7 +13,10 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, select
 
 from . import flight_live, rail_live
-from .models import ItineraryItem, ItemKind, ItemStatus, Stop, TripMembership, PushSubscription, NotificationLog
+from .models import (
+    ItineraryItem, ItemKind, ItemStatus, Stop, Trip, TripMembership, PushSubscription,
+    NotificationLog, UserDocument,
+)
 from .push import send_push, PushSendError
 from .tzutil import approx_utc_offset_hours
 
@@ -358,6 +361,80 @@ def send_booking_reminders(session: Session, *, now: Optional[datetime] = None, 
         processed += 1
     session.commit()
     return processed
+
+
+# ── Document vault expiry reminders ─────────────────────────────────────────
+# UserDocument.expiry_date is stored unencrypted specifically so this trigger
+# can query it directly, with no decrypt round-trip (see
+# backend/document_crypto.py and docs/plans/plan-12b-document-vault-expiry.md).
+DOCUMENT_EXPIRY_LOOKAHEAD_DAYS = 183  # ~6 months, matches issue #60's original ask
+
+# NotificationLog.item_id normally holds an ItineraryItem id; this trigger
+# reuses it to hold a UserDocument id instead. Safe in practice: nothing
+# joins item_id back to ItineraryItem without also filtering on kind, and
+# kind="document_expiry" never collides with any ItineraryItem-based kind
+# string used elsewhere in this module.
+
+
+def send_document_expiry_reminders(session: Session, *, now: Optional[datetime] = None, sender=send_push) -> int:
+    """Push a reminder when a stored document's expiry_date falls within
+    DOCUMENT_EXPIRY_LOOKAHEAD_DAYS of the end_date of one of its owner's
+    trips. Idempotent via NotificationLog like the other triggers in this
+    module — at most one reminder ever, per document (not per matching
+    trip: if more than one trip falls in the window, the earliest-ending
+    one is used). Returns the number of reminders sent.
+    """
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    lookahead = timedelta(days=DOCUMENT_EXPIRY_LOOKAHEAD_DAYS)
+    logged = {(row.item_id, row.kind) for row in session.exec(select(NotificationLog)).all()}
+
+    documents = session.exec(select(UserDocument).where(UserDocument.expiry_date.is_not(None))).all()
+
+    sent = 0
+    for doc in documents:
+        if (doc.id, "document_expiry") in logged:
+            continue
+
+        trip_ids = [
+            m.trip_id for m in
+            session.exec(select(TripMembership).where(TripMembership.user_email == doc.user_email)).all()
+        ]
+        if not trip_ids:
+            continue
+        trips = session.exec(
+            select(Trip).where(Trip.id.in_(trip_ids), Trip.end_date.is_not(None))
+        ).all()
+
+        # The trip must end before (or on) the document's expiry, and not so
+        # far before that the expiry isn't actually "soon" relative to it —
+        # a document already expired before the trip even starts isn't
+        # "expiring soon", it's already invalid, so it's excluded rather than
+        # treated as an even-more-urgent match.
+        matching = [t for t in trips if doc.expiry_date - lookahead <= t.end_date <= doc.expiry_date]
+        if not matching:
+            continue
+        trip = min(matching, key=lambda t: t.end_date)
+
+        label = doc.label or doc.doc_type
+        payload = {
+            "title": f"{label} expiring soon",
+            "body": f"{label} expires {doc.expiry_date:%b %d, %Y} — before your trip to {trip.name} ends",
+            "url": "/",
+            "urgent": True,
+        }
+        for sub in _recipients(session, trip.id):
+            info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
+            try:
+                sender(info, payload, urgent=True)
+            except PushSendError as e:
+                if e.expired:
+                    session.delete(sub)
+        session.add(NotificationLog(item_id=doc.id, kind="document_expiry"))
+        logged.add((doc.id, "document_expiry"))
+        sent += 1
+
+    session.commit()
+    return sent
 
 
 def _flight_label(details: dict, item: ItineraryItem) -> str:
