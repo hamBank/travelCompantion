@@ -293,3 +293,35 @@ export async function fetchAttachmentBlob(id) {
   })
   return r.ok ? r.blob() : null
 }
+
+// ── Document vault (encrypted passport/licence/visa scans, plan-12) ─────────
+
+export const listDocuments  = ()             => req('/me/documents')
+export const createDocument = (data)         => req('/me/documents', { method: 'POST', body: JSON.stringify(data) })
+export const updateDocument = (id, data)     => req(`/me/documents/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const deleteDocument = (id)           => req(`/me/documents/${id}`, { method: 'DELETE' })
+export const getDocumentNumber = (id)        => req(`/me/documents/${id}/number`)
+export const listDocumentFiles = (docId)     => req(`/me/documents/${docId}/files`)
+export const deleteDocumentFile = (docId, fileId) => req(`/me/documents/${docId}/files/${fileId}`, { method: 'DELETE' })
+
+export async function uploadDocumentFile(docId, file) {
+  const token = getToken()
+  const form = new FormData()
+  form.append('file', file)
+  const r = await fetch(`/me/documents/${docId}/files`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  const body = await r.json()
+  if (!r.ok) throw new Error(Array.isArray(body.detail) ? body.detail.map(e => e.msg).join('; ') : (body.detail ?? r.statusText))
+  return body
+}
+
+export async function fetchDocumentFileBlob(docId, fileId) {
+  const token = getToken()
+  const r = await fetch(`/me/documents/${docId}/files/${fileId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  return r.ok ? r.blob() : null
+}
