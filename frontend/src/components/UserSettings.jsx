@@ -2,8 +2,14 @@ import { useState } from 'react'
 import { HOME_CURRENCY_KEY } from '../currency.js'
 import { useState as useReactState, useEffect } from 'react'
 import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound, getHideStopFrames, setHideStopFrames, getFontScale, setFontScale, FONT_SCALE_OPTIONS } from '../settings.js'
-import { getImportAddress, regenerateImportAddress } from '../api.js'
+import {
+  getImportAddress, regenerateImportAddress,
+  listDocuments, createDocument, updateDocument, deleteDocument,
+  listDocumentFiles, uploadDocumentFile, deleteDocumentFile, fetchDocumentFileBlob,
+} from '../api.js'
 import { isPushSupported, getPushEnabled, enablePush, disablePush, showLocalTestNotification } from '../push.js'
+import { vaultOfflineStore } from '../vaultOfflineStore.js'
+import DocumentViewer from './DocumentViewer.jsx'
 
 function NotificationsSection() {
   const [enabled, setEnabled] = useReactState(getPushEnabled)
@@ -129,6 +135,329 @@ function ImportAddress() {
   )
 }
 
+// ── Document vault (encrypted passport/licence/visa scans, plan-12c) ────────
+
+const DOC_TYPE_ICON = { passport: '🛂', drivers_license: '🪪', visa: '🛃', other: '📄' }
+const DOC_TYPE_LABEL = { passport: 'Passport', drivers_license: "Driver's licence", visa: 'Visa', other: 'Other' }
+const EXPIRY_WARNING_DAYS = 183   // matches the backend expiry-reminder lookahead (plan-12b)
+
+function isExpiringSoon(expiryDate) {
+  if (!expiryDate) return false
+  const days = (new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24)
+  return days <= EXPIRY_WARNING_DAYS
+}
+
+function emptyDocForm() {
+  return { doc_type: 'passport', label: '', country: '', issued_date: '', expiry_date: '', notes: '' }
+}
+
+function DocumentForm({ initial, onSave, onCancel, saving }) {
+  const [form, setForm] = useReactState(initial)
+  function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
+  return (
+    <div className="space-y-2 mt-2 p-3 rounded-lg" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+      <select
+        value={form.doc_type}
+        onChange={e => set('doc_type', e.target.value)}
+        style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+      >
+        {Object.entries(DOC_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+      <input
+        value={form.label} onChange={e => set('label', e.target.value)} placeholder="Label (e.g. US Passport)"
+        style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+      />
+      <input
+        value={form.country} onChange={e => set('country', e.target.value)} placeholder="Issuing country"
+        style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+      />
+      <div className="flex gap-2">
+        <label className="flex-1 text-xs" style={{ color: 'var(--text-faint)' }}>
+          Issued
+          <input
+            type="date" value={form.issued_date?.slice(0, 10) || ''} onChange={e => set('issued_date', e.target.value)}
+            style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+            className="w-full rounded-lg px-2 py-1.5 text-sm outline-none mt-1"
+          />
+        </label>
+        <label className="flex-1 text-xs" style={{ color: 'var(--text-faint)' }}>
+          Expires
+          <input
+            type="date" value={form.expiry_date?.slice(0, 10) || ''} onChange={e => set('expiry_date', e.target.value)}
+            style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+            className="w-full rounded-lg px-2 py-1.5 text-sm outline-none mt-1"
+          />
+        </label>
+      </div>
+      <textarea
+        value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Notes"
+        style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+        rows={2}
+      />
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onCancel} disabled={saving} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70">
+          Never mind
+        </button>
+        <button
+          onClick={() => onSave(form)}
+          disabled={saving || !form.doc_type}
+          style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save document'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DocumentRow({ doc, onChanged }) {
+  const [editing, setEditing] = useReactState(false)
+  const [saving, setSaving] = useReactState(false)
+  const [confirmingDelete, setConfirmingDelete] = useReactState(false)
+  const [files, setFiles] = useReactState([])
+  const [filesLoaded, setFilesLoaded] = useReactState(false)
+  const [uploading, setUploading] = useReactState(false)
+  const [offline, setOffline] = useReactState(false)
+  const [offlineBusy, setOfflineBusy] = useReactState(false)
+  const [viewerFile, setViewerFile] = useReactState(null)
+  const [error, setError] = useReactState(null)
+
+  useEffect(() => {
+    listDocumentFiles(doc.id).then(async fs => {
+      setFiles(fs)
+      setFilesLoaded(true)
+      if (fs.length) {
+        const cached = await Promise.all(fs.map(f => vaultOfflineStore.has(f.id)))
+        setOffline(cached.every(Boolean))
+      }
+    }).catch(e => { setError(e.message); setFilesLoaded(true) })
+  }, [doc.id])
+
+  async function save(form) {
+    setSaving(true); setError(null)
+    try {
+      await updateDocument(doc.id, form)
+      setEditing(false)
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    setSaving(true); setError(null)
+    try {
+      await deleteDocument(doc.id)
+      await Promise.all(files.map(f => vaultOfflineStore.delete(f.id)))
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+      setSaving(false)
+    }
+  }
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploading(true); setError(null)
+    try {
+      const uploaded = await uploadDocumentFile(doc.id, file)
+      setFiles(prev => [...prev, uploaded])
+    } catch (e2) {
+      setError(e2.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleDeleteFile(fileId) {
+    setError(null)
+    try {
+      await deleteDocumentFile(doc.id, fileId)
+      await vaultOfflineStore.delete(fileId)
+      setFiles(prev => prev.filter(f => f.id !== fileId))
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  async function toggleOffline() {
+    if (!files.length) return
+    setOfflineBusy(true); setError(null)
+    try {
+      if (offline) {
+        await Promise.all(files.map(f => vaultOfflineStore.delete(f.id)))
+        setOffline(false)
+      } else {
+        await Promise.all(files.map(async f => {
+          const blob = await fetchDocumentFileBlob(doc.id, f.id)
+          if (blob) await vaultOfflineStore.put(f.id, blob, f.content_type)
+        }))
+        setOffline(true)
+      }
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setOfflineBusy(false)
+    }
+  }
+
+  const expiringSoon = isExpiringSoon(doc.expiry_date)
+
+  return (
+    <div className="py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="flex items-center gap-2">
+        <span className="shrink-0">{DOC_TYPE_ICON[doc.doc_type] || '📄'}</span>
+        <button onClick={() => setEditing(v => !v)} className="flex-1 min-w-0 text-left">
+          <div style={{ color: 'var(--text)' }} className="text-sm truncate">{doc.label || DOC_TYPE_LABEL[doc.doc_type]}</div>
+          <div className="text-xs flex gap-2">
+            {doc.country && <span style={{ color: 'var(--text-faint)' }}>{doc.country}</span>}
+            {doc.expiry_date && (
+              <span style={{ color: expiringSoon ? 'var(--warning)' : 'var(--text-faint)' }}>
+                Expires {doc.expiry_date.slice(0, 10)}
+              </span>
+            )}
+          </div>
+        </button>
+        {confirmingDelete ? (
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setConfirmingDelete(false)} disabled={saving} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70">
+              Never mind
+            </button>
+            <button onClick={handleDelete} disabled={saving} style={{ color: 'var(--error)' }} className="text-xs hover:opacity-70">
+              Confirm
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmingDelete(true)} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70 shrink-0">
+            ✕
+          </button>
+        )}
+      </div>
+
+      {editing && (
+        <>
+          <DocumentForm
+            initial={{
+              doc_type: doc.doc_type, label: doc.label, country: doc.country,
+              issued_date: doc.issued_date || '', expiry_date: doc.expiry_date || '', notes: doc.notes,
+            }}
+            onSave={save}
+            onCancel={() => setEditing(false)}
+            saving={saving}
+          />
+
+          <div className="mt-2 pl-1">
+            {filesLoaded && files.map(f => (
+              <div key={f.id} className="flex items-center gap-2 py-1">
+                <button
+                  onClick={() => setViewerFile(f.id)}
+                  style={{ color: 'var(--accent)' }}
+                  className="hover:underline text-left text-sm flex-1 min-w-0 truncate"
+                >
+                  📎 {f.filename}
+                </button>
+                <button
+                  onClick={() => handleDeleteFile(f.id)}
+                  style={{ color: 'var(--text-faint)' }}
+                  className="text-xs hover:opacity-70 shrink-0"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <input
+              id={`vault-file-${doc.id}`}
+              type="file" onChange={handleFileChange} style={{ display: 'none' }}
+            />
+            <label
+              htmlFor={`vault-file-${doc.id}`}
+              style={{ color: 'var(--accent)' }}
+              className="text-sm hover:underline cursor-pointer inline-block mt-1"
+            >
+              {uploading ? 'Uploading…' : '+ Add file'}
+            </label>
+
+            {files.length > 0 && (
+              <div className="mt-2">
+                <Toggle
+                  label={offlineBusy ? 'Working…' : (offline ? 'Available offline' : 'Not available offline')}
+                  on={offline}
+                  onToggle={toggleOffline}
+                />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {error && <p style={{ color: 'var(--error)' }} className="text-xs mt-1">{error}</p>}
+
+      {viewerFile && (
+        <DocumentViewer doc={doc} files={files} initialFileId={viewerFile} onClose={() => setViewerFile(null)} />
+      )}
+    </div>
+  )
+}
+
+function DocumentsSection() {
+  const [documents, setDocuments] = useReactState([])
+  const [loaded, setLoaded] = useReactState(false)
+  const [adding, setAdding] = useReactState(false)
+  const [saving, setSaving] = useReactState(false)
+  const [error, setError] = useReactState(null)
+
+  function refresh() {
+    return listDocuments().then(setDocuments).catch(e => setError(e.message)).finally(() => setLoaded(true))
+  }
+
+  useEffect(() => { refresh() }, [])
+
+  async function addDocument(form) {
+    setSaving(true); setError(null)
+    try {
+      await createDocument(form)
+      setAdding(false)
+      await refresh()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!loaded) return null
+
+  return (
+    <div>
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-1">Documents</p>
+      <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2">
+        Passport, licence, and visa scans — encrypted on the server. Toggle "Available offline" per document to view it without a network connection.
+      </p>
+
+      {documents.map(doc => <DocumentRow key={doc.id} doc={doc} onChanged={refresh} />)}
+
+      {adding ? (
+        <DocumentForm initial={emptyDocForm()} onSave={addDocument} onCancel={() => setAdding(false)} saving={saving} />
+      ) : (
+        <button onClick={() => setAdding(true)} style={{ color: 'var(--accent)' }} className="text-sm hover:underline mt-2">
+          + Add document
+        </button>
+      )}
+
+      {error && <p style={{ color: 'var(--error)' }} className="text-xs mt-1">{error}</p>}
+    </div>
+  )
+}
+
 const COMMON_CURRENCIES = [
   'AED', 'ARS', 'AUD', 'BDT', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY',
   'COP', 'CZK', 'DKK', 'EGP', 'EUR', 'GBP', 'GHS', 'HKD', 'HUF',
@@ -232,6 +561,8 @@ export default function UserSettings({ onClose }) {
           <NotificationsSection />
 
           <ImportAddress />
+
+          <DocumentsSection />
 
           <div>
             <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-1">Home currency</p>

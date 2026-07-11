@@ -137,6 +137,17 @@ def delete_document(doc_id: int, session: Session = Depends(get_session), user: 
     session.commit()
 
 
+@router.get("/me/documents/{doc_id}/files", response_model=List[UserDocumentFileRead])
+def list_document_files(doc_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Metadata only (no data_encrypted) — needed by the frontend (plan-12c)
+    to show a document's files after a page reload; upload/download remain
+    the only routes that touch file bytes."""
+    _owned_document(session, user, doc_id)
+    return session.exec(
+        select(UserDocumentFile).where(UserDocumentFile.document_id == doc_id).order_by(UserDocumentFile.created_at)
+    ).all()
+
+
 @router.post("/me/documents/{doc_id}/files", response_model=UserDocumentFileRead, status_code=201)
 async def upload_document_file(
     doc_id: int,

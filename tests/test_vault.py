@@ -123,7 +123,7 @@ def test_updating_document_number_reencrypts(client):
 
 # ── cross-user isolation (security-critical) ────────────────────────────────
 
-@pytest.mark.parametrize("action", ["get", "delete", "download_file", "delete_file"])
+@pytest.mark.parametrize("action", ["get", "delete", "download_file", "delete_file", "list_files"])
 def test_cross_user_isolation_404s_not_leaks(client, action):
     _as(OWNER)
     doc_id = _create(client).json()["id"]
@@ -136,9 +136,23 @@ def test_cross_user_isolation_404s_not_leaks(client, action):
         r = client.delete(f"/me/documents/{doc_id}")
     elif action == "download_file":
         r = client.get(f"/me/documents/{doc_id}/files/{file_id}")
+    elif action == "list_files":
+        r = client.get(f"/me/documents/{doc_id}/files")
     else:
         r = client.delete(f"/me/documents/{doc_id}/files/{file_id}")
     assert r.status_code == 404
+
+
+# ── listing a document's files ──────────────────────────────────────────────
+
+def test_list_document_files_metadata_only(client):
+    doc_id = _create(client).json()["id"]
+    f1 = _upload(client, doc_id, name="front.jpg").json()["id"]
+    f2 = _upload(client, doc_id, name="back.jpg").json()["id"]
+
+    listed = client.get(f"/me/documents/{doc_id}/files").json()
+    assert {f["id"] for f in listed} == {f1, f2}
+    assert all("data_encrypted" not in f for f in listed)
 
 
 def test_cross_user_list_never_shows_others_documents(client):

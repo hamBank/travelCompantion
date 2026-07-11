@@ -9,6 +9,7 @@ beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
   api.getImportAddress.mockResolvedValue({ address: 'import+x@example.com' })
+  api.listDocuments.mockResolvedValue([])
 })
 
 describe('UserSettings', () => {
