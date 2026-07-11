@@ -14,6 +14,7 @@ assigned plan.** Each plan is one PR-sized unit of work.
 | [plan-10-aircraft-position.md](plan-10-aircraft-position.md) | "Where is my plane" position display | S | plan-2 (shares `backend/flight_live.py`) |
 | [plan-11-offline-write-queue.md](plan-11-offline-write-queue.md) | Offline write queue + basic conflict resolution | M–L | read-only offline (shipped, PR #57) |
 | [plan-12-document-vault.md](plan-12-document-vault.md) | Secure offline-accessible document vault (passport/licence expiry) | L | — (supersedes issue #60) |
+| [plan-12a-document-vault-crud.md](plan-12a-document-vault-crud.md) | Document vault — backend data model, encryption, CRUD API only | M | plan-12 (subplan; UI/offline cache/expiry cron deferred) |
 
 If implementing both plan-2 and plan-10, do plan-2 first — it extracts the
 AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
