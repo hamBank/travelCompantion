@@ -1,4 +1,4 @@
-# Plan 13 — Passport MRZ OCR with selectable-field review
+# Plan 13 — Passport MRZ OCR (local, offline) with per-field selectable review
 
 Read `docs/plans/README.md` first (conventions, test gates, build workflow),
 then `docs/plans/plan-12-document-vault.md` and `plan-12a-document-vault-crud.md`
@@ -20,23 +20,41 @@ Every plan-12 document says OCR is out of scope, in near-identical wording:
 > out of scope for all subplans).**
 > (plan-12b, "Out of scope")
 
-That "permanently out of scope" framing was correct *at the time* — v1 needed
-to ship without OCR's added surface area. This plan is a deliberate reversal
-by direct request, not a gap being quietly filled in. It's viable now, and
-wasn't a mistake to defer, for a concrete reason: **v1's "server-side
-encryption only" constraint (plan-12) means decrypted document bytes already
-exist in-process on both upload and download** (`encrypt_bytes`/
-`decrypt_bytes` in `backend/document_crypto.py` run server-side, never in the
-browser). OCR is just a third place those already-decrypted bytes get read —
-it doesn't cross any new trust boundary the vault didn't already establish.
+That "permanently out of scope" framing was correct *at the time* — v1
+needed to ship without OCR's added surface area. This plan is a deliberate
+reversal by direct request, not a gap being quietly filled in — and it goes
+further than a straightforward "OK, add OCR now" would: **the extraction
+runs entirely locally, on the server, via Tesseract — no passport image or
+extracted text is ever sent to Anthropic, or any third party.** That's a
+stronger privacy position than the original draft of this plan (which
+proposed Claude vision), chosen specifically because passport data is
+squarely the kind of thing this app's threat model should minimize exposure
+of, and because the machine-readable zone turns out to be an unusually good
+fit for local, deterministic OCR (see below).
 
 ## Goal
 
-Let a user photograph or scan their passport's data page, have the machine-
-readable zone (MRZ — the two lines of monospace text at the bottom) read via
-Claude's vision capability, and review each extracted field individually
-before any of it is written to their `UserDocument` record — never a blind
-overwrite.
+Let a user photograph or scan their passport's data page, have the
+machine-readable zone (MRZ — the two 44-character monospace lines at the
+bottom of the photo page) read **locally** by Tesseract + a purpose-built
+MRZ parser, and review each extracted field individually before any of it
+is written to their `UserDocument` record — never a blind overwrite.
+
+## Why local OCR is a good fit here, not just a privacy tradeoff
+
+MRZ is designed to be machine-read: a fixed-width monospace font (OCR-B),
+a constrained alphabet (`A-Z0-9<` only, no punctuation/lowercase/diacritics
+to confuse a classifier), and — critically — **every field has a check
+digit, plus one composite check digit over the whole thing** (ICAO Doc
+9303). That means a local parse can be *algorithmically self-validating* in
+a way Claude vision's freeform JSON response never was: a field either
+satisfies its check digit or it doesn't, full stop, no model-confidence
+guessing required. This makes local OCR not just "the private option" but
+arguably the *more correct* one for this specific narrow task.
+
+`PassportEye` (PyPI, MIT license) is the standard library for this: it
+wraps Tesseract + OpenCV to locate the MRZ region in a photo, OCR it, parse
+the two-line TD3 format, and compute all the check digits automatically.
 
 ## Why this isn't a drop-in reuse of `PendingChange`
 
@@ -69,43 +87,44 @@ user already owns and is already looking at.
 
 ## Constraints that shape the design
 
-- **Billed-API scoping (README §7).** The OCR endpoint takes an existing,
-  owned `UserDocumentFile` id — never raw uploaded bytes in the request body
-  — exactly like every other vault route's `_owned_document()` check. A user
-  can't relay arbitrary images through this endpoint to spend someone else's
-  Claude budget; they can only OCR a file they already own and already paid
-  the upload-size-cap cost to store.
-- **Fail closed, reuse the existing key.** `documents.py` already reads
-  `ANTHROPIC_API_KEY` for booking-document parsing
-  (`_ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")`,
-  `backend/routers/documents.py:68`). This plan reuses that **same** env var
-  — it is not a new secret, and there is no case for a separate
-  passport-specific Anthropic key. 503 if unset:
-  `HTTPException(503, "Passport OCR not configured (set ANTHROPIC_API_KEY)")`,
-  matching the `GOOGLE_CLIENT_ID`/`AERODATABOX_KEY`/`DOCUMENT_ENCRYPTION_KEY`
-  precedent.
-- **No new secret, but a real new field-level PII question.** MRZ data
-  includes the holder's full name, nationality, date of birth, and sex —
-  more identifying than anything currently in `UserDocument` besides
-  `document_number`. Treat it with the same "encrypted payload, not
-  queryable metadata" tier as `document_number_encrypted`, not the
-  cleartext `country`/`label`/`expiry_date` tier (see Data model below).
-- **No new external dependency.** This codebase has zero OCR libraries today
-  (confirmed: no tesseract/OCR anywhere) and `documents.py` never sends an
-  image content block to Claude, only PDF/text — but Claude's vision
-  capability reads MRZ text directly from a photo without a dedicated OCR
-  library, the same way it already reads a PDF's ticket-detail text in
-  `documents.py`. No new package in `backend/requirements.txt`.
+- **Billed-API scoping (README §7) — though there's no bill here.** The scan
+  endpoint still takes an existing, owned `UserDocumentFile` id, never raw
+  uploaded bytes in the request body, matching every other vault route's
+  `_owned_document()` check — good hygiene regardless of cost, since it's
+  still real (if free) server CPU per call, and still shouldn't be
+  relayable against files a user doesn't own.
+- **No new secret, no external network call at all.** Unlike
+  `documents.py`'s `ANTHROPIC_API_KEY`-gated booking parser, this feature
+  needs no API key and makes no outbound request. The only "configuration"
+  is whether the `tesseract-ocr` binary is installed on the server — a
+  packaging/deployment concern, not a secret (see the Deployment step
+  below). Fail closed the same way regardless: 503 if the binary isn't
+  found, `HTTPException(503, "Passport OCR not available (tesseract-ocr not
+  installed on this server)")` — same shape as the `GOOGLE_CLIENT_ID`/
+  `AERODATABOX_KEY`/`DOCUMENT_ENCRYPTION_KEY` precedent, just phrased for a
+  missing binary instead of a missing env var.
+- **A real new field-level PII question, independent of the extraction
+  method.** MRZ data includes the holder's full name, nationality, date of
+  birth, and sex — more identifying than anything currently in
+  `UserDocument` besides `document_number`. Treat it with the same
+  "encrypted payload, not queryable metadata" tier as
+  `document_number_encrypted`, not the cleartext
+  `country`/`label`/`expiry_date` tier (see Data model below).
+- **A genuinely new, heavier dependency footprint.** This backend has zero
+  image-processing libraries today. `passporteye` pulls in `opencv-python`
+  (use the `opencv-python-headless` variant — no GUI/Qt bindings needed on
+  a server) and `numpy`. This is a real addition to install size and
+  startup import cost, unlike every other plan-12-family dependency, which
+  reused stuff already present. Worth being upfront about, not hand-waved.
 - **Synchronous, matching this codebase's existing convention.** There is no
-  background-task/queue pattern anywhere in this backend
-  (`documents.py`'s Claude call blocks the request handler). The OCR call
-  does the same — the frontend shows a loading state while it waits, same
-  UX as "Parse document" already does for booking imports.
+  background-task/queue pattern anywhere in this backend — even
+  `documents.py`'s Claude call blocks the request handler. Tesseract on one
+  cropped image is fast (well under a second typically); the OCR call does
+  the same synchronous thing, frontend shows a loading state while it waits.
 - **Injectable extraction function**, mirroring `flight_live.fetch_flight`'s
   `fetch=` parameter in `backend/notifications.py`'s alert functions — so
-  tests never call the real Anthropic API, matching how `test_documents.py`
-  only exercises the pure post-processing helpers today (no test in this
-  codebase currently calls the real `_call_claude`).
+  tests never need the real `tesseract` binary or a real passport image on
+  disk in CI.
 
 ## Data model (`backend/models.py`)
 
@@ -129,44 +148,115 @@ manual edit today.
 Alembic: `alembic revision --autogenerate -m "add user document holder data"`
 → review → `alembic upgrade head` → `python -m pytest tests/test_alembic_drift.py`.
 
-## Backend implementation steps
+## Required deployment step (not a secret, but still a real one-time setup)
 
-### 1. `backend/passport_ocr.py` (new)
+`tesseract-ocr` is a system package, not something `pip install` can supply.
+Mirror the exact precedent `deploy.sh` already has for Postgres (`if !
+command -v psql &>/dev/null; then apt-get install -y -qq postgresql ...;
+fi`, deploy.sh's "Ensure Postgres present" step): add an equivalent
+idempotent block —
 
-```python
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")   # same var as documents.py
-_MODEL = "claude-sonnet-4-6"                               # same model as documents.py
-
-class PassportOcrError(Exception): ...   # message = user-facing detail
-
-def extract_mrz(image_bytes: bytes, content_type: str) -> dict:
-    """Send the decrypted image to Claude, return extracted fields.
-    Raises PassportOcrError on API failure, refusal, or unparseable JSON."""
+```bash
+if ! command -v tesseract &>/dev/null; then
+  info "Installing tesseract-ocr"
+  apt-get update -qq && apt-get install -y -qq tesseract-ocr \
+    && ok "tesseract-ocr installed" || warn "tesseract-ocr install failed"
+fi
 ```
 
-Mirrors `documents.py::_call_claude`'s shape closely (content-block
-construction, `client.messages.stream(...)`, code-fence stripping, JSON
-extraction, `record_claude_usage`/`record_external_call` metrics) but:
-- Sends one `{"type": "image", "source": {"type": "base64",
-  "media_type": content_type, "data": ...}}` block instead of a `document`
-  block — `content_type` must be `image/jpeg` or `image/png` (415 for
-  anything else, checked by the router before calling this).
-- Prompt asks specifically for the passport's MRZ line (TD3 two-line
-  format) plus visible printed fields as a cross-check, requesting strict
-  JSON:
-  `{"document_number": "...", "holder_name": "...", "nationality": "...",
-  "date_of_birth": "YYYY-MM-DD", "sex": "M"|"F"|"X", "issuing_country": "...",
-  "expiry_date": "YYYY-MM-DD", "confidence": "high"|"medium"|"low",
-  "warnings": ["..."]}` — any field the model can't read confidently is
-  `null`, not guessed; `warnings` carries things like "MRZ partially
-  obscured" or "check digit mismatch on document number" so the review UI
-  can surface them per-field.
-- No content-hash cache like `documents.py`'s `ProcessedDocument` — this is
-  a one-shot user-triggered action on a file they're actively reviewing, not
-  an ingestion pipeline that might see accidental duplicate submissions.
-  (If real usage shows people mashing "Scan" repeatedly, revisit — Gotchas.)
+Without this, the feature 503s cleanly (see Constraints) rather than being
+silently broken — but it should still be a deploy-time step, not something
+discovered by a 503 in production the first time a user clicks "Scan
+passport."
 
-### 2. `backend/routers/vault.py` — new route
+`.github/workflows/ci.yml`'s `backend` and `backend-postgres` jobs also need
+`apt-get install -y tesseract-ocr` added as a step before `pip install`, or
+every backend test that imports `backend.passport_ocr` fails at collection
+time on a fresh Ubuntu Actions runner (`tesseract-ocr` is not preinstalled).
+Note this only needs to happen once at the CI-job level — individual tests
+never need to *call* the real binary (see Tests: everything is
+dependency-injected).
+
+## Backend implementation steps
+
+### 1. `backend/requirements.txt`
+
+Add `passporteye>=2.2.0` and `opencv-python-headless>=4.9.0`.
+
+### 2. `backend/passport_ocr.py` (new)
+
+```python
+import shutil
+
+class PassportOcrNotAvailable(Exception):
+    """Raised when the tesseract binary isn't installed — callers (the
+    router) translate this into a 503, matching the fail-closed convention
+    used for every other optional-but-required config in this codebase."""
+
+class PassportOcrError(Exception):
+    """Raised when a photo is readable but no valid MRZ was found in it,
+    or PassportEye/Tesseract itself errors out."""
+
+def tesseract_available() -> bool:
+    return shutil.which("tesseract") is not None
+
+def extract_mrz(image_bytes: bytes) -> dict:
+    """Run PassportEye's read_mrz() against the image and return a dict of
+    extracted fields plus per-field check-digit validity. Raises
+    PassportOcrNotAvailable if tesseract isn't installed, PassportOcrError
+    if no MRZ was detected or parsed."""
+```
+
+Implementation notes:
+- PassportEye's `read_mrz()` takes a file path (or numpy array), not raw
+  bytes — write the decrypted image to a `tempfile.NamedTemporaryFile`
+  first. **This is the one place decrypted passport bytes touch disk**
+  (everywhere else, `decrypt_bytes()`'s output only ever lives in a Python
+  variable). Use the default `NamedTemporaryFile` (already
+  `0600`/owner-only permissions via `mkstemp` on POSIX), and delete it in a
+  `finally` block immediately after the OCR call returns, success or
+  failure — don't let it outlive the request.
+- `read_mrz()` returns `None` if it can't locate an MRZ region at all
+  (blurry photo, wrong crop, not a passport) → raise `PassportOcrError`
+  with a message like `"Could not locate a machine-readable zone in this
+  image."` — the router turns this into a 422, not a 500.
+- On a successful parse, the returned `MRZ` object exposes the raw fields
+  (`number`, `names`, `surname`, `nationality`, `date_of_birth`,
+  `expiration_date`, `sex`, `country` — 3-letter issuing-country code) and
+  **per-field boolean check-digit results** (`valid_number`,
+  `valid_date_of_birth`, `valid_expiration_date`, `valid_composite`, plus
+  an overall `valid_score` 0–100). Build the response dict from these:
+  ```python
+  {
+    "document_number": mrz.number, "document_number_valid": mrz.valid_number,
+    "holder_name": f"{mrz.names} {mrz.surname}".strip(),
+    "nationality": mrz.nationality,
+    "date_of_birth": <iso date>, "date_of_birth_valid": mrz.valid_date_of_birth,
+    "sex": mrz.sex if mrz.sex in ("M", "F") else "",
+    "issuing_country": mrz.country,
+    "expiry_date": <iso date>, "expiry_date_valid": mrz.valid_expiration_date,
+    "overall_valid": mrz.valid_composite, "score": mrz.valid_score,
+  }
+  ```
+  This replaces the earlier Claude-vision design's freeform `"confidence"`/
+  `"warnings"` strings with something strictly better: **deterministic,
+  per-field pass/fail from real check digits**, not a language model's
+  self-report. The review UI (below) pre-unchecks any field whose
+  `..._valid` companion is `false`, and shows a short "check digit didn't
+  match" note instead of a vague warning string.
+- MRZ dates are 2-digit years (`YYMMDD`) with no explicit century — convert
+  to ISO with a heuristic: date of birth must be in the past (if
+  `YY` would place it in the future relative to today, subtract 100 years);
+  expiry is usually within ~10 years of issuance, so treat any 2-digit year
+  that would land more than ~5 years in the past as next-century instead.
+  Document this heuristic inline in code — it's a well-known MRZ gotcha,
+  not a bug when it occasionally needs a manual correction (which the
+  per-field review step exists to catch anyway).
+- No content-hash cache like `documents.py`'s `ProcessedDocument` — OCR is
+  free and near-instant here (no reason to dedupe a local CPU-bound call
+  the way you'd dedupe a billed Claude call).
+
+### 3. `backend/routers/vault.py` — new route
 
 ```python
 @router.post("/me/documents/{doc_id}/files/{file_id}/scan")
@@ -177,22 +267,23 @@ async def scan_passport_file(doc_id, file_id, session=Depends(get_session), user
   every other file route.
 - Load the `UserDocumentFile`, 404 if `file_id` doesn't belong to `doc_id`
   (same double-check pattern `download_document_file` already uses).
-- 415 if `content_type` isn't `image/jpeg` or `image/png` (a PDF or other
-  scan format isn't what MRZ vision extraction is built for here — out of
-  scope, see below).
-- 503 via the same `_require_vault_configured()`-style check, but against
-  `passport_ocr.ANTHROPIC_API_KEY` instead of `DOCUMENT_ENCRYPTION_KEY` —
-  **two independent fail-closed checks on this one route**: the vault key
-  (to decrypt the stored file at all) and the Anthropic key (to OCR it).
-  Check the vault key first (cheaper, no external call attempted).
+- 415 if `content_type` isn't `image/jpeg` or `image/png` — MRZ region
+  detection expects a photo, not a PDF.
+- `_require_vault_configured()` first (need to decrypt the stored file at
+  all), **then** `if not passport_ocr.tesseract_available(): raise
+  HTTPException(503, ...)` — two independent, differently-worded 503s so
+  whoever's debugging a broken deploy knows which one is actually missing.
 - `decrypt_bytes(doc_file.data_encrypted)`, call
-  `passport_ocr.extract_mrz(content, doc_file.content_type)`.
-- Returns the raw extraction dict directly — **no DB write in this route**.
+  `passport_ocr.extract_mrz(content)`. `PassportOcrError` → 422 (readable
+  request, just no usable MRZ found); `PassportOcrNotAvailable` → 503 (this
+  is really the tesseract-missing check above firing late, e.g. a race
+  where the binary was removed mid-process — belt and suspenders).
+- Returns the extraction dict directly — **no DB write in this route**.
   The response is the proposal; nothing is applied until a subsequent
   `PATCH /me/documents/{doc_id}` call, same as how a manual edit already
   works, just pre-filled by this endpoint's response instead of by hand.
 
-### 3. `PATCH /me/documents/{doc_id}` — extend `UserDocumentPatch`
+### 4. `PATCH /me/documents/{doc_id}` — extend `UserDocumentPatch`
 
 Add optional `holder_name`, `nationality`, `date_of_birth`, `sex` fields,
 handled the same sentinel-checked way `document_number` already is
@@ -203,7 +294,7 @@ updates re-encrypt all four together (decrypt existing blob first if
 present, merge, re-encrypt), since they're one encrypted unit, not four
 independent ones.
 
-### 4. `GET /me/documents/{doc_id}/holder`
+### 5. `GET /me/documents/{doc_id}/holder`
 
 Mirrors `GET /me/documents/{doc_id}/number` exactly: decrypt
 `holder_data_encrypted`, return the JSON object, 404 if none stored, 503 if
@@ -231,19 +322,23 @@ live): a "Scan passport" button next to each image file, visible only when
    (`document_number`, `holder_name`, `nationality`, `date_of_birth`, `sex`,
    `issuing_country` → mapped to the existing `country` field,
    `expiry_date`), each row: **current value (if any) struck through →
-   extracted value**, a checkbox (checked by default unless the field's
-   `warnings` flagged it, or the field is `null`), and the extracted value
-   is itself editable inline before accepting — same "edit the proposed
-   value, then commit" affordance `PendingReview.jsx` already gives its
-   name field, applied here per-field instead of to one whole object.
-3. Any field-specific `warnings` string renders under that row in
-   `var(--warning)`, not blocking the checkbox, just informational.
+   extracted value**, a checkbox (checked by default, **unchecked
+   automatically if that field's `..._valid` companion is `false`**), and
+   the extracted value is itself editable inline before accepting — same
+   "edit the proposed value, then commit" affordance `PendingReview.jsx`
+   already gives its name field, applied here per-field instead of to one
+   whole object.
+3. Any field whose check digit failed shows a short note under the row
+   ("Check digit didn't match — verify before applying") in
+   `var(--warning)`, not blocking the checkbox (the user can still
+   check/apply it after visually confirming against the photo), just
+   informational.
 4. A single "Apply selected" button builds one patch object from the
    checked rows only and calls `updateDocument` — unchecked fields are
    simply omitted from the patch, leaving the existing value untouched
    (this is why `UserDocumentPatch`'s partial-update/`exclude_unset`
    semantics matter here — no sentinel dance needed on the frontend side).
-5. On failure (503/415/502 from the scan call, or a save failure), show the
+5. On failure (503/415/422 from the scan call, or a save failure), show the
    error inline the same way every other error in this component already
    does (`var(--error)` text), without discarding the extraction result the
    user might want to retry applying.
@@ -256,17 +351,22 @@ unchanged from plan-12c).
 ## Tests
 
 Backend (`tests/test_passport_ocr.py`, new):
-- `extract_mrz` unit tests via an injected fake Anthropic client/response
+- `extract_mrz` unit tests via an injected fake `passporteye.read_mrz`
   (mirroring how `flight_live`/`rail_live`'s `fetch=` injection is tested in
-  `tests/test_flight_alerts.py`) — never call the real API. Cover: happy
-  path JSON parse, code-fence stripping, refusal (`stop_reason ==
-  "refusal"`), malformed JSON, API error.
+  `tests/test_flight_alerts.py`) — never call the real Tesseract binary or
+  load a real image. Cover: happy-path field mapping, per-field
+  `..._valid` propagation, the 2-digit-year century-inference heuristic
+  (a DOB that would be "in the future" without the correction), `None`
+  return from `read_mrz` → `PassportOcrError`.
+- `tesseract_available()`: monkeypatch `shutil.which` to simulate present/
+  absent.
 - Router tests (`client` fixture), with `vault.py`'s scan route's call to
   `passport_ocr.extract_mrz` monkeypatched to a canned fake:
   - 415 when the target file's `content_type` isn't an image.
-  - 503 when `DOCUMENT_ENCRYPTION_KEY` unset (checked before any Anthropic
-    call — assert the fake extractor was never invoked).
-  - 503 when `ANTHROPIC_API_KEY` unset.
+  - 503 when `DOCUMENT_ENCRYPTION_KEY` unset (checked first — assert the
+    fake extractor was never invoked).
+  - 503 when `tesseract_available()` is patched to `False`.
+  - 422 when the fake extractor raises `PassportOcrError`.
   - Cross-user isolation: scanning another user's file 404s (extend the
     existing parametrized isolation test in `tests/test_vault.py` with a
     `"scan"` case, matching its established pattern rather than
@@ -282,77 +382,110 @@ Backend (`tests/test_passport_ocr.py`, new):
   regression-check the existing `test_vault.py` suite stays green
   unmodified aside from the new isolation case above.
 - Alembic drift guard stays green after the new migration.
+- **No test in this suite should require the real `tesseract` binary** —
+  everything above is dependency-injected specifically so CI's fast
+  `backend` job doesn't need image fixtures or real OCR timing. The
+  `apt-get install tesseract-ocr` CI step (Deployment section above) exists
+  only so `import backend.passport_ocr` (which imports `passporteye`/`cv2`
+  at module load) doesn't fail at collection — not so any test can
+  exercise real recognition.
 
 Frontend (`frontend/src/__tests__/DocumentSettings.test.jsx`, extended):
 - "Scan passport" button appears only for image files.
 - Clicking it calls `api.scanPassportFile` and renders one row per returned
-  field with a pre-checked/unchecked state matching `warnings`.
+  field, pre-unchecked for any field with `..._valid: false`.
 - Unchecking a field and clicking "Apply selected" calls `updateDocument`
   with only the checked fields in the payload.
 - Editing an extracted value inline before applying sends the edited value,
   not the original extraction.
-- A 503/415 from the scan call renders the existing error-text convention,
-  doesn't crash, and leaves the row usable to retry.
+- A 503/415/422 from the scan call renders the existing error-text
+  convention, doesn't crash, and leaves the row usable to retry.
 
 ## Manual verification
 
-1. Set `ANTHROPIC_API_KEY` and `DOCUMENT_ENCRYPTION_KEY`; restart.
-2. Upload a passport photo-page image to a document in Settings.
+1. `sudo apt-get install -y tesseract-ocr` (or confirm `deploy.sh`'s new
+   step did it); `pip install -r backend/requirements.txt`; ensure
+   `DOCUMENT_ENCRYPTION_KEY` is set; restart.
+2. Upload a real (or sample/specimen) passport photo-page image to a
+   document in Settings.
 3. Click "Scan passport" — confirm each MRZ-derivable field appears with a
-   sensible extracted value and a working edit/checkbox per row.
-4. Uncheck `nationality`, edit `document_number` to a deliberately wrong
+   sensible extracted value, correct check/uncheck defaults, and a working
+   edit-then-apply flow per row.
+4. Deliberately photograph the MRZ at an angle / with glare and confirm a
+   clean 422 ("Could not locate a machine-readable zone...") rather than a
+   500 or a silently-wrong extraction — this is the main real-world
+   accuracy risk with phone photos (see Out of scope / Gotchas).
+5. Uncheck `nationality`, edit `document_number` to a deliberately wrong
    value, click "Apply selected" — confirm only the edited document number
    and the still-checked fields changed; `GET /me/documents/{id}` shows the
-   edited number; `nationality` is untouched (still whatever it was before,
-   including "never set").
-5. `GET /me/documents/{id}/holder` — confirm it returns the accepted
+   edited number; `nationality` is untouched.
+6. `GET /me/documents/{id}/holder` — confirm it returns the accepted
    holder fields and that `GET /me/documents/{id}` never includes them.
-6. Unset `ANTHROPIC_API_KEY`, click "Scan passport" again — confirm a clean
-   503, not a 500, and the existing document/file are untouched.
-7. Try scanning a non-image file (e.g. upload a PDF as a document file) —
-   confirm 415, not a Claude call (check no `anthropic` request logged).
+7. Uninstall/rename the `tesseract` binary temporarily, click "Scan
+   passport" again — confirm a clean 503, not a 500, and the existing
+   document/file are untouched.
+8. Try scanning a non-image file (e.g. upload a PDF as a document file) —
+   confirm 415.
+9. Inspect `/tmp` (or wherever `NamedTemporaryFile` lands) during and
+   immediately after a scan to confirm the decrypted image's temp file is
+   gone once the request completes, not left behind.
 
 ## Out of scope
 
-- **Non-image scan formats** (PDF passport scans) — MRZ vision extraction
-  targets photographs; a PDF-of-a-scan path could reuse `documents.py`'s
-  PDF-to-Claude machinery later, but isn't this plan's job.
+- **Non-image scan formats** (PDF passport scans) — MRZ extraction targets
+  photographs; a PDF-of-a-scan path would need rasterizing the PDF to an
+  image first, not this plan's job.
 - **Automatic scan-on-upload.** Scanning is a deliberate button click, never
   triggered by the upload itself — matches every other "opt-in, never
   blanket" precedent in this app's offline/vault features (plan-12c's
   Constraints).
 - **Non-passport MRZ formats** (national ID cards, some driver's licences
-  have their own machine-readable zones) — passport TD3 format only;
-  extending to other `doc_type`s is a follow-up if there's real demand.
-- **Confidence-based auto-accept.** Even a "high confidence" extraction
-  still requires the user to click Apply — there's no threshold at which
-  this plan writes data without a human in the loop.
-- **Content-hash caching of scans** (unlike `documents.py`'s
-  `ProcessedDocument` dedup) — see Gotchas for when to revisit.
-- **A real MRZ checksum validator.** Claude's `warnings` field is a
-  best-effort signal, not a computed check-digit verification — a
-  dedicated MRZ-checksum library could be added later if OCR accuracy in
-  practice turns out to need it.
+  have their own machine-readable zones, typically TD1/TD2) — `PassportEye`
+  defaults to TD3 (passport) parsing; extending to other `doc_type`s is a
+  follow-up if there's real demand.
+- **Confidence-based auto-accept.** Even a fully check-digit-valid
+  extraction still requires the user to click Apply — there's no threshold
+  at which this plan writes data without a human in the loop.
+- **A capture-guide overlay in the upload UI** (e.g. an on-screen box to
+  align the MRZ strip to before taking the photo) — the single biggest
+  lever for real-world accuracy with phone cameras, per the research behind
+  this plan, but a separate, purely-frontend follow-up; this plan ships
+  usable even with a plain file picker, just with lower first-try success
+  on poorly-angled photos.
+- **Content-hash caching of scans** — not needed; OCR here is free and
+  local, unlike the billed-Claude case `documents.py` caches against.
 
 ## Gotchas
 
-- **Two independent 503 checks on one route** (vault key, then Anthropic
-  key) — don't collapse them into one generic "not configured" message; the
-  operator needs to know *which* env var is actually missing.
+- **Two independent 503 checks on one route** (vault key, then tesseract
+  availability) — don't collapse them into one generic "not configured"
+  message; whoever's debugging a broken deploy needs to know which one is
+  actually missing.
 - **`holder_data_encrypted` is one encrypted JSON blob for four fields, not
   four columns** — a partial patch (e.g. only `sex` changed) must
   decrypt-merge-reencrypt the existing blob, not overwrite it with a
   partial object that loses the other three fields. Test this explicitly
   (see Tests).
-- Same relationship-less-FK-adjacent caution as always doesn't apply here
-  (no new FK'd table), but the same "never let an encrypted column leak
-  into a `Read` model" mistake that's easy with `document_number_encrypted`
-  applies equally to `holder_data_encrypted` — go through explicit `Read`
-  models, never a naive `model_dump()`.
-- If real-world usage shows users repeatedly re-scanning the same
-  unchanged photo (e.g. retrying after an unrelated apply failure), revisit
-  the "no caching" decision above — cheap to add later via the same
-  content-hash approach `documents.py` already has a working example of.
+- The same "never let an encrypted column leak into a `Read` model"
+  mistake that's easy with `document_number_encrypted` applies equally to
+  `holder_data_encrypted` — go through explicit `Read` models, never a
+  naive `model_dump()`.
+- **The temp-file step is the one place decrypted passport bytes touch
+  disk in this entire app** — everywhere else, decrypted bytes only ever
+  live in a Python variable in-process. Keep the `NamedTemporaryFile`
+  window as short as possible (write → OCR → delete in `finally`,
+  immediately), and don't be tempted to "optimize" by reusing a fixed
+  path across requests.
+- **2-digit MRZ year century inference** is a known sharp edge — get the
+  heuristic right and unit-test it explicitly (a DOB century boundary case,
+  an expiry century boundary case), since a silently-wrong century is far
+  more confusing to a user than an outright failed extraction.
+- **Real-world phone-photo accuracy is the main open risk**, not the
+  parsing logic — Tesseract is less forgiving of skew/glare/crop than a
+  vision-LLM would have been. The per-field check-digit validity (auto-
+  unchecking failed fields) is this plan's mitigation; a capture-guide
+  overlay (Out of scope) is the natural next lever if that's not enough in
+  practice.
 - This plan touches `frontend/src/` — the frontend build/push workflow
   applies (README §2): commit source, `npm run build`, commit
   `backend/static/` separately (never amended), then push.
