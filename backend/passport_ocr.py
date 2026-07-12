@@ -58,17 +58,41 @@ def tesseract_available() -> bool:
 
 
 def _find_mrz_lines(text: str) -> List[str]:
-    """Return the best-guess MRZ line pair from OCR'd text: the last two
-    lines that look MRZ-shaped (mostly the MRZ alphabet, plausible length).
-    The *last* two, not the first two, since the MRZ sits at the bottom of
-    the photo page and any other printed text is more likely to be picked
-    up first/above it."""
+    """Return the best-guess MRZ line pair from OCR'd text.
+
+    Real-world regression: with no automatic MRZ-region cropping (see the
+    module docstring), tesseract occasionally splits the true line 2 into
+    two separate output lines on a busy/noisy photo -- both fragments still
+    satisfy the plain length/alphabet shape check, so a naive "last two
+    shape-matching lines" pick grabbed two line-2 fragments and treated the
+    digit-heavy first one as line 1, producing a "name" full of digits
+    (reported: a garbled mix of letters and digits where the holder's name
+    should have been).
+
+    ICAO 9303 gives a hard, free structural guard against exactly this:
+    **line 1 (document type/issuing country/name) never contains a digit —
+    only line 2 (document number/dates/checksums) does.** So instead of
+    blindly taking the last two candidates, search backward from the end of
+    the text for the last candidate containing at least one digit (line 2),
+    then continue searching backward from there for the nearest candidate
+    containing *no* digits at all (line 1). If no such pair exists, this
+    correctly returns nothing (the caller 422s) rather than pairing up two
+    fragments of the same real line."""
     candidates = []
     for raw in text.splitlines():
         line = raw.strip().replace(" ", "")
         if _MRZ_LINE_RE.match(line):
             candidates.append(line)
-    return candidates[-2:] if len(candidates) >= 2 else []
+
+    for i in range(len(candidates) - 1, 0, -1):
+        line2 = candidates[i]
+        if not any(c.isdigit() for c in line2):
+            continue
+        for j in range(i - 1, -1, -1):
+            line1 = candidates[j]
+            if not any(c.isdigit() for c in line1):
+                return [line1, line2]
+    return []
 
 
 def _pad44(s: str) -> str:
