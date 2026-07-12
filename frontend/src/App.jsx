@@ -111,16 +111,21 @@ function AppShell({ user, onLogout }) {
       <OfflineQueueBanner onLogout={onLogout} />
 
       <header
-        className="px-3 sm:px-6 py-1.5 flex items-center gap-2 sticky top-0 z-20"
+        className="px-3 sm:px-6 flex items-center gap-2 sticky top-0 z-20"
         style={{
           background: 'var(--bg)',
           borderBottom: '1px solid var(--border)',
           // Standalone-PWA iOS draws the page under the status bar / camera
-          // cutout (viewport-fit=cover + black-translucent in index.html),
-          // which hid the hamburger menu behind the system icons. Inline
-          // style (not index.css) so it actually beats the py-1.5 utility —
-          // see the iOS safe-area note in index.css. 0.375rem = py-1.5.
-          paddingTop: 'calc(0.375rem + env(safe-area-inset-top))',
+          // cutout (viewport-fit=cover + black-translucent in index.html) --
+          // env(safe-area-inset-top) clears that, plus a minimal cushion
+          // (not the old py-1.5's 0.375rem) so the title sits close under
+          // the cutout rather than leaving a big gap (real-world request:
+          // "too much space", title should be *just* under the cutout).
+          // Inline, not index.css: Tailwind utility classes are class
+          // selectors and always beat an index.css element-selector rule —
+          // see the note by the `main` safe-area rule there.
+          paddingTop: 'calc(0.2rem + env(safe-area-inset-top))',
+          paddingBottom: '0.2rem',
         }}
       >
         {selectedTrip ? (
@@ -213,7 +218,7 @@ function AppShell({ user, onLogout }) {
       )}
 
       <KindFilterContext.Provider value={kindFilter}>
-      <main className="w-full px-4 sm:px-8 lg:px-16 py-6">
+      <main className="w-full px-4 sm:px-8 lg:px-16 pt-1.5 pb-6">
         {selectedTrip
           ? packing
             ? <PackingList
