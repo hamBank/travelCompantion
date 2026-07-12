@@ -303,6 +303,8 @@ export const deleteDocument = (id)           => req(`/me/documents/${id}`, { met
 export const getDocumentNumber = (id)        => req(`/me/documents/${id}/number`)
 export const listDocumentFiles = (docId)     => req(`/me/documents/${docId}/files`)
 export const deleteDocumentFile = (docId, fileId) => req(`/me/documents/${docId}/files/${fileId}`, { method: 'DELETE' })
+export const getDocumentHolder = (id)        => req(`/me/documents/${id}/holder`)
+export const scanPassportFile = (docId, fileId) => req(`/me/documents/${docId}/files/${fileId}/scan`, { method: 'POST' })
 
 export async function uploadDocumentFile(docId, file) {
   const token = getToken()

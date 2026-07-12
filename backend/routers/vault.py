@@ -7,6 +7,7 @@ See docs/plans/plan-12a-document-vault-crud.md for the full design rationale.
 Deliberately NOT named documents.py — that name is already taken by the
 unrelated router that parses uploaded booking PDFs into PendingChange rows.
 """
+import json
 from datetime import datetime
 from typing import List, Optional
 
@@ -15,7 +16,7 @@ from sqlmodel import SQLModel, Session, select
 
 from ..database import get_session
 from ..auth import get_current_user
-from .. import document_crypto
+from .. import document_crypto, passport_ocr
 from ..document_crypto import encrypt_bytes, decrypt_bytes, DocumentVaultNotConfigured
 from ..models import UserDocument, UserDocumentRead, UserDocumentFile, UserDocumentFileRead
 
@@ -40,6 +41,22 @@ def _owned_document(session: Session, user: dict, doc_id: int) -> UserDocument:
     return doc
 
 
+# holder_data_encrypted is one encrypted JSON blob for these four fields, not
+# four columns — a partial patch must decrypt-merge-reencrypt the existing
+# blob rather than overwrite it with a partial object that loses the rest.
+_HOLDER_FIELDS = ("holder_name", "nationality", "date_of_birth", "sex")
+
+
+def _decrypt_holder(doc: UserDocument) -> dict:
+    if not doc.holder_data_encrypted:
+        return {}
+    return json.loads(decrypt_bytes(doc.holder_data_encrypted).decode())
+
+
+def _encrypt_holder(data: dict) -> bytes:
+    return encrypt_bytes(json.dumps(data).encode())
+
+
 class UserDocumentWrite(SQLModel):
     doc_type: str
     label: str = ""
@@ -58,6 +75,10 @@ class UserDocumentPatch(SQLModel):
     issued_date: Optional[datetime] = None
     expiry_date: Optional[datetime] = None
     notes: Optional[str] = None
+    holder_name: Optional[str] = None
+    nationality: Optional[str] = None
+    date_of_birth: Optional[str] = None   # ISO "YYYY-MM-DD", stored inside holder_data_encrypted
+    sex: Optional[str] = None
 
 
 @router.get("/me/documents", response_model=List[UserDocumentRead])
@@ -101,6 +122,18 @@ def get_document_number(doc_id: int, session: Session = Depends(get_session), us
     return {"document_number": decrypt_bytes(doc.document_number_encrypted).decode()}
 
 
+@router.get("/me/documents/{doc_id}/holder")
+def get_document_holder(doc_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Decrypt-on-demand, mirroring GET .../number — the holder's name/
+    nationality/DOB/sex are PII on the same encrypted tier as the document
+    number and must never appear in the list/detail response."""
+    _require_vault_configured()
+    doc = _owned_document(session, user, doc_id)
+    if not doc.holder_data_encrypted:
+        raise HTTPException(status_code=404, detail="No holder data stored")
+    return _decrypt_holder(doc)
+
+
 @router.patch("/me/documents/{doc_id}", response_model=UserDocumentRead)
 def update_document(
     doc_id: int,
@@ -112,12 +145,18 @@ def update_document(
     doc = _owned_document(session, user, doc_id)
     data = body.model_dump(exclude_unset=True)
     document_number = data.pop("document_number", "__unset__")
+    holder_updates = {k: data.pop(k) for k in list(data.keys()) if k in _HOLDER_FIELDS}
 
     for k, v in data.items():
         setattr(doc, k, v)
 
     if document_number != "__unset__":
         doc.document_number_encrypted = encrypt_bytes(document_number.encode()) if document_number else None
+
+    if holder_updates:
+        holder = _decrypt_holder(doc)
+        holder.update(holder_updates)
+        doc.holder_data_encrypted = _encrypt_holder(holder)
 
     doc.updated_at = datetime.utcnow()
     session.add(doc)
@@ -198,6 +237,39 @@ def download_document_file(
         media_type=doc_file.content_type or "application/octet-stream",
         headers={"Content-Disposition": f'inline; filename="{doc_file.filename}"'},
     )
+
+
+@router.post("/me/documents/{doc_id}/files/{file_id}/scan")
+def scan_passport_file(
+    doc_id: int,
+    file_id: int,
+    session: Session = Depends(get_session),
+    user: dict = Depends(get_current_user),
+):
+    """Local MRZ OCR (Tesseract, no network call — see backend/passport_ocr.py)
+    against an already-uploaded, already-owned file. Returns the extracted
+    fields as a proposal only — nothing is written to the document here;
+    the caller reviews/edits/selects fields, then applies accepted ones via
+    the existing PATCH /me/documents/{doc_id} (see docs/plans/plan-13-passport-ocr.md)."""
+    _require_vault_configured()
+    doc = _owned_document(session, user, doc_id)
+    doc_file = session.get(UserDocumentFile, file_id)
+    if not doc_file or doc_file.document_id != doc.id:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if doc_file.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(status_code=415, detail="Passport scan requires a JPEG or PNG image")
+
+    if not passport_ocr.tesseract_available():
+        raise HTTPException(status_code=503, detail="Passport OCR not available (tesseract-ocr not installed on this server)")
+
+    content = decrypt_bytes(doc_file.data_encrypted)
+    try:
+        return passport_ocr.extract_mrz(content)
+    except passport_ocr.PassportOcrNotAvailable:
+        raise HTTPException(status_code=503, detail="Passport OCR not available (tesseract-ocr not installed on this server)")
+    except passport_ocr.PassportOcrError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.delete("/me/documents/{doc_id}/files/{file_id}", status_code=204)

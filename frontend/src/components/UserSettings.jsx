@@ -6,6 +6,7 @@ import {
   getImportAddress, regenerateImportAddress,
   listDocuments, createDocument, updateDocument, deleteDocument,
   listDocumentFiles, uploadDocumentFile, deleteDocumentFile, fetchDocumentFileBlob,
+  scanPassportFile,
 } from '../api.js'
 import { isPushSupported, getPushEnabled, enablePush, disablePush, showLocalTestNotification } from '../push.js'
 import { vaultOfflineStore } from '../vaultOfflineStore.js'
@@ -215,6 +216,90 @@ function DocumentForm({ initial, onSave, onCancel, saving }) {
   )
 }
 
+// Maps a passport OCR extraction result onto UserDocumentPatch field names.
+// validKey (when present) is the extraction's own check-digit validity flag
+// (backend/passport_ocr.py) — used to default that field's review checkbox
+// to unchecked, since a failed check digit means "verify before applying,"
+// not "definitely wrong."
+const SCAN_FIELD_DEFS = [
+  { key: 'document_number', patchKey: 'document_number', label: 'Document number', validKey: 'document_number_valid' },
+  { key: 'holder_name', patchKey: 'holder_name', label: 'Holder name' },
+  { key: 'nationality', patchKey: 'nationality', label: 'Nationality' },
+  { key: 'date_of_birth', patchKey: 'date_of_birth', label: 'Date of birth', validKey: 'date_of_birth_valid' },
+  { key: 'sex', patchKey: 'sex', label: 'Sex' },
+  { key: 'issuing_country', patchKey: 'country', label: 'Issuing country' },
+  { key: 'expiry_date', patchKey: 'expiry_date', label: 'Expiry date', validKey: 'expiry_date_valid' },
+]
+
+function ScanReview({ result, onApply, onDismiss, applying }) {
+  const [checked, setChecked] = useReactState(() => {
+    const init = {}
+    for (const { key, validKey } of SCAN_FIELD_DEFS) {
+      init[key] = !!result[key] && (validKey ? result[validKey] !== false : true)
+    }
+    return init
+  })
+  const [values, setValues] = useReactState(() => {
+    const init = {}
+    for (const { key } of SCAN_FIELD_DEFS) init[key] = result[key] || ''
+    return init
+  })
+
+  function apply() {
+    const patch = {}
+    for (const { key, patchKey } of SCAN_FIELD_DEFS) {
+      if (checked[key]) patch[patchKey] = values[key]
+    }
+    onApply(patch)
+  }
+
+  return (
+    <div className="mt-2 p-3 rounded-lg space-y-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Scanned fields — review before applying</p>
+      {SCAN_FIELD_DEFS.map(({ key, label, validKey }) => {
+        if (!result[key]) return null
+        const invalid = validKey && result[validKey] === false
+        return (
+          <div key={key} className="text-xs">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!checked[key]}
+                onChange={e => setChecked(c => ({ ...c, [key]: e.target.checked }))}
+              />
+              <span style={{ color: 'var(--text-faint)' }} className="shrink-0 w-28">{label}</span>
+              <input
+                value={values[key]}
+                onChange={e => setValues(v => ({ ...v, [key]: e.target.value }))}
+                style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                className="flex-1 min-w-0 rounded px-2 py-1 text-xs outline-none"
+              />
+            </label>
+            {invalid && (
+              <p style={{ color: 'var(--warning)' }} className="ml-6 mt-0.5">
+                Check digit didn't match — verify before applying.
+              </p>
+            )}
+          </div>
+        )
+      })}
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onDismiss} disabled={applying} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70">
+          Discard
+        </button>
+        <button
+          onClick={apply}
+          disabled={applying}
+          style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50"
+        >
+          {applying ? 'Applying…' : 'Apply selected'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function DocumentRow({ doc, onChanged }) {
   const [editing, setEditing] = useReactState(false)
   const [saving, setSaving] = useReactState(false)
@@ -226,6 +311,9 @@ function DocumentRow({ doc, onChanged }) {
   const [offlineBusy, setOfflineBusy] = useReactState(false)
   const [viewerFile, setViewerFile] = useReactState(null)
   const [error, setError] = useReactState(null)
+  const [scanningFileId, setScanningFileId] = useReactState(null)
+  const [scanResult, setScanResult] = useReactState(null)   // { fileId, data }
+  const [applyingScan, setApplyingScan] = useReactState(false)
 
   useEffect(() => {
     listDocumentFiles(doc.id).then(async fs => {
@@ -286,6 +374,31 @@ function DocumentRow({ doc, onChanged }) {
       setFiles(prev => prev.filter(f => f.id !== fileId))
     } catch (e) {
       setError(e.message)
+    }
+  }
+
+  async function handleScan(fileId) {
+    setScanningFileId(fileId); setError(null); setScanResult(null)
+    try {
+      const data = await scanPassportFile(doc.id, fileId)
+      setScanResult({ fileId, data })
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setScanningFileId(null)
+    }
+  }
+
+  async function applyScan(patch) {
+    setApplyingScan(true); setError(null)
+    try {
+      await updateDocument(doc.id, patch)
+      setScanResult(null)
+      onChanged()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setApplyingScan(false)
     }
   }
 
@@ -357,21 +470,41 @@ function DocumentRow({ doc, onChanged }) {
 
           <div className="mt-2 pl-1">
             {filesLoaded && files.map(f => (
-              <div key={f.id} className="flex items-center gap-2 py-1">
-                <button
-                  onClick={() => setViewerFile(f.id)}
-                  style={{ color: 'var(--accent)' }}
-                  className="hover:underline text-left text-sm flex-1 min-w-0 truncate"
-                >
-                  📎 {f.filename}
-                </button>
-                <button
-                  onClick={() => handleDeleteFile(f.id)}
-                  style={{ color: 'var(--text-faint)' }}
-                  className="text-xs hover:opacity-70 shrink-0"
-                >
-                  ✕
-                </button>
+              <div key={f.id}>
+                <div className="flex items-center gap-2 py-1">
+                  <button
+                    onClick={() => setViewerFile(f.id)}
+                    style={{ color: 'var(--accent)' }}
+                    className="hover:underline text-left text-sm flex-1 min-w-0 truncate"
+                  >
+                    📎 {f.filename}
+                  </button>
+                  {f.content_type?.startsWith('image/') && (
+                    <button
+                      onClick={() => handleScan(f.id)}
+                      disabled={scanningFileId === f.id}
+                      style={{ color: 'var(--accent)' }}
+                      className="text-xs hover:underline shrink-0 disabled:opacity-50"
+                    >
+                      {scanningFileId === f.id ? 'Scanning…' : 'Scan passport'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDeleteFile(f.id)}
+                    style={{ color: 'var(--text-faint)' }}
+                    className="text-xs hover:opacity-70 shrink-0"
+                  >
+                    ✕
+                  </button>
+                </div>
+                {scanResult?.fileId === f.id && (
+                  <ScanReview
+                    result={scanResult.data}
+                    onApply={applyScan}
+                    onDismiss={() => setScanResult(null)}
+                    applying={applyingScan}
+                  />
+                )}
               </div>
             ))}
             <input

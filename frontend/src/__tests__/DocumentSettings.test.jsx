@@ -99,3 +99,102 @@ describe('DocumentsSection', () => {
     expect(expiryText.style.color).toBe('var(--text-faint)')
   })
 })
+
+const IMAGE_FILE = { id: 10, document_id: 1, filename: 'passport.jpg', content_type: 'image/jpeg', size: 100, created_at: '2026-01-01T00:00:00' }
+const PDF_FILE = { id: 11, document_id: 1, filename: 'doc.pdf', content_type: 'application/pdf', size: 100, created_at: '2026-01-01T00:00:00' }
+
+const SCAN_RESULT = {
+  document_number: 'L898902C3', document_number_valid: true,
+  holder_name: 'ANNA MARIA ERIKSSON', nationality: 'UTO',
+  date_of_birth: '1974-08-12', date_of_birth_valid: true,
+  sex: 'F', issuing_country: 'UTO',
+  expiry_date: '2012-04-15', expiry_date_valid: false,
+  overall_valid: false,
+}
+
+async function openDocumentWithFiles(files) {
+  api.listDocuments.mockResolvedValue([DOC])
+  api.listDocumentFiles.mockResolvedValue(files)
+  render(<UserSettings onClose={() => {}} />)
+  fireEvent.click(await screen.findByText('US Passport'))
+  await screen.findByText('Save document')
+}
+
+describe('Passport scan', () => {
+  it('shows a "Scan passport" button only for image files', async () => {
+    await openDocumentWithFiles([IMAGE_FILE, PDF_FILE])
+    await screen.findByText(/passport\.jpg/)
+    expect(screen.getByText('Scan passport')).toBeTruthy()
+    expect(screen.getAllByText('Scan passport')).toHaveLength(1)
+  })
+
+  it('clicking Scan passport calls the API and renders one row per field with correct default check state', async () => {
+    api.scanPassportFile.mockResolvedValue(SCAN_RESULT)
+    await openDocumentWithFiles([IMAGE_FILE])
+
+    fireEvent.click(await screen.findByText('Scan passport'))
+    await waitFor(() => expect(api.scanPassportFile).toHaveBeenCalledWith(1, 10))
+
+    expect(await screen.findByDisplayValue('L898902C3')).toBeTruthy()
+    expect(screen.getByDisplayValue('ANNA MARIA ERIKSSON')).toBeTruthy()
+    expect(screen.getByDisplayValue('2012-04-15')).toBeTruthy()
+
+    // expiry_date_valid is false -> pre-unchecked; document_number_valid is
+    // true -> pre-checked.
+    const numberInput = screen.getByDisplayValue('L898902C3')
+    const numberCheckbox = numberInput.closest('label').querySelector('input[type="checkbox"]')
+    expect(numberCheckbox.checked).toBe(true)
+
+    const expiryInput = screen.getByDisplayValue('2012-04-15')
+    const expiryCheckbox = expiryInput.closest('label').querySelector('input[type="checkbox"]')
+    expect(expiryCheckbox.checked).toBe(false)
+    expect(screen.getByText(/Check digit didn't match/)).toBeTruthy()
+  })
+
+  it('applying selected fields only sends checked fields to updateDocument', async () => {
+    api.scanPassportFile.mockResolvedValue(SCAN_RESULT)
+    api.updateDocument.mockResolvedValue({ ...DOC })
+    await openDocumentWithFiles([IMAGE_FILE])
+
+    fireEvent.click(await screen.findByText('Scan passport'))
+    await screen.findByDisplayValue('L898902C3')
+
+    // Uncheck nationality (the first of the two "UTO" rows -- nationality,
+    // then issuing_country), leave expiry_date unchecked (default), apply.
+    const [nationalityInput] = screen.getAllByDisplayValue('UTO')
+    fireEvent.click(nationalityInput.closest('label').querySelector('input[type="checkbox"]'))
+
+    fireEvent.click(screen.getByText('Apply selected'))
+
+    await waitFor(() => expect(api.updateDocument).toHaveBeenCalled())
+    const patch = api.updateDocument.mock.calls[0][1]
+    expect(patch.document_number).toBe('L898902C3')
+    expect(patch).not.toHaveProperty('nationality')
+    expect(patch).not.toHaveProperty('expiry_date')
+  })
+
+  it('editing an extracted value before applying sends the edited value', async () => {
+    api.scanPassportFile.mockResolvedValue(SCAN_RESULT)
+    api.updateDocument.mockResolvedValue({ ...DOC })
+    await openDocumentWithFiles([IMAGE_FILE])
+
+    fireEvent.click(await screen.findByText('Scan passport'))
+    const numberInput = await screen.findByDisplayValue('L898902C3')
+    fireEvent.change(numberInput, { target: { value: 'CORRECTED123' } })
+
+    fireEvent.click(screen.getByText('Apply selected'))
+
+    await waitFor(() => expect(api.updateDocument).toHaveBeenCalled())
+    expect(api.updateDocument.mock.calls[0][1].document_number).toBe('CORRECTED123')
+  })
+
+  it('a failed scan shows the error and leaves the row usable to retry', async () => {
+    api.scanPassportFile.mockRejectedValue(new Error('Passport OCR not available (tesseract-ocr not installed on this server)'))
+    await openDocumentWithFiles([IMAGE_FILE])
+
+    fireEvent.click(await screen.findByText('Scan passport'))
+
+    expect(await screen.findByText(/tesseract-ocr not installed/)).toBeTruthy()
+    expect(screen.getByText('Scan passport')).toBeTruthy()
+  })
+})
