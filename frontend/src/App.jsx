@@ -117,15 +117,16 @@ function AppShell({ user, onLogout }) {
           borderBottom: '1px solid var(--border)',
           // Standalone-PWA iOS draws the page under the status bar / camera
           // cutout (viewport-fit=cover + black-translucent in index.html) --
-          // env(safe-area-inset-top) clears that, plus a minimal cushion
-          // (not the old py-1.5's 0.375rem) so the title sits close under
-          // the cutout rather than leaving a big gap (real-world request:
-          // "too much space", title should be *just* under the cutout).
+          // env(safe-area-inset-top) clears that. Cushion beyond the inset
+          // kept to near-zero (not the old py-1.5's 0.375rem) so the title
+          // sits as close under the cutout as possible rather than leaving
+          // a gap (real-world feedback, twice: "too much space", then
+          // "could still move higher" after the first pass to 0.2rem).
           // Inline, not index.css: Tailwind utility classes are class
           // selectors and always beat an index.css element-selector rule —
           // see the note by the `main` safe-area rule there.
-          paddingTop: 'calc(0.2rem + env(safe-area-inset-top))',
-          paddingBottom: '0.2rem',
+          paddingTop: 'calc(0.05rem + env(safe-area-inset-top))',
+          paddingBottom: '0.15rem',
         }}
       >
         {selectedTrip ? (
