@@ -275,13 +275,14 @@ def test_otsu_threshold_correctly_separates_a_bimodal_image():
     assert (200 > t) is True  # the "light" cluster lands in the foreground
 
 
-def test_preprocess_variants_returns_three_same_size_images():
+def test_preprocess_variants_returns_four_same_size_images():
     from PIL import Image
     img = Image.new("L", (20, 15), color=128)
     variants = passport_ocr._preprocess_variants(img)
-    assert len(variants) == 3
+    assert len(variants) == 4
     assert all(v.size == (20, 15) for v in variants)
-    # First variant is the untouched input; later ones are contrast-treated.
+    # First variant is the untouched input; later ones are contrast-treated,
+    # ending with the local adaptive-mean threshold (uneven-lighting rung).
     assert variants[0] is img
 
 
@@ -352,7 +353,7 @@ def test_bottom_strip_upscales_a_short_crop():
 
 
 def test_extract_mrz_tries_bottom_strip_region_before_full_image(monkeypatch):
-    """The crop region's 3-variant ladder must be exhausted before
+    """The crop region's 4-variant ladder must be exhausted before
     extract_mrz falls back to the full, uncropped photo."""
     monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
     ocr_text = _VALID_LINE1 + "\n" + _VALID_LINE2
@@ -360,12 +361,145 @@ def test_extract_mrz_tries_bottom_strip_region_before_full_image(monkeypatch):
 
     def fake_image_to_string(path, config=None):
         calls.append(path)
-        # The crop region's 3 attempts find nothing; the 4th call (the first
+        # The crop region's 4 attempts find nothing; the 5th call (the first
         # variant of the full-image fallback) succeeds.
-        return "no mrz here" if len(calls) <= 3 else ocr_text
+        return "no mrz here" if len(calls) <= 4 else ocr_text
 
     monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake_image_to_string)
 
     result = passport_ocr.extract_mrz(_fake_image_bytes())
     assert result["document_number"] == "L898902C3"
-    assert len(calls) == 4
+    assert len(calls) == 5
+
+
+# ── adaptive-mean threshold + checksum-guided selection ─────────────────────
+# A shadow band, glare edge, or illumination gradient crossing the MRZ
+# defeats the global Otsu rung completely: one threshold for the whole strip
+# erases the text on the wrong side of the cut. The adaptive-mean rung
+# thresholds each pixel against its own neighborhood instead. And rather than
+# stopping at the first MRZ-shaped read, the ladder now uses the ICAO check
+# digits as a runtime quality signal to pick the best candidate across rungs.
+
+def test_adaptive_mean_binarize_is_binary_and_same_size():
+    from PIL import Image
+    img = Image.new("L", (60, 40), color=128)
+    out = passport_ocr._adaptive_mean_binarize(img)
+    assert out.size == (60, 40)
+    assert set(out.tobytes()) <= {0, 255}
+
+
+def test_adaptive_mean_binarize_keeps_text_visible_across_a_shadow_boundary():
+    """Dark text on a half-bright/half-shadowed background: a global Otsu
+    threshold erases the text on one side (whole side goes uniform), the
+    local threshold keeps text pixels dark and background pixels white on
+    BOTH sides. This is the failure class the rung exists for."""
+    from PIL import Image, ImageDraw
+    img = Image.new("L", (200, 60), color=220)
+    d = ImageDraw.Draw(img)
+    d.rectangle([100, 0, 200, 60], fill=70)          # shadowed right half
+    d.rectangle([20, 25, 80, 35], fill=120)           # text-ish bar, bright side
+    d.rectangle([120, 25, 180, 35], fill=15)          # text-ish bar, shadow side
+
+    out = passport_ocr._adaptive_mean_binarize(img)
+    # Both bars must survive as dark-on-white after binarization.
+    assert out.getpixel((50, 30)) == 0
+    assert out.getpixel((150, 30)) == 0
+    # And both backgrounds must be white (text/background still separable).
+    assert out.getpixel((50, 5)) == 255
+    assert out.getpixel((150, 5)) == 255
+
+
+def test_extract_mrz_prefers_checksum_valid_candidate_over_earlier_invalid(monkeypatch):
+    """An early rung reads the MRZ with a corrupted digit (checksums fail);
+    a later rung reads it perfectly. The old first-match ladder returned the
+    corrupted read; checksum-guided selection must return the perfect one."""
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    corrupted_l2 = "L898902C86UTO7408122F1204159ZE184226B<<<<<10"  # digit 3->8
+    calls = []
+
+    def fake_image_to_string(path, config=None):
+        calls.append(path)
+        if len(calls) == 1:
+            return _VALID_LINE1 + "\n" + corrupted_l2
+        return _VALID_LINE1 + "\n" + _VALID_LINE2
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake_image_to_string)
+
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["document_number"] == "L898902C3"
+    assert result["document_number_valid"] is True
+    assert result["overall_valid"] is True
+    assert len(calls) == 2  # stopped as soon as a fully-valid read appeared
+
+
+def test_extract_mrz_returns_best_imperfect_candidate_when_no_perfect_exists(monkeypatch):
+    """Every rung reads the same imperfect MRZ: the ladder must exhaust the
+    strip's rungs looking for something better, then still return the best
+    candidate (flagged invalid) rather than erroring -- and must NOT burn a
+    full-image OCR pass when the strip already produced a candidate."""
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    corrupted_l2 = "L898902C86UTO7408122F1204159ZE184226B<<<<<10"
+    calls = []
+
+    def fake_image_to_string(path, config=None):
+        calls.append(path)
+        return _VALID_LINE1 + "\n" + corrupted_l2
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake_image_to_string)
+
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["document_number_valid"] is False
+    assert result["holder_name"] == "ANNA MARIA ERIKSSON"
+    assert len(calls) == 4  # all 4 strip rungs, full-image region skipped
+
+
+# ── MRZ-specific traineddata preference ─────────────────────────────────────
+# Real MRZs are printed in OCR-B, which the generic eng model was never
+# trained on. deploy.sh installs a purpose-trained `mrz.traineddata` when it
+# can; the code prefers it when present and degrades cleanly when not.
+
+def test_tess_config_prefers_mrz_traineddata_when_installed(monkeypatch):
+    monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", lambda config="": ["eng", "mrz", "osd"])
+    passport_ocr._tess_config.cache_clear()
+    try:
+        assert passport_ocr._tess_config().startswith("-l mrz ")
+    finally:
+        passport_ocr._tess_config.cache_clear()
+
+
+def test_tess_config_falls_back_to_default_without_mrz_traineddata(monkeypatch):
+    monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", lambda config="": ["eng", "osd"])
+    passport_ocr._tess_config.cache_clear()
+    try:
+        assert passport_ocr._tess_config() == passport_ocr._TESS_CONFIG
+    finally:
+        passport_ocr._tess_config.cache_clear()
+
+
+def test_tess_config_survives_language_probe_failure(monkeypatch):
+    def boom(config=""):
+        raise RuntimeError("tesseract exploded")
+    monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", boom)
+    passport_ocr._tess_config.cache_clear()
+    try:
+        assert passport_ocr._tess_config() == passport_ocr._TESS_CONFIG
+    finally:
+        passport_ocr._tess_config.cache_clear()
+
+
+def test_ocr_text_retries_with_default_config_when_mrz_model_broken(monkeypatch):
+    """A corrupt deploy-time traineddata download must degrade to the stock
+    eng model, not take the whole scan feature down."""
+    from PIL import Image
+    monkeypatch.setattr(passport_ocr, "_tess_config", lambda: "-l mrz " + passport_ocr._TESS_CONFIG)
+    seen = []
+
+    def fake_image_to_string(path, config=None):
+        seen.append(config)
+        if "-l mrz" in config:
+            raise RuntimeError("failed to load language 'mrz'")
+        return "recovered"
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake_image_to_string)
+    assert passport_ocr._ocr_text(Image.new("L", (10, 10))) == "recovered"
+    assert seen == ["-l mrz " + passport_ocr._TESS_CONFIG, passport_ocr._TESS_CONFIG]

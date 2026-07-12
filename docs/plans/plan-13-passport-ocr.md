@@ -347,6 +347,45 @@ Implementation notes (what actually shipped):
     garbage text — consistent with every other field's fail-closed
     behavior in this module. Verified via a new reproduction test and the
     full test suite (SQLite and Postgres).
+  - **Preprocessing investigation (benchmarked, three improvements):** a
+    systematic benchmark (synthetic passport pages, 15 controlled
+    degradations — rotation/blur/noise/JPEG/glare/shadow/vignette/low-res
+    — scored by character accuracy against the known ground-truth MRZ,
+    same production tesseract config) found the ladder's one structural
+    blind spot: its only binarization was **global** Otsu — one threshold
+    for the whole strip — so any shadow band, glare edge, or illumination
+    gradient crossing the MRZ erased the text on the wrong side of the
+    cut before tesseract ever saw it. Every shadow-over-MRZ case scored
+    0.00 (a user-facing 422). Three changes shipped: **(1)** a fourth
+    ladder rung, `_adaptive_mean_binarize` — local adaptive-mean
+    threshold via C-speed PIL primitives (BoxBlur + subtract + point LUT
+    + median despeckle), no numpy — which took those cases to 0.88–0.93
+    with zero regression elsewhere (it's a fallback rung; clean photos
+    still stop at the global rungs first). **(2)** checksum-guided
+    variant selection: the ladder previously stopped at the first
+    MRZ-shaped read even when every check digit failed, measurably
+    leaving better later reads on the table (a glare case stopped at ~90%
+    char accuracy when a later rung read ~98%); `extract_mrz` now stops
+    early only on a fully checksum-valid read, otherwise keeps the
+    best-scoring candidate across rungs (the full-photo fallback region
+    still only runs when the strip yields nothing, keeping the expensive
+    pass off the common path). **(3)** MRZ-specific traineddata: real
+    MRZs are OCR-B, which the stock eng model was never trained on;
+    deploy.sh now installs DoubangoTelecom's `mrz.traineddata`
+    (verified post-download via `--list-langs`, removed if corrupt) and
+    the code auto-prefers it when present (`_tess_config()`), with a
+    per-call eng fallback if the model file turns out broken at OCR
+    time. Note the model's real-world gain could NOT be benchmarked in
+    the dev sandbox (no network access to fetch it; the synthetic bench
+    uses a non-OCR-B font anyway) — it's a deploy-time bet with a clean
+    degradation path, not a measured win. Benchmarked deltas for (1)+(2):
+    mean exact-field accuracy 0.47 → 0.62, fully-checksum-valid rate 0.40
+    → 0.47, mean latency 0.93s → 0.84s, no case worse. Also tested and
+    **rejected**: projection-profile deskew (net negative — estimates its
+    angle from the same binarization the shadow corrupts), fixed-height
+    strip rescaling (broke low-res images that currently pass), border
+    padding (no effect), Sauvola thresholding (no win over adaptive-mean,
+    ~10× slower without numpy).
 - Pad each candidate line to 44 characters, join with `\n`, and hand the
   result to `mrz.checker.td3.TD3CodeChecker(mrz_text, check_expiry=False,
   compute_warnings=True)`. `checker.fields()` returns the parsed string

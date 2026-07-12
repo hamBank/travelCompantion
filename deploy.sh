@@ -250,6 +250,28 @@ if ! command -v tesseract &>/dev/null; then
     && ok "tesseract-ocr installed" || warn "tesseract-ocr install failed"
 fi
 
+# ── 4a-ocr-model. Ensure MRZ (OCR-B) traineddata present (root) ───────────────
+# Real MRZs are printed in OCR-B, which tesseract's stock eng model was never
+# trained on. backend/passport_ocr.py automatically prefers a purpose-trained
+# `mrz` model when one is installed — and degrades cleanly to eng when not,
+# so a failed download here only costs accuracy, never availability. The
+# post-download `--list-langs` check guards against a truncated/corrupt file
+# being left in place (the code also has a per-call eng fallback for that).
+if command -v tesseract &>/dev/null && ! tesseract --list-langs 2>/dev/null | grep -qx mrz; then
+  TESSDATA_DIR="$(ls -d /usr/share/tesseract-ocr/*/tessdata 2>/dev/null | head -1)"
+  if [ -n "$TESSDATA_DIR" ]; then
+    info "Installing MRZ (OCR-B) tesseract model"
+    if curl -fsSL -o "$TESSDATA_DIR/mrz.traineddata" \
+        "https://github.com/DoubangoTelecom/tesseractMRZ/raw/master/tessdata_best/mrz.traineddata" \
+        && tesseract --list-langs 2>/dev/null | grep -qx mrz; then
+      ok "mrz.traineddata installed"
+    else
+      rm -f "$TESSDATA_DIR/mrz.traineddata"
+      warn "mrz.traineddata install failed — passport OCR continues with the stock eng model"
+    fi
+  fi
+fi
+
 # ── 4a. Database schema migrations (Postgres) ─────────────────────────────────
 # On Postgres, Alembic owns the schema. Back up first, then upgrade to head
 # BEFORE the service restarts so new code never meets an old schema. On SQLite
