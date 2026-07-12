@@ -331,6 +331,22 @@ Implementation notes (what actually shipped):
     non-regressing against both synthetic reproductions and the full
     test suite (SQLite and Postgres); not confirmed to resolve the
     specific reported case, since the failure was never reproduced.
+  - **Fourth fix (post-launch regression, real-world report):** the bottom-
+    strip crop above measurably improved things — a follow-up report said
+    every field extracted correctly except holder_name, which came back as
+    the literal text `"None None"`. Root cause, confirmed by reproduction:
+    the `mrz` package's own identifier parser sets its internal name/
+    surname fields to Python `None` when the identifier fails its
+    structural checks (here: three `<<`-separated groups instead of two —
+    OCR noise inserting an extra separator into a given name is a
+    plausible real-world trigger), but `fields()` then stringifies them
+    unconditionally, leaking the literal text `"None"` rather than an
+    empty value. `extract_mrz` now filters that placeholder out of
+    holder_name the same as any other missing part, so a malformed
+    identifier now correctly produces an empty holder_name instead of
+    garbage text — consistent with every other field's fail-closed
+    behavior in this module. Verified via a new reproduction test and the
+    full test suite (SQLite and Postgres).
 - Pad each candidate line to 44 characters, join with `\n`, and hand the
   result to `mrz.checker.td3.TD3CodeChecker(mrz_text, check_expiry=False,
   compute_warnings=True)`. `checker.fields()` returns the parsed string
