@@ -34,6 +34,24 @@ def test_find_mrz_lines_tolerates_a_little_ocr_noise_via_length_slack():
     assert lines == [short_line1, _VALID_LINE2]
 
 
+def test_find_mrz_lines_tolerates_heavy_dropout_at_the_20_char_floor():
+    # Real-world regression: a genuine MRZ line under noisy phone-photo
+    # conditions (background patterning, blur, JPEG artifacts) OCR'd to
+    # only 29 of its 44 characters and was wrongly rejected by the old
+    # 30-char floor. 20 is the current floor -- right at the boundary.
+    line_20 = "P<AUSERIKSSON<<ANNA<"
+    assert len(line_20) == 20
+    lines = passport_ocr._find_mrz_lines(line_20 + "\n" + _VALID_LINE2)
+    assert lines == [line_20, _VALID_LINE2]
+
+
+def test_find_mrz_lines_rejects_below_the_20_char_floor():
+    line_19 = "P<AUSERIKSSON<<ANNA"
+    assert len(line_19) == 19
+    lines = passport_ocr._find_mrz_lines(line_19 + "\n" + _VALID_LINE2)
+    assert lines == []
+
+
 def test_pad44_pads_and_truncates():
     assert passport_ocr._pad44("ABC") == "ABC" + "<" * 41
     assert len(passport_ocr._pad44("X" * 50)) == 44
@@ -124,3 +142,74 @@ def test_extract_mrz_flags_bad_checksum_as_invalid(monkeypatch):
     result = passport_ocr.extract_mrz(_fake_image_bytes())
     assert result["document_number_valid"] is False
     assert result["overall_valid"] is False
+
+
+# ── preprocessing ladder (real-world noisy-photo regression) ───────────────
+
+def test_otsu_threshold_correctly_separates_a_bimodal_image():
+    from PIL import Image
+    # Two grayscale clusters (60 / 200, not pure 0/255) -- Otsu should pick
+    # a threshold that cleanly separates the two, not an arbitrary value.
+    img = Image.new("L", (10, 10), color=60)
+    for x in range(5, 10):
+        for y in range(10):
+            img.putpixel((x, y), 200)
+    t = passport_ocr._otsu_threshold(img)
+    assert 60 <= t < 200
+    # point(lambda p: p > t) is exactly how _preprocess_variants binarizes.
+    assert (60 > t) is False   # the "dark" cluster lands in the background
+    assert (200 > t) is True  # the "light" cluster lands in the foreground
+
+
+def test_preprocess_variants_returns_three_same_size_images():
+    from PIL import Image
+    img = Image.new("L", (20, 15), color=128)
+    variants = passport_ocr._preprocess_variants(img)
+    assert len(variants) == 3
+    assert all(v.size == (20, 15) for v in variants)
+    # First variant is the untouched input; later ones are contrast-treated.
+    assert variants[0] is img
+
+
+def test_extract_mrz_falls_back_through_the_preprocessing_ladder(monkeypatch):
+    """Real-world regression: the raw grayscale pass finds nothing, but a
+    later preprocessing variant (autocontrast or the binarized one) does --
+    extract_mrz must keep trying rather than giving up after the first."""
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    ocr_text = _VALID_LINE1 + "\n" + _VALID_LINE2
+    calls = []
+
+    def fake_image_to_string(path, config=None):
+        calls.append(path)
+        # First two attempts (raw, autocontrast) find nothing; the third
+        # (binarized) variant succeeds.
+        return "no mrz here" if len(calls) < 3 else ocr_text
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake_image_to_string)
+
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["document_number"] == "L898902C3"
+    assert len(calls) == 3
+
+
+def test_extract_mrz_stops_at_first_successful_variant(monkeypatch):
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    ocr_text = _VALID_LINE1 + "\n" + _VALID_LINE2
+    calls = []
+
+    def fake_image_to_string(path, config=None):
+        calls.append(path)
+        return ocr_text
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake_image_to_string)
+
+    passport_ocr.extract_mrz(_fake_image_bytes())
+    assert len(calls) == 1
+
+
+def test_extract_mrz_raises_error_when_every_variant_fails(monkeypatch):
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", lambda *a, **k: "still no mrz")
+
+    with pytest.raises(passport_ocr.PassportOcrError):
+        passport_ocr.extract_mrz(_fake_image_bytes())

@@ -257,12 +257,33 @@ Implementation notes (what actually shipped):
   dramatically improves accuracy over an unrestricted whitelist, since long
   runs of filler `<` characters are otherwise easily misread as `c`/`@`/
   other glyphs. Then scan the recognized text line-by-line for the last two
-  lines that look MRZ-shaped (`^[A-Z0-9<]{30,44}$`, some length slack for
-  OCR dropout) — the *last* two, since the MRZ sits at the bottom of the
-  photo page and other printed text is more likely to appear above it.
-  Fewer than two such lines found → raise `PassportOcrError("Could not
-  locate a machine-readable zone in this image.")` — the router turns this
-  into a 422, not a 500.
+  lines that look MRZ-shaped (some length slack for OCR dropout) — the
+  *last* two, since the MRZ sits at the bottom of the photo page and other
+  printed text is more likely to appear above it. Fewer than two such
+  lines found → raise `PassportOcrError("Could not locate a
+  machine-readable zone in this image.")` — the router turns this into a
+  422, not a 500.
+  - **Fix (post-launch regression, real-world report):** a genuine
+    Australian passport photo — background patterning behind the MRZ
+    print, uneven lighting, ordinary phone-camera blur/noise — 422'd. Root
+    cause, confirmed by reproducing it with a synthetic image simulating
+    the same conditions: the true MRZ line OCR'd to only 29 of its 44
+    characters, just under the original 30-char line-length floor, so it
+    was silently filtered out before ever reaching the checksum parser.
+    Two changes: **(1)** the floor dropped from 30 to 20 — still
+    comfortably above the length of the other printed field values on a
+    photo page (names, nationality, etc., which pass through the same
+    whitelist and would otherwise also be false-positive candidates), but
+    tolerant of realistic dropout. **(2)** `extract_mrz` now tries a short,
+    cheap **preprocessing ladder** before giving up — raw grayscale, then
+    `ImageOps.autocontrast`, then an Otsu-thresholded binarization (Otsu's
+    method implemented via PIL's built-in `histogram()`, no numpy
+    dependency added) — stopping at the first variant that yields two
+    MRZ-shaped lines. No single fixed contrast treatment generalizes
+    across every photo's lighting, so this tries a few in order rather
+    than committing to one. Verified against the same reproduction case:
+    the raw pass still fails, but the binarized variant recovers the
+    document number, DOB, and expiry date all correctly checksum-valid.
 - Pad each candidate line to 44 characters, join with `\n`, and hand the
   result to `mrz.checker.td3.TD3CodeChecker(mrz_text, check_expiry=False,
   compute_warnings=True)`. `checker.fields()` returns the parsed string
