@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import UserSettings from '../components/UserSettings.jsx'
+import DocumentsModal from '../components/DocumentsModal.jsx'
 import * as api from '../api.js'
 
 vi.mock('../api.js')
@@ -32,21 +32,21 @@ beforeEach(() => {
 
 describe('DocumentsSection', () => {
   it('renders the Documents heading and an empty list', async () => {
-    render(<UserSettings onClose={() => {}} />)
+    render(<DocumentsModal onClose={() => {}} />)
     expect(await screen.findByText('Documents')).toBeTruthy()
     expect(screen.queryByText('US Passport')).toBeNull()
   })
 
   it('renders an existing document in the list', async () => {
     api.listDocuments.mockResolvedValue([DOC])
-    render(<UserSettings onClose={() => {}} />)
+    render(<DocumentsModal onClose={() => {}} />)
     expect(await screen.findByText('US Passport')).toBeTruthy()
     expect(screen.getByText('US')).toBeTruthy()
   })
 
   it('add form submits and calls api.createDocument', async () => {
     api.createDocument.mockResolvedValue({ ...DOC, id: 2 })
-    render(<UserSettings onClose={() => {}} />)
+    render(<DocumentsModal onClose={() => {}} />)
     await screen.findByText('Documents')
 
     fireEvent.click(screen.getByText('+ Add document'))
@@ -61,7 +61,7 @@ describe('DocumentsSection', () => {
   it('clicking a document expands edit form; saving calls api.updateDocument', async () => {
     api.listDocuments.mockResolvedValue([DOC])
     api.updateDocument.mockResolvedValue({ ...DOC, label: 'Renewed Passport' })
-    render(<UserSettings onClose={() => {}} />)
+    render(<DocumentsModal onClose={() => {}} />)
 
     fireEvent.click(await screen.findByText('US Passport'))
     const labelInput = await screen.findByDisplayValue('US Passport')
@@ -74,7 +74,7 @@ describe('DocumentsSection', () => {
   it('delete is confirm-gated and calls api.deleteDocument', async () => {
     api.listDocuments.mockResolvedValueOnce([DOC]).mockResolvedValue([])
     api.deleteDocument.mockResolvedValue(null)
-    render(<UserSettings onClose={() => {}} />)
+    render(<DocumentsModal onClose={() => {}} />)
     await screen.findByText('US Passport')
 
     const deleteButtons = screen.getAllByText('✕')
@@ -87,7 +87,7 @@ describe('DocumentsSection', () => {
   it('shows an expiry warning color for a document expiring soon', async () => {
     const soon = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     api.listDocuments.mockResolvedValue([{ ...DOC, expiry_date: soon }])
-    render(<UserSettings onClose={() => {}} />)
+    render(<DocumentsModal onClose={() => {}} />)
 
     const expiryText = await screen.findByText(/Expires/)
     expect(expiryText.style.color).toBe('var(--warning)')
@@ -96,7 +96,7 @@ describe('DocumentsSection', () => {
   it('does not warn for a document expiring far in the future', async () => {
     const farOff = new Date(Date.now() + 400 * 24 * 60 * 60 * 1000).toISOString()
     api.listDocuments.mockResolvedValue([{ ...DOC, expiry_date: farOff }])
-    render(<UserSettings onClose={() => {}} />)
+    render(<DocumentsModal onClose={() => {}} />)
 
     const expiryText = await screen.findByText(/Expires/)
     expect(expiryText.style.color).toBe('var(--text-faint)')
@@ -118,7 +118,7 @@ const SCAN_RESULT = {
 async function openDocumentWithFiles(files) {
   api.listDocuments.mockResolvedValue([DOC])
   api.listDocumentFiles.mockResolvedValue(files)
-  render(<UserSettings onClose={() => {}} />)
+  render(<DocumentsModal onClose={() => {}} />)
   fireEvent.click(await screen.findByText('US Passport'))
   await screen.findByText('Save document')
 }

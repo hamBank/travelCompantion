@@ -12,6 +12,8 @@ import PendingReview from './components/PendingReview.jsx'
 import PackingList from './components/PackingList.jsx'
 import OfflineQueueBanner from './components/OfflineQueueBanner.jsx'
 import BudgetSummary from './components/BudgetSummary.jsx'
+import DocumentsModal from './components/DocumentsModal.jsx'
+import MenuDropdown from './components/MenuDropdown.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf, getPending } from './api.js'
 import { canEdit, canManage } from './roles.js'
@@ -37,6 +39,19 @@ function useTheme() {
   return [theme, setThemeState]
 }
 
+function MenuItem({ onClick, disabled, children }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{ color: 'var(--text)' }}
+      className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 transition-opacity disabled:opacity-50"
+    >
+      {children}
+    </button>
+  )
+}
+
 function AppShell({ user, onLogout }) {
   const [selectedTrip, setSelectedTrip] = useState(null)
   const [editing, setEditing] = useState(false)
@@ -53,6 +68,7 @@ function AppShell({ user, onLogout }) {
   const [packing, setPacking] = useState(false)
   const [today, setToday] = useState(false)
   const [showBudget, setShowBudget] = useState(false)
+  const [showDocuments, setShowDocuments] = useState(false)
   const online = useOnline()
 
   function refreshPending() {
@@ -124,20 +140,56 @@ function AppShell({ user, onLogout }) {
         <div className="flex-1" />
 
         {user && (
-          <button
-            onClick={onLogout}
-            title={user.email}
-            className="shrink-0 hover:opacity-70 transition-opacity"
-          >
-            {user.picture
-              ? <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full" />
-              : <span style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}>Sign out</span>
+          <MenuDropdown
+            trigger={
+              user.picture
+                ? <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full" />
+                : <span style={{ color: 'var(--text-faint)', fontSize: '1.1rem' }}>☰</span>
             }
-          </button>
+          >
+            {selectedTrip && online && !packing && !today && canEdit(selectedTrip.role) && (
+              <MenuItem onClick={() => setEditing(e => !e)}>
+                {editing ? 'View' : 'Edit'}
+              </MenuItem>
+            )}
+            {selectedTrip && (
+              <MenuItem onClick={() => { setPacking(p => !p); setEditing(false); setToday(false) }}>
+                🎒 {packing ? 'Timeline' : 'Packing'}
+              </MenuItem>
+            )}
+            {selectedTrip && online && canManage(selectedTrip.role) && (
+              <MenuItem onClick={() => setShowShare(true)}>Share</MenuItem>
+            )}
+            {selectedTrip && online && (
+              <MenuItem onClick={handleExportPdf} disabled={exporting}>
+                {exporting ? 'Exporting…' : 'Export PDF'}
+              </MenuItem>
+            )}
+            {selectedTrip && online && !packing && (
+              <MenuItem onClick={() => setShowBudget(true)}>💰 Budget</MenuItem>
+            )}
+            {online && pendingCount > 0 && (
+              <MenuItem onClick={() => setShowImports(true)}>
+                <span style={{ color: 'var(--warning)' }}>📥 Imports ({pendingCount})</span>
+              </MenuItem>
+            )}
+            <MenuItem onClick={() => setShowDocuments(true)}>📄 Documents</MenuItem>
+            <MenuItem onClick={() => setShowSettings(true)}>⚙ Settings</MenuItem>
+            <div className="px-4 py-2 flex flex-col gap-1.5 items-start">
+              <span style={{ color: 'var(--text-muted)' }} className="text-sm">Theme</span>
+              <ThemePicker current={theme} onChange={setTheme} />
+            </div>
+            <div style={{ borderTop: '1px solid var(--border)' }} className="mt-1 pt-1">
+              <MenuItem onClick={onLogout}>
+                <span title={user.email}>Sign out</span>
+              </MenuItem>
+            </div>
+          </MenuDropdown>
         )}
       </header>
 
       {showSettings && <UserSettings onClose={() => setShowSettings(false)} />}
+      {showDocuments && <DocumentsModal onClose={() => setShowDocuments(false)} />}
       {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={() => setShowShare(false)} />}
 
       {showBudget && selectedTrip && (
@@ -186,20 +238,6 @@ function AppShell({ user, onLogout }) {
               + Add item
             </button>
           )}
-          {selectedTrip && online && !packing && !today && canEdit(selectedTrip.role) && (
-            <button
-              onClick={() => setEditing(e => !e)}
-              style={{
-                background: editing ? 'var(--accent)' : 'transparent',
-                color: editing ? 'var(--accent-fg)' : 'var(--text-muted)',
-                border: '1px solid',
-                borderColor: editing ? 'var(--accent)' : 'var(--border)',
-              }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
-            >
-              {editing ? 'View' : 'Edit'}
-            </button>
-          )}
           {selectedTrip && online && !packing && (
             <button
               onClick={() => { setToday(t => !t); setEditing(false) }}
@@ -212,57 +250,6 @@ function AppShell({ user, onLogout }) {
               className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
             >
               📅 {today ? 'All days' : 'Today'}
-            </button>
-          )}
-          {selectedTrip && (
-            <button
-              onClick={() => { setPacking(p => !p); setEditing(false); setToday(false) }}
-              style={{
-                background: packing ? 'var(--accent)' : 'transparent',
-                color: packing ? 'var(--accent-fg)' : 'var(--text-muted)',
-                border: '1px solid',
-                borderColor: packing ? 'var(--accent)' : 'var(--border)',
-              }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
-            >
-              🎒 {packing ? 'Timeline' : 'Packing'}
-            </button>
-          )}
-          {selectedTrip && online && canManage(selectedTrip.role) && (
-            <button
-              onClick={() => setShowShare(true)}
-              style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
-            >
-              Share
-            </button>
-          )}
-          {selectedTrip && online && (
-            <button
-              onClick={handleExportPdf}
-              disabled={exporting}
-              style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
-            >
-              {exporting ? 'Exporting…' : 'Export PDF'}
-            </button>
-          )}
-          {selectedTrip && online && !packing && (
-            <button
-              onClick={() => setShowBudget(true)}
-              style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
-            >
-              💰 Budget
-            </button>
-          )}
-          {online && pendingCount > 0 && (
-            <button
-              onClick={() => setShowImports(true)}
-              style={{ color: 'var(--warning)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)', background: 'color-mix(in srgb, var(--warning) 8%, transparent)' }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
-            >
-              📥 Imports ({pendingCount})
             </button>
           )}
           {selectedTrip && !editing && (
@@ -284,14 +271,6 @@ function AppShell({ user, onLogout }) {
               ))}
             </select>
           )}
-          <button
-            onClick={() => setShowSettings(true)}
-            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
-          >
-            ⚙ Settings
-          </button>
-          <ThemePicker current={theme} onChange={setTheme} />
         </div>
         <div className="flex gap-4 justify-center" style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}>
           <a href="/privacy.html" style={{ color: 'var(--text-faint)' }} className="hover:underline">
