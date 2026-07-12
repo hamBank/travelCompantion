@@ -102,6 +102,27 @@ def test_extract_mrz_recovers_holder_name_when_line2_is_fragmented(monkeypatch):
     assert result["document_number_valid"] is False
 
 
+def test_extract_mrz_holder_name_empty_rather_than_none_none_on_malformed_identifier(monkeypatch):
+    """Real-world regression: a scan came back with every field correct
+    except holder_name, which was the literal text "None None". Root cause:
+    the mrz package's own identifier parser sets its internal name/surname
+    fields to Python None when the identifier fails its structural checks
+    (here, three "<<"-separated groups instead of two -- e.g. OCR noise
+    inserting an extra separator into a given name), then stringifies them
+    when building fields() -- leaking "None" as literal text instead of an
+    empty value. holder_name must come back empty, not "None None", when
+    this happens; every checksummed field is unaffected."""
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    malformed_line1 = "P<AUSWUTH<<ANTONY<<JOHN<<<<<<<<<<<<<<<<<<<<<"[:44]
+    ocr_text = malformed_line1 + "\n" + _VALID_LINE2
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", lambda *a, **k: ocr_text)
+
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["holder_name"] == ""
+    assert result["document_number"] == "L898902C3"
+    assert result["document_number_valid"] is True
+
+
 def test_pad44_pads_and_truncates():
     assert passport_ocr._pad44("ABC") == "ABC" + "<" * 41
     assert len(passport_ocr._pad44("X" * 50)) == 44

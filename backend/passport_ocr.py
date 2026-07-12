@@ -235,8 +235,17 @@ def extract_mrz(image_bytes: bytes) -> dict:
         raise PassportOcrError(f"Could not parse the detected MRZ text: {e}")
 
     f = checker.fields()
+    # The mrz package's own identifier parser (name/surname) sets its two
+    # internal fields to Python `None` when the identifier fails its
+    # structural checks (e.g. more than two "<<"-separated groups, often
+    # from OCR noise splitting a given name) -- but fields() then stringifies
+    # them, so a failed parse leaks the *literal text* "None" into f.name /
+    # f.surname rather than an empty string (confirmed via reproduction: a
+    # real-world report of a passport scan where every other field extracted
+    # correctly except the holder name, which came back "None None"). Filter
+    # that placeholder out same as any other missing value.
     holder_name = " ".join(
-        part.replace("<", " ").strip() for part in (f.name, f.surname) if part
+        part.replace("<", " ").strip() for part in (f.name, f.surname) if part and part != "None"
     ).strip()
     holder_name = re.sub(r"\s+", " ", holder_name)
 
