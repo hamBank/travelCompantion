@@ -284,6 +284,27 @@ Implementation notes (what actually shipped):
     than committing to one. Verified against the same reproduction case:
     the raw pass still fails, but the binarized variant recovers the
     document number, DOB, and expiry date all correctly checksum-valid.
+  - **Second fix (post-launch regression, real-world report):** a
+    different real photo produced a holder name that was a garbled mix of
+    letters *and digits* — reported directly ("WUTH<<ANTONY<JOHN<<<<<<"
+    read as something including data from the second line"). Root cause,
+    confirmed by reproduction: with no automatic MRZ-region cropping,
+    tesseract can split the true line 2 into two separate output lines on
+    a busy/noisy photo. Both fragments still satisfy the plain length/
+    alphabet shape check, so the old "last two shape-matching lines" pick
+    silently grabbed two fragments of line 2 and treated the digit-heavy
+    first one as line 1. Fix: `_find_mrz_lines` now uses a real ICAO 9303
+    structural invariant instead of positional luck — **line 1 (document
+    type/issuing country/name) never contains a digit; only line 2
+    (document number/dates/checksums) does.** It searches backward for the
+    last digit-bearing candidate (line 2), then continues backward from
+    there for the nearest digit-free candidate (line 1); if no such pair
+    exists, it now correctly returns nothing (422) rather than pairing up
+    two fragments of the same real line. Verified against the reproduction
+    case: the holder name now recovers correctly even though only a
+    fragment of line 2 survives (the digit-based fields on that
+    incomplete fragment are, correctly, flagged invalid rather than
+    silently wrong-looking).
 - Pad each candidate line to 44 characters, join with `\n`, and hand the
   result to `mrz.checker.td3.TD3CodeChecker(mrz_text, check_expiry=False,
   compute_warnings=True)`. `checker.fields()` returns the parsed string

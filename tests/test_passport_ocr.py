@@ -52,6 +52,56 @@ def test_find_mrz_lines_rejects_below_the_20_char_floor():
     assert lines == []
 
 
+# ── real-world regression: line 2 split into two OCR'd lines ───────────────
+# With no automatic MRZ-region cropping, tesseract can split the true line 2
+# into two separate output lines on a busy/noisy photo. Both fragments still
+# satisfy the plain shape/length check, so a naive "last two shape-matching
+# lines" pick grabbed two line-2 fragments and treated the digit-heavy first
+# one as line 1 -- reported: the holder's name came back as a garbled mix of
+# letters and digits. ICAO 9303's line 1 never contains a digit (only line 2
+# does), which is the structural guard _find_mrz_lines now uses.
+
+def test_find_mrz_lines_skips_a_digit_bearing_fragment_mistaken_for_line1():
+    line2_frag_a = _VALID_LINE2[:23]
+    line2_frag_b = _VALID_LINE2[23:]
+    assert any(c.isdigit() for c in line2_frag_a)   # confirms this fragment is digit-bearing
+    text = _VALID_LINE1 + "\n" + line2_frag_a + "\n" + line2_frag_b
+    lines = passport_ocr._find_mrz_lines(text)
+    # Must pick the real (digit-free) line 1, not the digit-bearing fragment
+    # that happens to sit right before the last candidate.
+    assert lines == [_VALID_LINE1, line2_frag_b]
+
+
+def test_find_mrz_lines_fails_closed_when_no_digit_free_candidate_exists():
+    # Line 1 never made it into the OCR'd text at all (e.g. obscured/missed
+    # entirely) -- every candidate is digit-bearing, so there's no valid
+    # line-1 pairing. Must return [] (the caller 422s) rather than pairing
+    # up two line-2-shaped fragments.
+    line2_frag_a = _VALID_LINE2[:23]
+    line2_frag_b = _VALID_LINE2[23:]
+    lines = passport_ocr._find_mrz_lines(line2_frag_a + "\n" + line2_frag_b)
+    assert lines == []
+
+
+def test_extract_mrz_recovers_holder_name_when_line2_is_fragmented(monkeypatch):
+    """Full regression test replaying the exact reported symptom: the
+    holder's name must come back correct even when line 2 gets OCR'd as two
+    separate lines, rather than a garbled mix of letters and digits."""
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    line2_frag_a = _VALID_LINE2[:23]
+    line2_frag_b = _VALID_LINE2[23:]
+    ocr_text = "PASSPORT\n" + _VALID_LINE1 + "\n" + line2_frag_a + "\n" + line2_frag_b
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", lambda *a, **k: ocr_text)
+
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["holder_name"] == "ANNA MARIA ERIKSSON"
+    assert result["issuing_country"] == "UTO"
+    assert result["issuing_country_valid"] is True
+    # The digit-based fields only got a fragment of line 2 -- they should be
+    # visibly wrong/incomplete, not silently plausible-looking.
+    assert result["document_number_valid"] is False
+
+
 def test_pad44_pads_and_truncates():
     assert passport_ocr._pad44("ABC") == "ABC" + "<" * 41
     assert len(passport_ocr._pad44("X" * 50)) == 44
