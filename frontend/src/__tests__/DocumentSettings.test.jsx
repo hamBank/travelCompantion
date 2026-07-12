@@ -25,6 +25,9 @@ beforeEach(() => {
   api.getImportAddress.mockResolvedValue({ address: 'import+x@example.com' })
   api.listDocuments.mockResolvedValue([])
   api.listDocumentFiles.mockResolvedValue([])
+  const notFound = new Error('Not found')
+  notFound.status = 404
+  api.getDocumentHolder.mockRejectedValue(notFound)
 })
 
 describe('DocumentsSection', () => {
@@ -196,5 +199,59 @@ describe('Passport scan', () => {
 
     expect(await screen.findByText(/tesseract-ocr not installed/)).toBeTruthy()
     expect(screen.getByText('Scan passport')).toBeTruthy()
+  })
+})
+
+describe('Holder details (real-world regression: scanned fields not visible after saving)', () => {
+  it('shows previously-saved holder fields in the edit form', async () => {
+    api.getDocumentHolder.mockResolvedValue({
+      holder_name: 'ANNA MARIA ERIKSSON', nationality: 'AUS',
+      date_of_birth: '1974-08-12', sex: 'F',
+    })
+    await openDocumentWithFiles([])
+
+    expect(await screen.findByDisplayValue('ANNA MARIA ERIKSSON')).toBeTruthy()
+    expect(screen.getByDisplayValue('AUS')).toBeTruthy()
+    expect(screen.getByDisplayValue('1974-08-12')).toBeTruthy()
+  })
+
+  it('shows empty holder fields (not an error) when none have been saved yet', async () => {
+    await openDocumentWithFiles([])
+    // getDocumentHolder 404s by default (beforeEach) -- the form should
+    // still render with blank holder inputs, not get stuck loading.
+    expect(await screen.findByPlaceholderText('Holder name')).toBeTruthy()
+  })
+
+  it('saving the edit form includes holder fields in the updateDocument payload', async () => {
+    api.updateDocument.mockResolvedValue({ ...DOC })
+    await openDocumentWithFiles([])
+    await screen.findByPlaceholderText('Holder name')
+
+    fireEvent.change(screen.getByPlaceholderText('Holder name'), { target: { value: 'New Holder' } })
+    fireEvent.click(screen.getByText('Save document'))
+
+    await waitFor(() => expect(api.updateDocument).toHaveBeenCalledWith(
+      1, expect.objectContaining({ holder_name: 'New Holder' })
+    ))
+  })
+
+  it('applying a scan refreshes the visible holder fields without closing the form', async () => {
+    api.scanPassportFile.mockResolvedValue(SCAN_RESULT)
+    api.updateDocument.mockResolvedValue({ ...DOC })
+    await openDocumentWithFiles([IMAGE_FILE])
+
+    fireEvent.click(await screen.findByText('Scan passport'))
+    await screen.findByDisplayValue('L898902C3')
+
+    // After apply, getDocumentHolder should be re-fetched with the newly
+    // saved values so the form reflects them immediately.
+    api.getDocumentHolder.mockResolvedValue({
+      holder_name: 'ANNA MARIA ERIKSSON', nationality: 'UTO',
+      date_of_birth: '1974-08-12', sex: 'F',
+    })
+    fireEvent.click(screen.getByText('Apply selected'))
+
+    await waitFor(() => expect(api.updateDocument).toHaveBeenCalled())
+    expect(await screen.findByDisplayValue('ANNA MARIA ERIKSSON')).toBeTruthy()
   })
 })

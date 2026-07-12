@@ -123,10 +123,12 @@ def test_extract_mrz_happy_path_all_fields_and_validity(monkeypatch):
     assert result["document_number_valid"] is True
     assert result["holder_name"] == "ANNA MARIA ERIKSSON"
     assert result["nationality"] == "UTO"
+    assert result["nationality_valid"] is True
     assert result["date_of_birth"] == "1974-08-12"
     assert result["date_of_birth_valid"] is True
     assert result["sex"] == "F"
     assert result["issuing_country"] == "UTO"
+    assert result["issuing_country_valid"] is True
     assert result["expiry_date"] == "2012-04-15"
     assert result["expiry_date_valid"] is True
     assert result["overall_valid"] is True
@@ -142,6 +144,47 @@ def test_extract_mrz_flags_bad_checksum_as_invalid(monkeypatch):
     result = passport_ocr.extract_mrz(_fake_image_bytes())
     assert result["document_number_valid"] is False
     assert result["overall_valid"] is False
+
+
+# ── country-code validity (real-world regression: "P<AUS" OCR'd to "SPO") ──
+# TD3's alpha-3 country codes carry no ICAO check digit of their own, unlike
+# document_number/dates -- a garbled code otherwise looks just as plausible
+# as a correct one. This cross-checks against mrz's own bundled ICAO/ISO
+# 3166-1 alpha-3 list instead.
+
+def test_extract_mrz_flags_unrecognized_issuing_country_as_invalid(monkeypatch):
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    # "SPO" is not a real ICAO/ISO 3166-1 alpha-3 code -- simulates the
+    # exact real-world OCR misread reported against "P<AUS".
+    bad_line1 = "P<SPOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<"
+    ocr_text = bad_line1 + "\n" + _VALID_LINE2
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", lambda *a, **k: ocr_text)
+
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["issuing_country"] == "SPO"
+    assert result["issuing_country_valid"] is False
+    # A garbled alpha country code doesn't affect the digit-based checksums.
+    assert result["document_number_valid"] is True
+
+
+def test_extract_mrz_flags_unrecognized_nationality_as_invalid(monkeypatch):
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    bad_line2 = "L898902C36ZZZ7408122F1204159ZE184226B<<<<<10"
+    ocr_text = _VALID_LINE1 + "\n" + bad_line2
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", lambda *a, **k: ocr_text)
+
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["nationality"] == "ZZZ"
+    assert result["nationality_valid"] is False
+
+
+def test_extract_mrz_country_code_validity_accepts_real_codes():
+    from backend.passport_ocr import _is_country_code
+    assert _is_country_code("AUS") is True
+    assert _is_country_code("USA") is True
+    assert _is_country_code("GBR") is True
+    assert _is_country_code("SPO") is False
+    assert _is_country_code("ZZZ") is False
 
 
 # ── preprocessing ladder (real-world noisy-photo regression) ───────────────

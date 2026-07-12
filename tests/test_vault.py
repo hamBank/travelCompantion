@@ -238,6 +238,27 @@ def test_holder_fields_roundtrip_via_patch_and_holder_route(client):
     }
 
 
+def test_holder_fields_can_be_set_at_creation_time(client):
+    # Regression: the frontend's shared add/edit form now includes holder
+    # fields in both flows -- if the create route silently dropped them
+    # (Pydantic ignores unknown fields by default), holder data typed while
+    # adding a new document would vanish instead of being saved.
+    r = _create(client, holder_name="ANNA MARIA ERIKSSON", nationality="UTO",
+                date_of_birth="1974-08-12", sex="F")
+    doc_id = r.json()["id"]
+    assert "holder_name" not in r.json()
+
+    holder = client.get(f"/me/documents/{doc_id}/holder")
+    assert holder.status_code == 200
+    assert holder.json()["holder_name"] == "ANNA MARIA ERIKSSON"
+    assert holder.json()["sex"] == "F"
+
+
+def test_no_holder_data_stored_when_none_provided_at_creation(client):
+    doc_id = _create(client).json()["id"]
+    assert client.get(f"/me/documents/{doc_id}/holder").status_code == 404
+
+
 def test_holder_fields_never_in_list_or_detail(client):
     doc_id = _create(client).json()["id"]
     client.patch(f"/me/documents/{doc_id}", json={"holder_name": "Someone"})

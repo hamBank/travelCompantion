@@ -65,6 +65,10 @@ class UserDocumentWrite(SQLModel):
     issued_date: Optional[datetime] = None
     expiry_date: Optional[datetime] = None
     notes: str = ""
+    holder_name: Optional[str] = None
+    nationality: Optional[str] = None
+    date_of_birth: Optional[str] = None   # ISO "YYYY-MM-DD", stored inside holder_data_encrypted
+    sex: Optional[str] = None
 
 
 class UserDocumentPatch(SQLModel):
@@ -99,9 +103,12 @@ def create_document(
 
     data = body.model_dump()
     document_number = data.pop("document_number", None)
+    holder_data = {k: data.pop(k) for k in _HOLDER_FIELDS}
     doc = UserDocument(user_email=user["email"].lower(), **data)
     if document_number:
         doc.document_number_encrypted = encrypt_bytes(document_number.encode())
+    if any(holder_data.values()):
+        doc.holder_data_encrypted = _encrypt_holder(holder_data)
     session.add(doc)
     session.commit()
     session.refresh(doc)
