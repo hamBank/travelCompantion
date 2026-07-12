@@ -6,7 +6,7 @@ import {
   getImportAddress, regenerateImportAddress,
   listDocuments, createDocument, updateDocument, deleteDocument,
   listDocumentFiles, uploadDocumentFile, deleteDocumentFile, fetchDocumentFileBlob,
-  scanPassportFile,
+  scanPassportFile, getDocumentHolder,
 } from '../api.js'
 import { isPushSupported, getPushEnabled, enablePush, disablePush, showLocalTestNotification } from '../push.js'
 import { vaultOfflineStore } from '../vaultOfflineStore.js'
@@ -149,7 +149,10 @@ function isExpiringSoon(expiryDate) {
 }
 
 function emptyDocForm() {
-  return { doc_type: 'passport', label: '', country: '', issued_date: '', expiry_date: '', notes: '' }
+  return {
+    doc_type: 'passport', label: '', country: '', issued_date: '', expiry_date: '', notes: '',
+    holder_name: '', nationality: '', date_of_birth: '', sex: '',
+  }
 }
 
 function DocumentForm({ initial, onSave, onCancel, saving }) {
@@ -199,6 +202,40 @@ function DocumentForm({ initial, onSave, onCancel, saving }) {
         className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
         rows={2}
       />
+
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide pt-1">
+        Holder details {'(from "Scan passport" or entered manually)'}
+      </p>
+      <input
+        value={form.holder_name} onChange={e => set('holder_name', e.target.value)} placeholder="Holder name"
+        style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+      />
+      <div className="flex gap-2">
+        <input
+          value={form.nationality} onChange={e => set('nationality', e.target.value)} placeholder="Nationality"
+          style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          className="flex-1 min-w-0 rounded-lg px-3 py-2 text-sm outline-none"
+        />
+        <select
+          value={form.sex} onChange={e => set('sex', e.target.value)}
+          style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          className="rounded-lg px-2 py-2 text-sm outline-none"
+        >
+          <option value="">Sex</option>
+          <option value="M">M</option>
+          <option value="F">F</option>
+        </select>
+      </div>
+      <label className="block text-xs" style={{ color: 'var(--text-faint)' }}>
+        Date of birth
+        <input
+          type="date" value={form.date_of_birth?.slice(0, 10) || ''} onChange={e => set('date_of_birth', e.target.value)}
+          style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          className="w-full rounded-lg px-2 py-1.5 text-sm outline-none mt-1"
+        />
+      </label>
+
       <div className="flex justify-end gap-2 pt-1">
         <button onClick={onCancel} disabled={saving} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70">
           Never mind
@@ -222,13 +259,13 @@ function DocumentForm({ initial, onSave, onCancel, saving }) {
 // to unchecked, since a failed check digit means "verify before applying,"
 // not "definitely wrong."
 const SCAN_FIELD_DEFS = [
-  { key: 'document_number', patchKey: 'document_number', label: 'Document number', validKey: 'document_number_valid' },
+  { key: 'document_number', patchKey: 'document_number', label: 'Document number', validKey: 'document_number_valid', warning: "Check digit didn't match — verify before applying." },
   { key: 'holder_name', patchKey: 'holder_name', label: 'Holder name' },
-  { key: 'nationality', patchKey: 'nationality', label: 'Nationality' },
-  { key: 'date_of_birth', patchKey: 'date_of_birth', label: 'Date of birth', validKey: 'date_of_birth_valid' },
+  { key: 'nationality', patchKey: 'nationality', label: 'Nationality', validKey: 'nationality_valid', warning: "Not a recognized country code — verify before applying." },
+  { key: 'date_of_birth', patchKey: 'date_of_birth', label: 'Date of birth', validKey: 'date_of_birth_valid', warning: "Check digit didn't match — verify before applying." },
   { key: 'sex', patchKey: 'sex', label: 'Sex' },
-  { key: 'issuing_country', patchKey: 'country', label: 'Issuing country' },
-  { key: 'expiry_date', patchKey: 'expiry_date', label: 'Expiry date', validKey: 'expiry_date_valid' },
+  { key: 'issuing_country', patchKey: 'country', label: 'Issuing country', validKey: 'issuing_country_valid', warning: "Not a recognized country code — verify before applying." },
+  { key: 'expiry_date', patchKey: 'expiry_date', label: 'Expiry date', validKey: 'expiry_date_valid', warning: "Check digit didn't match — verify before applying." },
 ]
 
 function ScanReview({ result, onApply, onDismiss, applying }) {
@@ -256,7 +293,7 @@ function ScanReview({ result, onApply, onDismiss, applying }) {
   return (
     <div className="mt-2 p-3 rounded-lg space-y-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
       <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Scanned fields — review before applying</p>
-      {SCAN_FIELD_DEFS.map(({ key, label, validKey }) => {
+      {SCAN_FIELD_DEFS.map(({ key, label, validKey, warning }) => {
         if (!result[key]) return null
         const invalid = validKey && result[validKey] === false
         return (
@@ -277,7 +314,7 @@ function ScanReview({ result, onApply, onDismiss, applying }) {
             </label>
             {invalid && (
               <p style={{ color: 'var(--warning)' }} className="ml-6 mt-0.5">
-                Check digit didn't match — verify before applying.
+                {warning}
               </p>
             )}
           </div>
@@ -314,6 +351,18 @@ function DocumentRow({ doc, onChanged }) {
   const [scanningFileId, setScanningFileId] = useReactState(null)
   const [scanResult, setScanResult] = useReactState(null)   // { fileId, data }
   const [applyingScan, setApplyingScan] = useReactState(false)
+  const [holder, setHolder] = useReactState(null)   // null = loading; {} | {holder_name, nationality, date_of_birth, sex}
+  const [holderVersion, setHolderVersion] = useReactState(0)   // bumped after a scan is applied, to force a refetch + form remount
+
+  useEffect(() => {
+    if (!editing) return
+    getDocumentHolder(doc.id)
+      .then(h => setHolder(h))
+      .catch(e => {
+        if (e.status !== 404) setError(e.message)
+        setHolder({})
+      })
+  }, [editing, doc.id, holderVersion])
 
   useEffect(() => {
     listDocumentFiles(doc.id).then(async fs => {
@@ -394,6 +443,11 @@ function DocumentRow({ doc, onChanged }) {
     try {
       await updateDocument(doc.id, patch)
       setScanResult(null)
+      // Unmount the form (via the holder !== null gate below) until the
+      // refetch resolves, so it remounts with the freshly saved values
+      // instead of keeping stale ones from before the scan was applied.
+      setHolder(null)
+      setHolderVersion(v => v + 1)
       onChanged()
     } catch (e) {
       setError(e.message)
@@ -458,15 +512,19 @@ function DocumentRow({ doc, onChanged }) {
 
       {editing && (
         <>
-          <DocumentForm
-            initial={{
-              doc_type: doc.doc_type, label: doc.label, country: doc.country,
-              issued_date: doc.issued_date || '', expiry_date: doc.expiry_date || '', notes: doc.notes,
-            }}
-            onSave={save}
-            onCancel={() => setEditing(false)}
-            saving={saving}
-          />
+          {holder !== null && (
+            <DocumentForm
+              initial={{
+                doc_type: doc.doc_type, label: doc.label, country: doc.country,
+                issued_date: doc.issued_date || '', expiry_date: doc.expiry_date || '', notes: doc.notes,
+                holder_name: holder.holder_name || '', nationality: holder.nationality || '',
+                date_of_birth: holder.date_of_birth || '', sex: holder.sex || '',
+              }}
+              onSave={save}
+              onCancel={() => setEditing(false)}
+              saving={saving}
+            />
+          )}
 
           <div className="mt-2 pl-1">
             {filesLoaded && files.map(f => (

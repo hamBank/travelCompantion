@@ -24,6 +24,7 @@ from typing import List, Optional
 
 import pytesseract
 from PIL import Image, ImageOps
+from mrz.base.countries_ops import is_code as _is_country_code
 from mrz.checker.td3 import TD3CodeChecker
 
 _MRZ_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
@@ -183,15 +184,29 @@ def extract_mrz(image_bytes: bytes) -> dict:
     ).strip()
     holder_name = re.sub(r"\s+", " ", holder_name)
 
+    nationality = f.nationality.rstrip("<")
+    issuing_country = f.country.rstrip("<")
+
     return {
         "document_number": f.document_number.rstrip("<"),
         "document_number_valid": bool(checker.document_number_hash),
         "holder_name": holder_name,
-        "nationality": f.nationality.rstrip("<"),
+        "nationality": nationality,
+        # TD3's alpha-3 country codes have no ICAO check digit of their own
+        # (only the numeric/date fields do) -- OCR noise on these two or
+        # three letters produces a plausible-looking but wrong code with no
+        # other signal to catch it (a real-world report: "P<AUS" OCR'd to a
+        # value that isn't a real country at all). is_code() cross-checks
+        # against the mrz package's own bundled ICAO/ISO 3166-1 alpha-3
+        # list -- not a cryptographic guarantee like the other _valid
+        # flags, but a real, free correctness signal for a field that
+        # otherwise had none.
+        "nationality_valid": bool(nationality) and _is_country_code(nationality),
         "date_of_birth": _mrz_date_to_iso(f.birth_date, is_birth=True),
         "date_of_birth_valid": bool(checker.birth_date_hash),
         "sex": f.sex if f.sex in ("M", "F") else "",
-        "issuing_country": f.country.rstrip("<"),
+        "issuing_country": issuing_country,
+        "issuing_country_valid": bool(issuing_country) and _is_country_code(issuing_country),
         "expiry_date": _mrz_date_to_iso(f.expiry_date, is_birth=False),
         "expiry_date_valid": bool(checker.expiry_date_hash),
         "overall_valid": bool(checker.final_hash),
