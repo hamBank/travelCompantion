@@ -80,11 +80,10 @@ export function clampedShiftDay(dateStr, direction, timeline) {
 // something that only just finished.
 const GRACE_HOURS = 6
 
-export default function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday }) {
+export default function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday, importing = false, setImporting = () => {} }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [importing, setImporting] = useState(false)
   const [reviewing, setReviewing] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const [warnings, setWarnings] = useState([])
@@ -479,29 +478,20 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
             items span a spillover day-group (e.g. a multi-night booking whose
             own date key is yesterday), every visible stop's items for
             activeDay are combined into one map, shown below all of today's
-            item cards and above the Import-from-document button. */}
+            item cards. */}
         {activeDay && visibleStops.length > 0 && (
           <DayMap stopId={visibleStops[0].id} points={dayMapPoints(visibleStops.flatMap(s => s.items), activeDay)} />
         )}
 
-        {editable && (
+        {editable && pendingCount > 0 && (
           <div className="mt-4 flex gap-2 flex-wrap">
             <button
-              onClick={() => setImporting(true)}
-              style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
+              onClick={() => setReviewing(true)}
+              style={{ color: 'var(--warning)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)', background: 'color-mix(in srgb, var(--warning) 8%, transparent)' }}
               className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80 transition-opacity"
             >
-              ⇪ Import from document
+              Review pending ({pendingCount})
             </button>
-            {pendingCount > 0 && (
-              <button
-                onClick={() => setReviewing(true)}
-                style={{ color: 'var(--warning)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)', background: 'color-mix(in srgb, var(--warning) 8%, transparent)' }}
-                className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80 transition-opacity"
-              >
-                Review pending ({pendingCount})
-              </button>
-            )}
           </div>
         )}
       </div>

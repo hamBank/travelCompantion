@@ -69,6 +69,7 @@ function AppShell({ user, onLogout }) {
   const [today, setToday] = useState(false)
   const [showBudget, setShowBudget] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
+  const [showImportDoc, setShowImportDoc] = useState(false)
   const online = useOnline()
 
   function refreshPending() {
@@ -221,6 +222,7 @@ function AppShell({ user, onLogout }) {
                   tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
                   todayMode={today}
                   onExitToday={() => setToday(false)}
+                  importing={showImportDoc} setImporting={setShowImportDoc}
                 />
           : <TripList onOpen={openTrip} skipAutoOpen={userChoseList} />
         }
@@ -236,6 +238,15 @@ function AppShell({ user, onLogout }) {
               className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
             >
               + Add item
+            </button>
+          )}
+          {selectedTrip && !editing && !packing && online && canEdit(selectedTrip.role) && (
+            <button
+              onClick={() => setShowImportDoc(true)}
+              style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              ⇪ Import from document
             </button>
           )}
           {selectedTrip && online && !packing && (
