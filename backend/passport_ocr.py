@@ -159,6 +159,30 @@ def _preprocess_variants(gray: Image.Image) -> List[Image.Image]:
     return [gray, autocontrast, binarized]
 
 
+def _bottom_strip(gray: Image.Image, fraction: float = 0.35) -> Image.Image:
+    """Crop to the bottom fraction of the photo, where the MRZ always sits
+    on a TD3 passport page (ICAO 9303), then upscale if the crop is small.
+
+    Restricting OCR to just this strip removes almost all the visual noise
+    a full passport photo carries -- the portrait photo, security/guilloche
+    patterns, multiple printed fields in a different, non-monospace font --
+    which is exactly what makes tesseract's page-segmentation struggle on a
+    busy real photo (a small monospace strip competing with a much busier
+    rest-of-page). This is the single biggest lever for real-world accuracy
+    the module docstring already flagged as a known gap. Tried first, ahead
+    of the full photo, in extract_mrz's region list."""
+    w, h = gray.size
+    top = int(h * (1 - fraction))
+    crop = gray.crop((0, top, w, h))
+    # MRZ text is often only ~20-30px tall in a full-page phone photo --
+    # well below what tesseract reads reliably. Upscale small crops (cheap,
+    # since this is now a small image, unlike upscaling the whole photo).
+    if crop.size[1] < 120:
+        scale = 120 / crop.size[1]
+        crop = crop.resize((int(crop.size[0] * scale), int(crop.size[1] * scale)), Image.LANCZOS)
+    return crop
+
+
 def _ocr_text(image: Image.Image) -> str:
     """Write the image to a temp file (pytesseract needs a path or PIL
     image, and a temp file also matches the pattern used everywhere else in
@@ -188,9 +212,17 @@ def extract_mrz(image_bytes: bytes) -> dict:
 
     gray = Image.open(io.BytesIO(image_bytes)).convert("L")
 
+    # Bottom-strip crop first (see _bottom_strip) -- cheap, and correct for
+    # the overwhelming majority of real photos, since it's where the MRZ
+    # always is. Full photo stays as a fallback for unusual framing (e.g.
+    # already cropped tight to just the MRZ, where cropping again could
+    # clip real content).
     lines: List[str] = []
-    for variant in _preprocess_variants(gray):
-        lines = _find_mrz_lines(_ocr_text(variant))
+    for region in (_bottom_strip(gray), gray):
+        for variant in _preprocess_variants(region):
+            lines = _find_mrz_lines(_ocr_text(variant))
+            if len(lines) >= 2:
+                break
         if len(lines) >= 2:
             break
     if len(lines) < 2:

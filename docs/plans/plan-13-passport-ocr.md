@@ -305,6 +305,32 @@ Implementation notes (what actually shipped):
     fragment of line 2 survives (the digit-based fields on that
     incomplete fragment are, correctly, flagged invalid rather than
     silently wrong-looking).
+  - **Third fix (post-launch regression, real-world report):** a further
+    report ("scan passport is now totally failing") against a real
+    Australian passport photo. The MRZ text/checksum layer was
+    independently re-verified as fully correct against this exact
+    specimen's real MRZ (manually transcribed and run through
+    `TD3CodeChecker` directly — document number, DOB, sex, expiry, and
+    country all matched the printed page exactly), and two escalating
+    synthetic reproductions built from that same ground-truth MRZ (busy
+    layout, rotation, glare band, blur, sensor noise, JPEG
+    recompression) both **succeeded** against the code as it stood —
+    the exact real-world failure mechanism for this specific photo was
+    not conclusively reproduced. Given no automatic MRZ-region cropping
+    was still a known, already-documented gap (see "Out of scope"
+    above) and the clearest remaining lever for a busy real photo,
+    `extract_mrz` now crops to the bottom 35% of the photo first (via
+    new `_bottom_strip()`, upscaling via `Image.LANCZOS` if the crop
+    ends up under 120px tall) — that's where the MRZ always sits on a
+    TD3 passport page (ICAO 9303) — and tries the existing 3-variant
+    contrast ladder against *that* region before falling back to the
+    full, uncropped photo. Restricting OCR to just the MRZ strip removes
+    almost all the visual noise a full page carries (portrait photo,
+    security/guilloche patterning, differently-fonted printed fields)
+    that a whole-image OCR pass has to contend with. Verified
+    non-regressing against both synthetic reproductions and the full
+    test suite (SQLite and Postgres); not confirmed to resolve the
+    specific reported case, since the failure was never reproduced.
 - Pad each candidate line to 44 characters, join with `\n`, and hand the
   result to `mrz.checker.td3.TD3CodeChecker(mrz_text, check_expiry=False,
   compute_warnings=True)`. `checker.fields()` returns the parsed string
