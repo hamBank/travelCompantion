@@ -231,24 +231,6 @@ function AppShell({ user, onLogout }) {
 
       <footer className="w-full px-4 sm:px-8 lg:px-16 pb-8 pt-4 flex flex-col items-center gap-4">
         <div className="flex items-center gap-3 flex-wrap justify-center">
-          {selectedTrip && !editing && online && canEdit(selectedTrip.role) && tripStops.length > 0 && (
-            <button
-              onClick={() => setShowQuickAdd(true)}
-              style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
-            >
-              + Add item
-            </button>
-          )}
-          {selectedTrip && !editing && !packing && online && canEdit(selectedTrip.role) && (
-            <button
-              onClick={() => setShowImportDoc(true)}
-              style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
-            >
-              ⇪ Import from document
-            </button>
-          )}
           {selectedTrip && online && !packing && (
             <button
               onClick={() => { setToday(t => !t); setEditing(false) }}
@@ -281,6 +263,24 @@ function AppShell({ user, onLogout }) {
                 </option>
               ))}
             </select>
+          )}
+          {selectedTrip && !editing && !packing && online && canEdit(selectedTrip.role) && (
+            <button
+              onClick={() => setShowImportDoc(true)}
+              style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              ⇪ Import from document
+            </button>
+          )}
+          {selectedTrip && !editing && online && canEdit(selectedTrip.role) && tripStops.length > 0 && (
+            <button
+              onClick={() => setShowQuickAdd(true)}
+              style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+            >
+              + Add item
+            </button>
           )}
         </div>
         <div className="flex gap-4 justify-center" style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}>
