@@ -23,14 +23,21 @@ from datetime import date
 from typing import List, Optional
 
 import pytesseract
-from PIL import Image
+from PIL import Image, ImageOps
 from mrz.checker.td3 import TD3CodeChecker
 
 _MRZ_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
 _TESS_CONFIG = f"--psm 6 -c tessedit_char_whitelist={_MRZ_CHARSET}"
-# TD3 lines are 44 chars; allow a little OCR slack on the low end rather
-# than requiring an exact match, then pad back out to 44 before parsing.
-_MRZ_LINE_RE = re.compile(r"^[A-Z0-9<]{30,44}$")
+# TD3 lines are 44 chars. A real phone photo (background patterning behind
+# the MRZ print, uneven lighting, slight blur/noise/rotation) reliably drops
+# a handful of characters even after preprocessing — confirmed against a
+# real-world failure report, where the true MRZ line OCR'd to 29 of its 44
+# characters. 20 is a deliberately generous floor: low enough to survive
+# that kind of dropout, still comfortably above the length of the other
+# printed field values on a photo page (names, nationality, etc.) that also
+# pass through the same character whitelist and would otherwise be
+# candidates too. Padded back out to 44 with '<' before parsing either way.
+_MRZ_LINE_RE = re.compile(r"^[A-Z0-9<]{20,44}$")
 
 
 class PassportOcrNotAvailable(Exception):
@@ -88,17 +95,57 @@ def _mrz_date_to_iso(yymmdd: str, *, is_birth: bool) -> Optional[str]:
         return None
 
 
-def _ocr_text(image_bytes: bytes) -> str:
-    """Write the decrypted image to a temp file (pytesseract needs a path
-    or PIL image; a temp file also lets us normalize odd input formats via
-    PIL first) and run tesseract against it. The temp file is the one place
-    decrypted passport bytes touch disk anywhere in this app — delete it
-    immediately in `finally`, success or failure."""
+def _otsu_threshold(gray: Image.Image) -> int:
+    """Otsu's method (finds the pixel value that best splits the image into
+    two classes) via PIL's built-in histogram() -- no numpy dependency.
+    Self-adapts per-photo rather than committing to one fixed brightness
+    cutoff, which doesn't generalize across different lighting."""
+    hist = gray.histogram()
+    total = sum(hist)
+    sum_total = sum(i * h for i, h in enumerate(hist))
+    sum_b = w_b = max_var = thresh = 0.0
+    for t in range(256):
+        w_b += hist[t]
+        if w_b == 0:
+            continue
+        w_f = total - w_b
+        if w_f == 0:
+            break
+        sum_b += t * hist[t]
+        m_b = sum_b / w_b
+        m_f = (sum_total - sum_b) / w_f
+        var_between = w_b * w_f * (m_b - m_f) ** 2
+        if var_between > max_var:
+            max_var = var_between
+            thresh = t
+    return int(thresh)
+
+
+def _preprocess_variants(gray: Image.Image) -> List[Image.Image]:
+    """A short ladder of increasingly-aggressive contrast treatments, tried
+    in order until one yields a recognizable MRZ (see extract_mrz). Real
+    phone photos vary a lot in lighting and background patterning behind
+    the print (confirmed against a real-world failure report) -- no single
+    fixed treatment works for every photo, so this tries a few cheap ones
+    rather than committing to one."""
+    autocontrast = ImageOps.autocontrast(gray, cutoff=1)
+    threshold = _otsu_threshold(autocontrast)
+    binarized = autocontrast.point(lambda p: 255 if p > threshold else 0)
+    return [gray, autocontrast, binarized]
+
+
+def _ocr_text(image: Image.Image) -> str:
+    """Write the image to a temp file (pytesseract needs a path or PIL
+    image, and a temp file also matches the pattern used everywhere else in
+    this module) and run tesseract against it. When called on the original
+    decrypted photo, this is the one place decrypted passport bytes touch
+    disk anywhere in this app — delete it immediately in `finally`, success
+    or failure."""
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp_path = tmp.name
-        Image.open(io.BytesIO(image_bytes)).convert("L").save(tmp_path)
+        image.save(tmp_path)
         return pytesseract.image_to_string(tmp_path, config=_TESS_CONFIG)
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -114,8 +161,13 @@ def extract_mrz(image_bytes: bytes) -> dict:
     if not tesseract_available():
         raise PassportOcrNotAvailable()
 
-    text = _ocr_text(image_bytes)
-    lines = _find_mrz_lines(text)
+    gray = Image.open(io.BytesIO(image_bytes)).convert("L")
+
+    lines: List[str] = []
+    for variant in _preprocess_variants(gray):
+        lines = _find_mrz_lines(_ocr_text(variant))
+        if len(lines) >= 2:
+            break
     if len(lines) < 2:
         raise PassportOcrError("Could not locate a machine-readable zone in this image.")
 
