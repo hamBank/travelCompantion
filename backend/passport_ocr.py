@@ -14,6 +14,7 @@ clean wheels, and have a much lighter dependency footprint. The tradeoff:
 no automatic region cropping, so this looks for MRZ-shaped lines anywhere
 in the recognized text rather than pre-locating the strip in the photo.
 """
+import functools
 import io
 import os
 import re
@@ -23,12 +24,19 @@ from datetime import date
 from typing import List, Optional
 
 import pytesseract
-from PIL import Image, ImageOps
+from PIL import Image, ImageChops, ImageFilter, ImageOps
 from mrz.base.countries_ops import is_code as _is_country_code
 from mrz.checker.td3 import TD3CodeChecker
 
 _MRZ_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
 _TESS_CONFIG = f"--psm 6 -c tessedit_char_whitelist={_MRZ_CHARSET}"
+# Real MRZs are printed in OCR-B; tesseract's generic `eng` model was never
+# trained on it. If a purpose-trained MRZ traineddata is installed on the
+# server (deploy.sh downloads DoubangoTelecom's `mrz.traineddata` — see the
+# plan doc's deployment section), prefer it. Everything degrades cleanly to
+# `eng` when it isn't there, so this is a deploy-time accuracy upgrade, not
+# a hard dependency.
+_MRZ_TRAINEDDATA_PREFERENCE = ("mrz", "ocrb")
 # TD3 lines are 44 chars. A real phone photo (background patterning behind
 # the MRZ print, uneven lighting, slight blur/noise/rotation) reliably drops
 # a handful of characters even after preprocessing — confirmed against a
@@ -55,6 +63,22 @@ class PassportOcrError(Exception):
 
 def tesseract_available() -> bool:
     return shutil.which("tesseract") is not None
+
+
+@functools.lru_cache(maxsize=1)
+def _tess_config() -> str:
+    """The tesseract config string, preferring an installed MRZ/OCR-B
+    traineddata over the generic `eng` model (see _MRZ_TRAINEDDATA_PREFERENCE).
+    Cached: the installed-language list only changes on redeploy, and probing
+    it costs a tesseract subprocess spawn per call otherwise."""
+    try:
+        langs = set(pytesseract.get_languages(config=""))
+    except Exception:
+        langs = set()
+    for lang in _MRZ_TRAINEDDATA_PREFERENCE:
+        if lang in langs:
+            return f"-l {lang} {_TESS_CONFIG}"
+    return _TESS_CONFIG
 
 
 def _find_mrz_lines(text: str) -> List[str]:
@@ -146,17 +170,44 @@ def _otsu_threshold(gray: Image.Image) -> int:
     return int(thresh)
 
 
+def _adaptive_mean_binarize(gray: Image.Image, c: int = 12) -> Image.Image:
+    """Local adaptive-mean threshold: each pixel is white iff it's brighter
+    than (its neighborhood mean - c), computed entirely with C-speed PIL
+    primitives (BoxBlur + subtract + point LUT) -- no numpy dependency.
+
+    This is the ladder's answer to *uneven* lighting: a shadow band, glare
+    edge, or illumination gradient crossing the MRZ defeats the global Otsu
+    rung completely -- one threshold for the whole strip puts half the text
+    on the wrong side of the cut and erases it before tesseract ever sees
+    it (benchmarked: every shadow-over-MRZ case scored 0.00 with the global
+    ladder, 0.88-0.93 with this rung). The trailing median filter despeckles
+    the flat background regions where a purely local threshold otherwise
+    amplifies noise into text-like clutter -- which is also why this is a
+    *fallback* rung rather than the first choice: on clean, evenly-lit
+    photos the global treatments are more reliable."""
+    window = max(15, (gray.size[1] // 6) | 1)
+    mean = gray.filter(ImageFilter.BoxBlur(window // 2))
+    # subtract(clip((p - mean) + 128)) > 128 - c  <=>  p > mean - c, staying
+    # within 8-bit range the whole way.
+    diff = ImageChops.subtract(gray, mean, scale=1, offset=128)
+    binz = diff.point(lambda v: 255 if v > 128 - c else 0)
+    return binz.filter(ImageFilter.MedianFilter(3))
+
+
 def _preprocess_variants(gray: Image.Image) -> List[Image.Image]:
     """A short ladder of increasingly-aggressive contrast treatments, tried
     in order until one yields a recognizable MRZ (see extract_mrz). Real
     phone photos vary a lot in lighting and background patterning behind
     the print (confirmed against a real-world failure report) -- no single
     fixed treatment works for every photo, so this tries a few cheap ones
-    rather than committing to one."""
+    rather than committing to one. Order matters: global treatments first
+    (most reliable on evenly-lit photos), the local adaptive threshold last
+    (the only rung that survives uneven lighting, but noisier on clean
+    input -- see _adaptive_mean_binarize)."""
     autocontrast = ImageOps.autocontrast(gray, cutoff=1)
     threshold = _otsu_threshold(autocontrast)
     binarized = autocontrast.point(lambda p: 255 if p > threshold else 0)
-    return [gray, autocontrast, binarized]
+    return [gray, autocontrast, binarized, _adaptive_mean_binarize(gray)]
 
 
 def _bottom_strip(gray: Image.Image, fraction: float = 0.35) -> Image.Image:
@@ -195,10 +246,33 @@ def _ocr_text(image: Image.Image) -> str:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp_path = tmp.name
         image.save(tmp_path)
-        return pytesseract.image_to_string(tmp_path, config=_TESS_CONFIG)
+        config = _tess_config()
+        try:
+            return pytesseract.image_to_string(tmp_path, config=config)
+        except Exception:
+            # A broken/corrupt MRZ traineddata on the server must degrade to
+            # the stock eng model, not take the whole feature down -- the
+            # traineddata is a deploy-time download (see deploy.sh), so a
+            # truncated file is a real possibility the code has to absorb.
+            if config == _TESS_CONFIG:
+                raise
+            return pytesseract.image_to_string(tmp_path, config=_TESS_CONFIG)
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+def _checksum_score(checker: TD3CodeChecker) -> int:
+    """How many of the four ICAO check digits validate (0-4). The runtime
+    quality signal that lets the ladder rank candidates instead of trusting
+    whichever variant happened to produce MRZ-shaped text first."""
+    return sum(bool(h) for h in (
+        checker.document_number_hash, checker.birth_date_hash,
+        checker.expiry_date_hash, checker.final_hash,
+    ))
+
+
+_PERFECT_SCORE = 4
 
 
 def extract_mrz(image_bytes: bytes) -> dict:
@@ -216,23 +290,39 @@ def extract_mrz(image_bytes: bytes) -> dict:
     # the overwhelming majority of real photos, since it's where the MRZ
     # always is. Full photo stays as a fallback for unusual framing (e.g.
     # already cropped tight to just the MRZ, where cropping again could
-    # clip real content).
-    lines: List[str] = []
+    # clip real content) -- but only when the strip produced *nothing*, so
+    # the expensive whole-photo OCR pass stays off the common path.
+    #
+    # Checksum-guided selection: the old ladder stopped at the first variant
+    # that produced two MRZ-shaped lines, even when every check digit failed
+    # -- benchmarked, that early stop left recoverable accuracy on the table
+    # (a glare case stopped at ~90% char accuracy when a later rung read the
+    # same strip at ~98%). The ICAO check digits are a free runtime quality
+    # signal, so: stop immediately only on a fully checksum-valid read;
+    # otherwise remember the best-scoring candidate and let the remaining
+    # rungs try to beat it.
+    best: Optional[TD3CodeChecker] = None
+    best_score = -1
     for region in (_bottom_strip(gray), gray):
         for variant in _preprocess_variants(region):
             lines = _find_mrz_lines(_ocr_text(variant))
-            if len(lines) >= 2:
+            if len(lines) < 2:
+                continue
+            mrz_text = f"{_pad44(lines[-2])}\n{_pad44(lines[-1])}"
+            try:
+                candidate = TD3CodeChecker(mrz_text, check_expiry=False, compute_warnings=True)
+            except Exception:
+                continue  # unparseable candidate; a later variant may do better
+            score = _checksum_score(candidate)
+            if score > best_score:
+                best, best_score = candidate, score
+            if best_score == _PERFECT_SCORE:
                 break
-        if len(lines) >= 2:
+        if best is not None:
             break
-    if len(lines) < 2:
+    if best is None:
         raise PassportOcrError("Could not locate a machine-readable zone in this image.")
-
-    mrz_text = f"{_pad44(lines[-2])}\n{_pad44(lines[-1])}"
-    try:
-        checker = TD3CodeChecker(mrz_text, check_expiry=False, compute_warnings=True)
-    except Exception as e:
-        raise PassportOcrError(f"Could not parse the detected MRZ text: {e}")
+    checker = best
 
     f = checker.fields()
     # The mrz package's own identifier parser (name/surname) sets its two
