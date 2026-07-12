@@ -306,3 +306,45 @@ def test_extract_mrz_raises_error_when_every_variant_fails(monkeypatch):
 
     with pytest.raises(passport_ocr.PassportOcrError):
         passport_ocr.extract_mrz(_fake_image_bytes())
+
+
+# ── bottom-strip crop (real-world "totally failing" report) ────────────────
+# No automatic MRZ-region detection means a full, busy passport photo (the
+# portrait, security patterning, several differently-fonted printed fields)
+# competes with the small monospace MRZ strip for tesseract's attention. The
+# MRZ always sits in the bottom fraction of a TD3 photo page (ICAO 9303) --
+# cropping to just that strip before OCR removes nearly all of that noise.
+
+def test_bottom_strip_crops_to_bottom_fraction_and_upscales_when_small():
+    from PIL import Image
+    img = Image.new("L", (400, 1000), color=200)
+    crop = passport_ocr._bottom_strip(img, fraction=0.35)
+    assert crop.size[0] == 400
+    assert crop.size[1] == 350
+
+
+def test_bottom_strip_upscales_a_short_crop():
+    from PIL import Image
+    img = Image.new("L", (400, 200), color=200)  # 35% of 200 = 70px -> below the 120px floor
+    crop = passport_ocr._bottom_strip(img, fraction=0.35)
+    assert crop.size[1] >= 120
+
+
+def test_extract_mrz_tries_bottom_strip_region_before_full_image(monkeypatch):
+    """The crop region's 3-variant ladder must be exhausted before
+    extract_mrz falls back to the full, uncropped photo."""
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    ocr_text = _VALID_LINE1 + "\n" + _VALID_LINE2
+    calls = []
+
+    def fake_image_to_string(path, config=None):
+        calls.append(path)
+        # The crop region's 3 attempts find nothing; the 4th call (the first
+        # variant of the full-image fallback) succeeds.
+        return "no mrz here" if len(calls) <= 3 else ocr_text
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake_image_to_string)
+
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["document_number"] == "L898902C3"
+    assert len(calls) == 4
