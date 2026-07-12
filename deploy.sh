@@ -129,9 +129,15 @@ fi
 # Remove untracked files from static/assets so old content-hashed bundles don't linger.
 sudo -u "$APP_USER" git -C "$APP_DIR" clean -fd backend/static/assets/ 2>/dev/null || true
 ok "Repo up to date"
-# Ensure pipe scripts are executable (git clone preserves mode bits, but an
-# explicit chmod guards against any umask or fs-mount edge cases).
-chmod +x "$APP_DIR/mail_ingest.py" "$APP_DIR/scripts/mail_ingest_wrapper.sh" 2>/dev/null || true
+# Ensure pipe/exec'd scripts are executable (git clone preserves mode bits,
+# but an explicit chmod guards against any umask or fs-mount edge cases, and
+# against a script being committed without +x in the first place — this bit
+# us for real: scripts/pg_backup.sh was committed as 644, and the backup
+# systemd unit `exec`s it directly rather than invoking it through bash, so
+# every scheduled backup silently failed with "Permission denied" until
+# manually chmod'd on the server. Its git-tracked mode has since been fixed
+# too, but keep this belt-and-suspenders).
+chmod +x "$APP_DIR/mail_ingest.py" "$APP_DIR/scripts/mail_ingest_wrapper.sh" "$APP_DIR/scripts/pg_backup.sh" 2>/dev/null || true
 
 # ── 4. Python virtualenv + dependencies ───────────────────────────────────────
 VENV="$APP_DIR/.venv"
