@@ -343,6 +343,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 /* ─── iOS safe area ─────────────────────────────────────────────── */
+/* NOTE: the sticky header's safe-area handling lives as an inline style in
+   App.jsx, not here — Tailwind v3 utilities are class selectors, so an
+   element-selector rule like the `main` one below cannot override a padding
+   utility on the same element (class specificity wins). Don't copy this
+   pattern for new overrides; use an inline style instead. */
 main {
   padding-left: max(1rem, env(safe-area-inset-left));
   padding-right: max(1rem, env(safe-area-inset-right));

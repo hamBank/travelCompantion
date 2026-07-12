@@ -112,7 +112,16 @@ function AppShell({ user, onLogout }) {
 
       <header
         className="px-3 sm:px-6 py-1.5 flex items-center gap-2 sticky top-0 z-20"
-        style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
+        style={{
+          background: 'var(--bg)',
+          borderBottom: '1px solid var(--border)',
+          // Standalone-PWA iOS draws the page under the status bar / camera
+          // cutout (viewport-fit=cover + black-translucent in index.html),
+          // which hid the hamburger menu behind the system icons. Inline
+          // style (not index.css) so it actually beats the py-1.5 utility —
+          // see the iOS safe-area note in index.css. 0.375rem = py-1.5.
+          paddingTop: 'calc(0.375rem + env(safe-area-inset-top))',
+        }}
       >
         {selectedTrip ? (
           <>
