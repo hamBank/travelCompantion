@@ -25,8 +25,8 @@ AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
 ## Non-negotiable project conventions
 
 1. **Test gates.** Run BOTH suites before every push; never skip:
-   - Backend: `python -m pytest -q` from the repo root (expect ~420+ passing).
-   - Frontend: `cd frontend && npx vitest run` (expect ~220+ passing).
+   - Backend: `python -m pytest -q` from the repo root (expect ~650+ passing).
+   - Frontend: `cd frontend && npx vitest run` (expect ~410+ passing).
    - Write tests for new behavior FIRST or alongside — every plan lists the
      tests expected of it.
 
@@ -85,9 +85,13 @@ AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
 - `frontend/src/components/TripTimeline.jsx` — trip view: fetches
   `/trips/{id}/timeline`, renders `StopCard`s, has a 30s `/health` data-sync
   poller and a `renderKey` remount trick for silent refreshes.
-- `frontend/src/App.jsx` — shell: auth gate, header, footer buttons
-  (Edit / 🎒 Packing / Share / Export PDF / kind filter / Settings), view
-  switching via `packing`/`editing` state, `useOnline()` hook + offline banner.
+- `frontend/src/App.jsx` — shell: auth gate; header with a hamburger
+  `MenuDropdown` (Edit/View, Packing/Timeline, Share, Export PDF, Budget,
+  Imports, Documents, Settings, theme picker, Sign out — everything not used
+  every session); footer keeps only what's used constantly (Today/All-days
+  toggle, kind filter *or*, while in Packing view, a "hide packed" filter in
+  the same slot, Import from document, Add item). View switching via
+  `packing`/`editing` state, `useOnline()` hook + offline banner.
 - `backend/notifications.py` + `scripts/send_notifications.py` — push
   notification triggers, run by cron every ~15 min on the server with
   `DATABASE_URL` and `VAPID_PRIVATE_KEY` set. Idempotency via `NotificationLog`

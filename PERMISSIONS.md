@@ -62,6 +62,9 @@ Every trip/stop/item endpoint calls one of these. Summary:
 | list trips | returns only trips you're a member of |
 | view trip / timeline / stops / items | viewer |
 | create/update/delete stop or item, toggle completion, enrich, flight/rail check, gpx upload, sheets backfills | editor |
+| create/update/delete a packing bag (incl. nesting, marking packed) | editor |
+| create/update/delete a *shared* packing item | editor |
+| create/update/delete your own *personal* packing item | viewer (any member) |
 | update trip (name/dates) | editor |
 | delete trip | owner |
 | list members | viewer |
@@ -93,7 +96,8 @@ frontend gates UI affordances for UX only:
 - `TripTimeline` wraps its output in `RoleContext.Provider` with the trip's role.
 - Gated components: `CardIcon` (completion toggle inert for viewers), `EditPencil`
   (hidden for viewers), `DetailActions` (Edit/Delete hidden for viewers).
-- `App` header: **Edit** button shown for editor+, **Share** button for owner.
+- `App`'s hamburger menu: **Edit/View** shown for editor+, **Share** for owner
+  (both live in the menu dropdown, not the header/footer directly).
 - `TripList`: per-trip role badge for non-owners; trip **Delete** shown only to owner.
 - `ShareModal` (owner): invite by email + role, list/remove members.
 
