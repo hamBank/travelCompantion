@@ -219,6 +219,8 @@ def update_bag(
     if "parent_id" in data:
         _validate_parent(session, bag, data["parent_id"])
         bag.parent_id = data["parent_id"]
+    if "packed" in data:
+        bag.packed = bool(data["packed"])
     session.add(bag)
     session.commit()
     session.refresh(bag)

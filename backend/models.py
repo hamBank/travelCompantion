@@ -317,11 +317,17 @@ class UserImportToken(SQLModel, table=True):
 
 class Bag(SQLModel, table=True):
     """A piece of luggage for a trip (shared/trip-level). Packing items go in one.
-    Bags may nest (parent_id) — e.g. a packing cube inside a suitcase."""
+    Bags may nest (parent_id) — e.g. a packing cube inside a suitcase. `packed`
+    is a manual, independent flag for the bag itself (not derived from its
+    contents): zipping up a packing cube is a single action, not one you want
+    to re-confirm by checking every item inside it again, so this lets a bag
+    be marked done as a unit — its subtree then rolls up as fully packed
+    regardless of the actual state of the items/sub-bags inside it."""
     id: Optional[int] = Field(default=None, primary_key=True)
     trip_id: int = Field(foreign_key="trip.id", index=True)
     name: str
     parent_id: Optional[int] = Field(default=None, foreign_key="bag.id")
+    packed: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -348,6 +354,7 @@ class BagCreate(SQLModel):
 class BagUpdate(SQLModel):
     name: Optional[str] = None
     parent_id: Optional[int] = None
+    packed: Optional[bool] = None
 
 
 class BagRead(SQLModel):
@@ -355,6 +362,7 @@ class BagRead(SQLModel):
     trip_id: int
     name: str
     parent_id: Optional[int] = None
+    packed: bool = False
 
 
 class PackingItemCreate(SQLModel):

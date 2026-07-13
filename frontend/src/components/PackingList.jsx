@@ -12,7 +12,7 @@ export const isShared = (it) => !it.owner_email
 
 const NO_BAG = '__nobag__'
 
-export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit = false }) {
+export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit = false, hidePacked = false }) {
   const [data, setData] = useState({ bags: [], items: [], counts: { total: 0, packed: 0 } })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -87,6 +87,7 @@ export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit =
   }
   async function saveBag(id, data) { await updateBag(id, data); load() }
   async function removeBag(id)     { await deleteBag(id); load() }
+  async function toggleBagPacked(bag) { await saveBag(bag.id, { packed: !bag.packed }) }
 
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading packing list…</p>
   if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
@@ -97,9 +98,14 @@ export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit =
   const noBagItems = items.filter(i => i.bag_id == null)
   const topBags = bags.filter(b => b.parent_id == null)
   function subtreeCounts(id) {
+    // A bag marked `packed` counts as fully packed regardless of its actual
+    // contents — it's a manual "this container is done" flag, not derived
+    // (see the Bag model docstring backing this).
+    const bag = bags.find(b => b.id === id)
     let packed = 0, total = 0
     for (const i of itemsInBag(id)) { packed += i.packed_count; total += i.quantity }
     for (const c of childrenOf(id)) { const s = subtreeCounts(c.id); packed += s.packed; total += s.total }
+    if (bag?.packed) packed = total
     return { packed, total }
   }
   const pct = counts.total ? Math.round((counts.packed / counts.total) * 100) : 0
@@ -114,14 +120,24 @@ export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit =
   function renderBag(bag, depth) {
     const kids = childrenOf(bag.id)
     const direct = itemsInBag(bag.id)
+    // "Hide packed" only filters individual item rows -- bags themselves
+    // (and their rolled-up counts) are always shown, per explicit request.
+    const visibleDirect = hidePacked ? direct.filter(i => !isPacked(i)) : direct
     const { packed, total } = subtreeCounts(bag.id)
     const isCollapsed = collapsed.has(String(bag.id))
+    const bagPacked = !!bag.packed
     return (
       <div key={bag.id} className="mb-2" style={{ marginLeft: depth ? '1rem' : 0, borderLeft: depth ? '1px solid var(--border)' : 'none', paddingLeft: depth ? '0.5rem' : 0 }}>
         <div className="flex items-center gap-2 mb-1">
+          {canEdit && (
+            <input
+              type="checkbox" checked={bagPacked} onChange={() => toggleBagPacked(bag)}
+              className="shrink-0" title={bagPacked ? 'Mark bag as not packed' : 'Mark bag as packed'}
+            />
+          )}
           <button onClick={() => toggleCollapse(String(bag.id))} className="flex items-center gap-2 hover:opacity-80 transition-opacity" title={isCollapsed ? 'Expand' : 'Collapse'}>
             <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem', width: '0.7rem' }}>{isCollapsed ? '▸' : '▾'}</span>
-            <span style={{ color: 'var(--text-muted)' }} className="text-xs font-semibold uppercase tracking-wide">🧳 {bag.name}</span>
+            <span style={{ color: bagPacked ? 'var(--text-faint)' : 'var(--text-muted)' }} className="text-xs font-semibold uppercase tracking-wide">🧳 {bag.name}</span>
             <span style={{ color: 'var(--text-faint)' }} className="text-xs">{packed}/{total}</span>
           </button>
           {canEdit && (
@@ -130,9 +146,9 @@ export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit =
         </div>
         {!isCollapsed && (
           <div>
-            {direct.length === 0 && kids.length === 0
-              ? <p style={{ color: 'var(--text-faint)' }} className="text-xs pl-1 py-1">Empty</p>
-              : <>{renderItems(direct)}{kids.map(k => renderBag(k, depth + 1))}</>}
+            {visibleDirect.length === 0 && kids.length === 0
+              ? <p style={{ color: 'var(--text-faint)' }} className="text-xs pl-1 py-1">{direct.length === 0 ? 'Empty' : 'All packed'}</p>
+              : <>{renderItems(visibleDirect)}{kids.map(k => renderBag(k, depth + 1))}</>}
           </div>
         )}
       </div>
@@ -189,6 +205,10 @@ export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit =
       {/* Bag tree, then unassigned items */}
       {topBags.map(b => renderBag(b, 0))}
       {noBagItems.length > 0 && (() => {
+        // "No bag" isn't a bag -- when hiding packed items empties it out,
+        // hide the whole group rather than leave an empty header behind.
+        const visibleNoBag = hidePacked ? noBagItems.filter(i => !isPacked(i)) : noBagItems
+        if (visibleNoBag.length === 0) return null
         const isCollapsed = collapsed.has(NO_BAG)
         const bp = noBagItems.reduce((a, i) => a + i.packed_count, 0)
         const bt = noBagItems.reduce((a, i) => a + i.quantity, 0)
@@ -199,7 +219,7 @@ export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit =
               <span style={{ color: 'var(--text-muted)' }} className="text-xs font-semibold uppercase tracking-wide">No bag</span>
               <span style={{ color: 'var(--text-faint)' }} className="text-xs">{bp}/{bt}</span>
             </button>
-            {!isCollapsed && renderItems(noBagItems)}
+            {!isCollapsed && renderItems(visibleNoBag)}
           </div>
         )
       })()}
