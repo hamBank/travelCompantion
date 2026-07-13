@@ -65,6 +65,7 @@ function AppShell({ user, onLogout }) {
   const [tripStops, setTripStops] = useState([])
   const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [kindFilter, setKindFilter] = useState('')
+  const [hidePacked, setHidePacked] = useState(false)
   const [packing, setPacking] = useState(false)
   const [today, setToday] = useState(false)
   const [showBudget, setShowBudget] = useState(false)
@@ -95,8 +96,8 @@ function AppShell({ user, onLogout }) {
 
   const [userChoseList, setUserChoseList] = useState(false)
 
-  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(false); setStats(null); setTripStops([]); setKindFilter('') }
-  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter('') }
+  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(false); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
+  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false) }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
@@ -227,6 +228,7 @@ function AppShell({ user, onLogout }) {
               tripId={selectedTrip.id} userEmail={user?.email}
               canEdit={online && canEdit(selectedTrip.role)}
               canQueueEdit={!online && canEdit(selectedTrip.role)}
+              hidePacked={hidePacked}
             />
             : editing
               ? <EditTrip
@@ -261,7 +263,7 @@ function AppShell({ user, onLogout }) {
               📅 {today ? 'All days' : 'Today'}
             </button>
           )}
-          {selectedTrip && !editing && (
+          {selectedTrip && !editing && !packing && (
             <select
               value={kindFilter}
               onChange={e => setKindFilter(e.target.value)}
@@ -278,6 +280,22 @@ function AppShell({ user, onLogout }) {
                   {KIND_LABEL[k]}
                 </option>
               ))}
+            </select>
+          )}
+          {selectedTrip && packing && (
+            <select
+              value={hidePacked ? 'hide' : 'all'}
+              onChange={e => setHidePacked(e.target.value === 'hide')}
+              title="Bags are always shown, even when their packed items are hidden"
+              style={{
+                background: hidePacked ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'transparent',
+                color: hidePacked ? 'var(--accent)' : 'var(--text-muted)',
+                border: `1px solid ${hidePacked ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'var(--border)'}`,
+              }}
+              className="px-2 py-1.5 rounded-lg text-xs font-medium outline-none cursor-pointer"
+            >
+              <option value="all" style={{ background: 'var(--modal-bg)', color: 'var(--text)' }}>All items</option>
+              <option value="hide" style={{ background: 'var(--modal-bg)', color: 'var(--text)' }}>Hide packed</option>
             </select>
           )}
           {selectedTrip && !editing && !packing && online && canEdit(selectedTrip.role) && (

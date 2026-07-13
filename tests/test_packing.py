@@ -107,3 +107,28 @@ def test_bag_crud_and_unassign_on_delete(client, session):
     assert refreshed["bags"] == []
     charger = next(i for i in refreshed["items"] if i["name"] == "charger")
     assert charger["bag_id"] is None
+
+
+def test_bag_created_unpacked_by_default(client):
+    tid = _trip(client)
+    bag = client.post(f"/trips/{tid}/bags", json={"name": "Cube"}).json()
+    assert bag["packed"] is False
+
+
+def test_bag_packed_flag_toggles_independently_of_contents(client):
+    """A bag's packed flag is a manual, independent marker -- not derived
+    from whether its items are individually packed (e.g. zipping a packing
+    cube shut is one action, not "check every sock inside again")."""
+    tid = _trip(client)
+    bag = client.post(f"/trips/{tid}/bags", json={"name": "Cube"}).json()
+    client.post(f"/trips/{tid}/packing", json={"name": "socks", "bag_id": bag["id"], "quantity": 3})
+
+    r = client.patch(f"/bags/{bag['id']}", json={"packed": True})
+    assert r.json()["packed"] is True
+
+    # The contained item's own packed_count is untouched by the bag flag.
+    items = client.get(f"/trips/{tid}/packing").json()["items"]
+    assert items[0]["packed_count"] == 0
+
+    r2 = client.patch(f"/bags/{bag['id']}", json={"packed": False})
+    assert r2.json()["packed"] is False
