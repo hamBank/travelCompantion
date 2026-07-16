@@ -127,6 +127,8 @@ export default defineConfig({
       '/stops': 'http://localhost:8000',
       '/items': 'http://localhost:8000',
       '/import': 'http://localhost:8000',
+      '/auth': 'http://localhost:8000',
+      '/health': 'http://localhost:8000',
     },
   },
 })

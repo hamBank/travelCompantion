@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending, updateItemStatus } from '../api.js'
+import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending, updateItemStatus, updateStop } from '../api.js'
 import StopCard, { computeCrossStopLayover, itemDateKey, itemEndMs, itemOccursOn, DayMap, dayMapPoints } from './StopCard.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import RailDetailModal from './RailDetailModal.jsx'
@@ -91,6 +91,7 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   const [pastPendingDismissed, setPastPendingDismissed] = useState(false)
   const [markingDone, setMarkingDone] = useState(false)
   const [markDoneError, setMarkDoneError] = useState(null)
+  const [fixingStopTz, setFixingStopTz] = useState(null)  // stop_id mid-autofix, for its button's busy state
   const [navItem, setNavItem] = useState(null)
   const [renderKey, setRenderKey] = useState(0)  // force remount on data refresh
   const allItemsRef    = useRef([])
@@ -315,6 +316,19 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
     finally { setMarkingDone(false) }
   }
 
+  // One-click fix for a "Timezone mismatch" warning — PATCHes the stop to the
+  // warning's suggested_timezone (the location's real offset, computed
+  // server-side in backend/validation.py), then reloads so the warning clears.
+  async function fixStopTimezone(stopId, timezone) {
+    if (fixingStopTz != null) return
+    setFixingStopTz(stopId)
+    try {
+      await updateStop(stopId, { timezone })
+      await load({ background: true, remount: false })
+    } catch (_) {}
+    finally { setFixingStopTz(null) }
+  }
+
   // Inbound transport: for each stop, the flight/rail (filed on a *different* stop)
   // whose arrival date matches this stop's arrival date — i.e. how you got here.
   const datePart = v => (v ? String(v).split('T')[0] : null)
@@ -437,6 +451,16 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
                     <li key={w.item_id ?? `gap-${i}`}>
                       <span style={{ color: 'var(--text-muted)' }}>{w.stop_location}:</span>{' '}
                       {w.name} — {fmtDay(w.item_date)} ({w.reason})
+                      {w.suggested_timezone != null && w.stop_id != null && (
+                        <button
+                          onClick={() => fixStopTimezone(w.stop_id, w.suggested_timezone)}
+                          disabled={fixingStopTz === w.stop_id}
+                          style={{ color: 'var(--accent)' }}
+                          className="ml-1.5 font-medium hover:opacity-70 transition-opacity underline disabled:opacity-50"
+                        >
+                          {fixingStopTz === w.stop_id ? 'Fixing…' : `Fix → UTC${Number(w.suggested_timezone) >= 0 ? '+' : ''}${w.suggested_timezone}`}
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
