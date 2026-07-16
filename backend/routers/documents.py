@@ -1,8 +1,9 @@
 """Document parsing → itinerary item.
 
 Upload an arbitrary travel document (booking email .eml, ticket PDF, plain text,
-etc.). We extract the document's text (PDFs are handed to Claude directly as a
-document block), then ask Claude to:
+a saved-webpage confirmation as .html/.htm or .mhtml/.mht, etc.). We extract the
+document's text (PDFs are handed to Claude directly as a document block), then
+ask Claude to:
 
   1. classify what *kind* of itinerary item it is (rail / flight / accommodation…),
   2. work out which stop on the trip it belongs to (by location + date),
@@ -107,6 +108,26 @@ def _strip_html(s: str) -> str:
     s = re.sub(r"(?s)<[^>]+>", " ", s)
     s = html.unescape(s)
     return re.sub(r"[ \t]*\n[ \t\n]*", "\n", re.sub(r"[ \t]+", " ", s)).strip()
+
+
+# Sniffs a declared charset out of the first couple KB of raw HTML bytes —
+# <meta charset="…"> or the older <meta http-equiv=Content-Type content="…charset=…">.
+# Confirmation pages saved from non-English sites are often windows-1252/
+# iso-8859-1, not UTF-8; blindly decoding as UTF-8 with errors="replace"
+# silently mangles every accented character (names, addresses) into U+FFFD.
+_CHARSET_RE = re.compile(
+    rb'<meta[^>]+charset=["\']?\s*([a-zA-Z0-9_\-]+)', re.IGNORECASE
+)
+
+
+def _decode_html_bytes(raw: bytes) -> str:
+    m = _CHARSET_RE.search(raw[:4096])
+    if m:
+        try:
+            return raw.decode(m.group(1).decode("ascii", "ignore"), "replace")
+        except (LookupError, UnicodeDecodeError):
+            pass
+    return raw.decode("utf-8", "replace")
 
 
 def _text_from_eml(raw: bytes) -> str:
@@ -1204,8 +1225,17 @@ def _merge_document_sources(file_tuples: list) -> tuple:
                 for fn, ct, data in _attachments_from_eml(raw)
                 if fn.lower().endswith(".pdf") or "pdf" in (ct or "")
             )
+        elif name.endswith((".mhtml", ".mht")) or "multipart/related" in ctype:
+            # MHTML ("Webpage, Single File" in Chrome/Edge) is a MIME message
+            # exactly like an .eml — one text/html part plus inlined resources —
+            # so the same parser applies; feeding the raw bytes through the
+            # generic branch below would leave MIME headers/boundaries and
+            # quoted-printable soft-breaks (=3D, trailing =) in the extracted text.
+            t = _text_from_eml(raw)
+            if t and t.strip():
+                texts.append(t.strip())
         else:
-            text = raw.decode("utf-8", "replace")
+            text = _decode_html_bytes(raw) if name.endswith((".html", ".htm")) else raw.decode("utf-8", "replace")
             if "<html" in text.lower() or name.endswith((".html", ".htm")):
                 text = _strip_html(text)
             if text and text.strip():
