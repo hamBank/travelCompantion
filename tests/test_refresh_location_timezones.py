@@ -1,51 +1,68 @@
 from sqlmodel import Session, select
 
-from backend.models import ItineraryItem, LocationTimezone, Stop
+from backend.models import ItineraryItem, LocationTimezone, Stop, Trip
 from scripts.refresh_location_timezones import pending_locations, refresh_all
 
 
-def _flight(origin, destination, details=None):
+def _stop_id(session: Session, location: str = "", **kwargs) -> int:
+    """Real Trip + Stop rows, not just a hardcoded id — Postgres CI enforces
+    the FK that SQLite silently lets slide. Defaults location to "" (excluded
+    by pending_locations' `if loc:` check) so flight-only tests don't
+    accidentally pull the stop's own location into their expected sets."""
+    trip = Trip(name="Test Trip")
+    session.add(trip)
+    session.commit()
+    stop = Stop(trip_id=trip.id, status="planned", location=location, **kwargs)
+    session.add(stop)
+    session.commit()
+    return stop.id
+
+
+def _flight(stop_id, origin, destination, details=None):
     d = {"origin": origin, "destination": destination, **(details or {})}
-    return ItineraryItem(stop_id=1, kind="flight", name=f"{origin}→{destination}", status="pending", details=d)
+    return ItineraryItem(stop_id=stop_id, kind="flight", name=f"{origin}→{destination}", status="pending", details=d)
 
 
 def test_pending_locations_collects_distinct_origins_and_destinations(session: Session):
-    session.add(_flight("FCO", "ZRH"))
-    session.add(_flight("BDS", "FCO"))
+    sid = _stop_id(session)
+    session.add(_flight(sid, "FCO", "ZRH"))
+    session.add(_flight(sid, "BDS", "FCO"))
     session.commit()
     assert pending_locations(session) == {"FCO", "ZRH", "BDS"}
 
 
 def test_pending_locations_excludes_already_cached(session: Session):
-    session.add(_flight("FCO", "ZRH"))
+    sid = _stop_id(session)
+    session.add(_flight(sid, "FCO", "ZRH"))
     session.add(LocationTimezone(location="FCO", iana_zone="Europe/Rome"))
     session.commit()
     assert pending_locations(session) == {"ZRH"}
 
 
 def test_pending_locations_ignores_non_flight_items(session: Session):
-    session.add(ItineraryItem(stop_id=1, kind="activity", name="Museum", status="pending",
+    sid = _stop_id(session)
+    session.add(ItineraryItem(stop_id=sid, kind="activity", name="Museum", status="pending",
                                details={"location": "Rome"}))
     session.commit()
     assert pending_locations(session) == set()
 
 
 def test_pending_locations_includes_stop_locations_regardless_of_timezone_set(session: Session):
-    session.add(Stop(trip_id=1, location="Nice", status="planned"))  # timezone left at default "0"
-    session.add(Stop(trip_id=1, location="Turin", status="planned", timezone="2"))
-    session.commit()
+    _stop_id(session, location="Nice")  # timezone left at default "0"
+    _stop_id(session, location="Turin", timezone="2")
     assert pending_locations(session) == {"Nice", "Turin"}
 
 
 def test_pending_locations_excludes_already_cached_stop_location(session: Session):
-    session.add(Stop(trip_id=1, location="Nice", status="planned"))
+    _stop_id(session, location="Nice")
     session.add(LocationTimezone(location="Nice", iana_zone="Europe/Paris"))
     session.commit()
     assert pending_locations(session) == set()
 
 
 def test_refresh_all_resolves_and_caches_pending_locations(session: Session):
-    session.add(_flight("FCO", "ZRH"))
+    sid = _stop_id(session)
+    session.add(_flight(sid, "FCO", "ZRH"))
     session.commit()
 
     # Encode identity in the fake coords so fetch_json can recover which
@@ -70,7 +87,8 @@ def test_refresh_all_resolves_and_caches_pending_locations(session: Session):
 
 
 def test_refresh_all_skips_unresolvable_locations_without_erroring(session: Session):
-    session.add(_flight("XXX", "ZRH"))
+    sid = _stop_id(session)
+    session.add(_flight(sid, "XXX", "ZRH"))
     session.commit()
 
     def fake_geocode(q):
