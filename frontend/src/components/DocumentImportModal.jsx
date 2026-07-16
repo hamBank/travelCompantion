@@ -68,7 +68,7 @@ export default function DocumentImportModal({ tripId, onClose, onParsed }) {
               <input
                 type="file"
                 multiple
-                accept=".eml,.pdf,.txt,.md,.html,.htm,.mhtml,.mht,message/rfc822,application/pdf,text/plain"
+                accept=".eml,.pdf,.txt,.md,.html,.htm,.mhtml,.mht"
                 onChange={handleSelect}
                 className="hidden"
               />
