@@ -435,6 +435,17 @@ class WeatherCache(SQLModel, table=True):
     fetched_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class LocationTimezone(SQLModel, table=True):
+    """Cache of location name → IANA timezone, resolved via Nominatim + Open-Meteo
+    by scripts/refresh_location_timezones.py (never resolved live in a request —
+    see backend/tz_check.py). Timezones are effectively permanent, so there's no
+    TTL; a location is re-resolved only if it's missing from this table.
+    """
+    location: str = Field(primary_key=True)     # normalized place name or "<IATA> airport"
+    iana_zone: str                                # e.g. "Europe/Rome"
+    resolved_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # ── ItemHistory (versioning / audit log) ──────────────────────────────────────
 
 class ItemHistory(SQLModel, table=True):

@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from sqlmodel import Session, select
 from sqlalchemy import nullslast, func
 
+from . import tz_check
 from .models import Stop, ItineraryItem
 
 # Items that represent movement between places. Shared by the missing-transport
@@ -246,6 +247,63 @@ def _impossible_connection_warnings(all_items: list[tuple]) -> list[dict]:
     return out
 
 
+_TZ_MISMATCH_TOLERANCE_MIN = 30
+
+
+def _flight_tz_mismatch(session: Session, it: ItineraryItem) -> list[dict]:
+    """Compare a flight's stored depart_tz/arrive_tz against the real,
+    DST-aware offset for its origin/destination airport — but ONLY when that
+    airport's timezone is already cached (see backend/tz_check.py). Resolution
+    happens exclusively in scripts/refresh_location_timezones.py's background
+    cron; an uncached airport means "nothing to compare against yet", not a
+    warning, so a fresh location never false-alarms before its first refresh."""
+    d = it.details or {}
+    out = []
+    for leg, loc_key, tz_key, time_key in (
+        ("Departure", "origin", "depart_tz", "depart_time"),
+        ("Arrival", "destination", "arrive_tz", "arrive_time"),
+    ):
+        loc = d.get(loc_key)
+        dt = _to_dt(d.get(time_key))
+        if not loc or not dt:
+            continue
+        zone = tz_check.get_cached_zone(session, loc)
+        if not zone:
+            continue
+        expected = tz_check.expected_offset_minutes(zone, dt.date())
+        if expected is None:
+            continue
+        stored = tz_check.parse_stored_offset_minutes(d.get(tz_key), dt.date())
+        if stored is not None and abs(stored - expected) <= _TZ_MISMATCH_TOLERANCE_MIN:
+            continue
+        exp_str = f"UTC{expected // 60:+d}" if expected % 60 == 0 else f"UTC{expected / 60:+.1f}"
+        reason = (
+            f"{leg} timezone not set for {loc} — expected {exp_str} ({zone})" if stored is None else
+            f"{leg} timezone {d.get(tz_key)} doesn't match {loc}'s real offset {exp_str} ({zone})"
+        )
+        out.append({
+            "item_id": it.id,
+            "name": it.name,
+            "kind": it.kind,
+            "stop_location": loc,
+            "item_date": dt.isoformat(),
+            "stop_arrive": None,
+            "stop_depart": None,
+            "reason": reason,
+        })
+    return out
+
+
+def _timezone_mismatch_warnings(session: Session, all_items: list[ItineraryItem]) -> list[dict]:
+    """Flight-only for now — the one kind with reliable IATA origin/destination
+    codes and dedicated depart_tz/arrive_tz fields (see backend/tz_check.py)."""
+    out = []
+    for it in all_items:
+        if it.kind == "flight":
+            out.extend(_flight_tz_mismatch(session, it))
+    return out
+
+
 def date_warnings(session: Session, trip_id: int) -> list[dict]:
     """Items whose date sits before their stop's arrival or after its departure.
     Stops without dates are skipped.
@@ -319,5 +377,7 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
     stop_by_id = {s.id: s for s in stops}
     all_items_with_stop = [(stop_by_id[it.stop_id], it) for it in all_items if it.stop_id in stop_by_id]
     out.extend(_impossible_connection_warnings(all_items_with_stop))
+
+    out.extend(_timezone_mismatch_warnings(session, all_items))
 
     return out

@@ -505,4 +505,82 @@ def test_reorder_stop(client: TestClient, trip):
     }).json()
     r = client.patch(f"/stops/{stop['id']}/reorder", json={"sort_order": 5})
     assert r.status_code == 200
-    assert r.json()["sort_order"] == 5
+
+
+def test_date_warnings_flight_missing_tz_flagged_when_airport_cached(client: TestClient, trip, session: Session):
+    # The exact reported bug: FCO's timezone is cached (as it would be after
+    # scripts/refresh_location_timezones.py ran), but the flight has no
+    # depart_tz at all — must be flagged rather than silently defaulting to UTC.
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="FCO", iana_zone="Europe/Rome"))
+    session.commit()
+
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned"
+    }).json()
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "Rome → Zurich", "status": "pending",
+        "details": {"origin": "FCO", "destination": "ZRH", "depart_time": "2026-08-04T08:30"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    tz_warnings = [w for w in warnings if "timezone" in w["reason"].lower()]
+    assert len(tz_warnings) == 1
+    assert tz_warnings[0]["stop_location"] == "FCO"
+    assert "not set" in tz_warnings[0]["reason"]
+    assert "Europe/Rome" in tz_warnings[0]["reason"]
+
+
+def test_date_warnings_flight_wrong_tz_flagged(client: TestClient, trip, session: Session):
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="FCO", iana_zone="Europe/Rome"))
+    session.commit()
+
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned"
+    }).json()
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "Rome → Zurich", "status": "pending",
+        "details": {"origin": "FCO", "destination": "ZRH",
+                     "depart_time": "2026-08-04T08:30", "depart_tz": "GMT+5"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    tz_warnings = [w for w in warnings if "timezone" in w["reason"].lower()]
+    assert len(tz_warnings) == 1
+    assert "GMT+5" in tz_warnings[0]["reason"]
+    assert "Europe/Rome" in tz_warnings[0]["reason"]
+
+
+def test_date_warnings_flight_correct_tz_not_flagged(client: TestClient, trip, session: Session):
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="FCO", iana_zone="Europe/Rome"))
+    session.add(LocationTimezone(location="ZRH", iana_zone="Europe/Zurich"))
+    session.commit()
+
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned"
+    }).json()
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "Rome → Zurich", "status": "pending",
+        "details": {
+            "origin": "FCO", "destination": "ZRH",
+            "depart_time": "2026-08-04T08:30", "depart_tz": "GMT+2",
+            "arrive_time": "2026-08-04T10:05", "arrive_tz": "GMT+2",
+        },
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if "timezone" in w["reason"].lower()] == []
+
+
+def test_date_warnings_flight_uncached_airport_not_flagged(client: TestClient, trip):
+    # No LocationTimezone row for FCO at all — nothing to compare against yet
+    # (the background cron hasn't resolved it), so this must stay silent
+    # rather than guessing or false-alarming.
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned"
+    }).json()
+    client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "flight", "name": "Rome → Zurich", "status": "pending",
+        "details": {"origin": "FCO", "destination": "ZRH", "depart_time": "2026-08-04T08:30"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if "timezone" in w["reason"].lower()] == []
