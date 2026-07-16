@@ -48,6 +48,61 @@ def test_merge_document_sources_single_file_unchanged():
     assert pdf_b64s == []
 
 
+def test_merge_document_sources_strips_saved_webpage_html():
+    """A confirmation page saved as plain .html is stripped to readable text."""
+    html_doc = b"""<!DOCTYPE html><html><head><title>Confirmation</title>
+    <style>body { color: red; }</style>
+    <script>console.log('nav tracking');</script>
+    </head><body><h1>Booking AY132</h1><p>Singapore &rarr; Helsinki</p></body></html>"""
+    combined_text, pdf_b64s = _merge_document_sources([
+        ("confirmation.html", "text/html", html_doc),
+    ])
+    assert "Booking AY132" in combined_text
+    assert "Singapore" in combined_text
+    assert "console.log" not in combined_text
+    assert "color: red" not in combined_text
+    assert pdf_b64s == []
+
+
+def test_merge_document_sources_decodes_declared_charset():
+    """An .html file with a non-UTF-8 declared charset is decoded correctly, not mangled."""
+    html_doc = (
+        '<html><head><meta charset="windows-1252"></head>'
+        '<body><p>Café Résa – confirmation</p></body></html>'
+    ).encode("windows-1252")
+    combined_text, _ = _merge_document_sources([
+        ("confirmation.html", "text/html", html_doc),
+    ])
+    assert "Café Résa" in combined_text
+
+
+def test_merge_document_sources_parses_mhtml_saved_webpage():
+    """A 'Webpage, Single File' .mhtml save is parsed like a MIME email, not left as raw MIME/quoted-printable."""
+    mhtml_doc = (
+        b"From: <Saved by Blink>\n"
+        b"Snapshot-Content-Location: https://airline.example/confirm\n"
+        b"Subject: Booking confirmation\n"
+        b"MIME-Version: 1.0\n"
+        b'Content-Type: multipart/related; type="text/html"; boundary="----MultipartBoundary"\n'
+        b"\n"
+        b"------MultipartBoundary\n"
+        b"Content-Type: text/html\n"
+        b"Content-Transfer-Encoding: quoted-printable\n"
+        b"Content-Location: https://airline.example/confirm\n"
+        b"\n"
+        b"<html><body><h1>Flight AY=20132</h1><p>Singapore =E2=86=92 Helsinki</p></body></html>\n"
+        b"------MultipartBoundary--\n"
+    )
+    combined_text, pdf_b64s = _merge_document_sources([
+        ("confirmation.mhtml", "message/rfc822", mhtml_doc),
+    ])
+    assert "Flight AY 132" in combined_text
+    assert "Singapore" in combined_text and "Helsinki" in combined_text
+    assert "Content-Transfer-Encoding" not in combined_text
+    assert "------MultipartBoundary" not in combined_text
+    assert pdf_b64s == []
+
+
 def test_deduplication_across_documents(client, session):
     """Items described in two documents produce one pending change, not two."""
     trip, stop, stops = _trip(client, session)

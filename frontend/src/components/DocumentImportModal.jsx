@@ -55,8 +55,9 @@ export default function DocumentImportModal({ tripId, onClose, onParsed }) {
         {stage === 'pick' && (
           <>
             <p style={{ color: 'var(--text-faint)' }} className="text-xs mb-4">
-              Upload booking emails (.eml), ticket PDFs, or text files. Multiple files are processed
-              together — useful when each passenger has a separate e-ticket.
+              Upload booking emails (.eml), ticket PDFs, text files, or a confirmation page
+              saved from a browser (.html/.htm or .mhtml/.mht "Webpage, Single File"). Multiple
+              files are processed together — useful when each passenger has a separate e-ticket.
             </p>
 
             <label
@@ -67,7 +68,7 @@ export default function DocumentImportModal({ tripId, onClose, onParsed }) {
               <input
                 type="file"
                 multiple
-                accept=".eml,.pdf,.txt,.md,.html,.htm,message/rfc822,application/pdf,text/plain"
+                accept=".eml,.pdf,.txt,.md,.html,.htm,.mhtml,.mht,message/rfc822,application/pdf,text/plain"
                 onChange={handleSelect}
                 className="hidden"
               />
