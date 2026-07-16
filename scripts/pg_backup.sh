@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# pg_backup.sh — dump the Travel Companion Postgres DB and prune old dumps.
+# pg_backup.sh — dump the Travel Companion Postgres DB and prune old backups
+# (both this script's own .dump files and deploy.sh's pre-deploy .sql dumps,
+# which deploy.sh itself never prunes).
 #
 # Runs as the app user (no sudo): reads the DB password from $APP_DIR/.pg-bootstrap
 # and writes a compressed custom-format dump (restorable with pg_restore) to
@@ -27,5 +29,7 @@ else
   echo "$(date '+%F %T') ✗ pg_dump failed"; rm -f "$OUT"; exit 1
 fi
 
-# Prune dumps older than RETAIN_DAYS
-find "$BACKUP_DIR" -name 'travelcomp-*.dump' -type f -mtime +"$RETAIN_DAYS" -delete
+# Prune backups older than RETAIN_DAYS — both this script's .dump files and
+# deploy.sh's pre-deploy .sql dumps (deploy.sh writes one per deploy and never
+# prunes them itself, so without this they accumulate forever).
+find "$BACKUP_DIR" \( -name 'travelcomp-*.dump' -o -name 'travelcomp-*.sql' \) -type f -mtime +"$RETAIN_DAYS" -delete
