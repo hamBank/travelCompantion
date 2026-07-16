@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Query
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 from sqlalchemy import nullslast, func
@@ -951,21 +951,21 @@ _DAY_MAP_MAX_LOCATIONS = 12  # bounds URL length and marker legibility; also cap
 _MARKER_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # Static Maps only accepts a single A-Z/0-9 char per marker
 
 
-class DayMapRequest(BaseModel):
-    locations: List[str]
-
-
-@router.post("/stops/{stop_id}/day-map")
-def day_map(stop_id: int, req: DayMapRequest, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+@router.get("/stops/{stop_id}/day-map")
+def day_map(stop_id: int, locations: List[str] = Query(...), session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """Proxy a Static Maps image with one pin per (already-deduplicated,
     frontend-supplied) location string for a single day's items. Stop-scoped
     — not item-scoped like river-map/gpx-map, since this reflects an
     arbitrary same-day set rather than one item's stored path — but still
     requires at least viewer on that stop's trip, so the billed API can't be
     hammered by an arbitrary caller the way a fully stateless endpoint could.
+
+    GET (not POST) so the browser's HTTP cache and the service worker's
+    Workbox runtimeCaching can both cache the response — POST responses are
+    never cached regardless of Cache-Control headers.
     """
     require_stop_role(session, user, stop_id, TripRole.viewer)
-    locations = [loc.strip() for loc in req.locations if loc and loc.strip()]
+    locations = [loc.strip() for loc in locations if loc and loc.strip()]
     # Preserve first-seen order while deduplicating case-insensitively — the
     # same address showing up under two items (e.g. a restaurant and a note
     # both at the hotel) shouldn't burn two marker slots.

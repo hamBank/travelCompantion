@@ -54,6 +54,28 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,woff2}'],
         runtimeCaching: [
           {
+            // Static Maps proxy images (river-map/gpx-map/day-map) — CacheFirst
+            // since a given set of inputs (path points / locations) always
+            // renders the same image; the backend already marks these
+            // immutable-for-24h via Cache-Control+ETag. Must be listed before
+            // the api-reads rule below, which would otherwise NetworkFirst-
+            // match river-map/gpx-map first (they're under /items) and never
+            // let this rule take over.
+            urlPattern: ({ request, url }) =>
+              request.method === 'GET' &&
+              (/^\/items\/\d+\/(river|gpx)-map$/.test(url.pathname) ||
+                /^\/stops\/\d+\/day-map$/.test(url.pathname)),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'static-maps',
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 24 * 60 * 60,
+              },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
             // NetworkFirst for all GET API reads: fresh data when online,
             // cached copy when offline. Times out after 4s to surface cached
             // data quickly on slow connections.
