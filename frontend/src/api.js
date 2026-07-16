@@ -208,13 +208,10 @@ export async function fetchGpxMapBlob(id) {
 
 export async function fetchDayMapBlob(stopId, locations) {
   const token = getToken()
-  const r = await fetch(`/stops/${stopId}/day-map`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ locations }),
+  const params = new URLSearchParams()
+  for (const loc of locations) params.append('locations', loc)
+  const r = await fetch(`/stops/${stopId}/day-map?${params.toString()}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   return r.ok ? r.blob() : null
 }

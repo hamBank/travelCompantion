@@ -317,28 +317,28 @@ def test_river_map_happy_path(client: TestClient, stop, monkeypatch):
     assert "max-age" in r.headers["cache-control"]
 
 
-# ── POST /stops/{id}/day-map ─────────────────────────────────────────────────
+# ── GET /stops/{id}/day-map ──────────────────────────────────────────────────
 
 def test_day_map_400_with_no_locations(client: TestClient, stop):
-    r = client.post(f"/stops/{stop['id']}/day-map", json={"locations": ["", "   "]})
+    r = client.get(f"/stops/{stop['id']}/day-map", params={"locations": ["", "   "]})
     assert r.status_code == 400
 
 
 def test_day_map_400_with_too_many_locations(client: TestClient, stop, monkeypatch):
     monkeypatch.setattr(items_mod, "_STATIC_MAPS_KEY", "test-key")
     locs = [f"Place {i}" for i in range(items_mod._DAY_MAP_MAX_LOCATIONS + 1)]
-    r = client.post(f"/stops/{stop['id']}/day-map", json={"locations": locs})
+    r = client.get(f"/stops/{stop['id']}/day-map", params={"locations": locs})
     assert r.status_code == 400
 
 
 def test_day_map_503_when_key_not_configured(client: TestClient, stop, monkeypatch):
     monkeypatch.setattr(items_mod, "_STATIC_MAPS_KEY", "")
-    r = client.post(f"/stops/{stop['id']}/day-map", json={"locations": ["Rome"]})
+    r = client.get(f"/stops/{stop['id']}/day-map", params={"locations": ["Rome"]})
     assert r.status_code == 503
 
 
 def test_day_map_404_for_missing_stop(client: TestClient):
-    r = client.post("/stops/999999/day-map", json={"locations": ["Rome"]})
+    r = client.get("/stops/999999/day-map", params={"locations": ["Rome"]})
     assert r.status_code == 404
 
 
@@ -365,7 +365,7 @@ def test_day_map_happy_path_dedupes_and_labels_markers(client: TestClient, stop,
 
     monkeypatch.setattr(items_mod.httpx, "Client", FakeClient)
 
-    r = client.post(f"/stops/{stop['id']}/day-map", json={
+    r = client.get(f"/stops/{stop['id']}/day-map", params={
         "locations": ["Colosseum, Rome", "colosseum, rome", "Trevi Fountain, Rome"],
     })
     assert r.status_code == 200
