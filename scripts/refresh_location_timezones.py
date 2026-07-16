@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Resolve and cache the real IANA timezone for every flight origin/destination
-seen in the DB, so validation.py's timezone-mismatch check has something to
-compare against. Locations are effectively permanent, so this only resolves
-what's missing from LocationTimezone — no re-fetching, no TTL.
+and stop location seen in the DB, so validation.py's timezone-mismatch check
+has something to compare against. Locations are effectively permanent, so this
+only resolves what's missing from LocationTimezone — no re-fetching, no TTL.
 
 Run via cron with DATABASE_URL set (Postgres in prod):
     cd /opt/travelcomp && export $(grep -E '^DATABASE_URL=' .env) \
@@ -16,12 +16,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlmodel import Session, select  # noqa: E402
 from backend.database import engine  # noqa: E402
-from backend.models import ItineraryItem, ItemKind, LocationTimezone  # noqa: E402
+from backend.models import ItineraryItem, ItemKind, LocationTimezone, Stop  # noqa: E402
 from backend.tz_check import refresh_zone_cache  # noqa: E402
 
 
 def pending_locations(session: Session) -> set[str]:
-    """Every distinct flight origin/destination not already cached."""
+    """Every distinct flight origin/destination and stop location not already
+    cached. Stops are resolved regardless of whether Stop.timezone is set —
+    the check only *compares* against a set timezone, but caching every stop's
+    real offset up front means a newly-entered timezone is checkable
+    immediately rather than waiting on the airport-only demand-driven path."""
     items = session.exec(select(ItineraryItem).where(ItineraryItem.kind == ItemKind.flight)).all()
     locations = set()
     for it in items:
@@ -30,6 +34,11 @@ def pending_locations(session: Session) -> set[str]:
             loc = (d.get(key) or "").strip()
             if loc:
                 locations.add(loc)
+    stops = session.exec(select(Stop)).all()
+    for stop in stops:
+        loc = (stop.location or "").strip()
+        if loc:
+            locations.add(loc)
     if not locations:
         return set()
     cached = session.exec(

@@ -1,6 +1,6 @@
 from sqlmodel import Session, select
 
-from backend.models import ItineraryItem, LocationTimezone
+from backend.models import ItineraryItem, LocationTimezone, Stop
 from scripts.refresh_location_timezones import pending_locations, refresh_all
 
 
@@ -26,6 +26,20 @@ def test_pending_locations_excludes_already_cached(session: Session):
 def test_pending_locations_ignores_non_flight_items(session: Session):
     session.add(ItineraryItem(stop_id=1, kind="activity", name="Museum", status="pending",
                                details={"location": "Rome"}))
+    session.commit()
+    assert pending_locations(session) == set()
+
+
+def test_pending_locations_includes_stop_locations_regardless_of_timezone_set(session: Session):
+    session.add(Stop(trip_id=1, location="Nice", status="planned"))  # timezone left at default "0"
+    session.add(Stop(trip_id=1, location="Turin", status="planned", timezone="2"))
+    session.commit()
+    assert pending_locations(session) == {"Nice", "Turin"}
+
+
+def test_pending_locations_excludes_already_cached_stop_location(session: Session):
+    session.add(Stop(trip_id=1, location="Nice", status="planned"))
+    session.add(LocationTimezone(location="Nice", iana_zone="Europe/Paris"))
     session.commit()
     assert pending_locations(session) == set()
 

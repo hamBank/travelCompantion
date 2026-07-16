@@ -34,6 +34,29 @@ def test_returns_none_for_empty_or_garbage():
     assert tz_check.parse_stored_offset_minutes("Narnia/Nowhere", date(2026, 8, 4)) is None
 
 
+# ── parse_stop_offset_minutes ────────────────────────────────────────────────
+
+def test_parses_plain_hour_string():
+    assert tz_check.parse_stop_offset_minutes("2") == 120
+    assert tz_check.parse_stop_offset_minutes("-5") == -300
+
+
+def test_parses_half_hour_offset():
+    assert tz_check.parse_stop_offset_minutes("5.5") == 330
+
+
+def test_parses_zero_as_zero_not_none():
+    # Distinguishing "0" (unset) from a real 0 is the caller's job
+    # (Stop.timezone's model default is "0"); this function just parses.
+    assert tz_check.parse_stop_offset_minutes("0") == 0
+
+
+def test_stop_offset_returns_none_for_garbage():
+    assert tz_check.parse_stop_offset_minutes("") is None
+    assert tz_check.parse_stop_offset_minutes(None) is None
+    assert tz_check.parse_stop_offset_minutes("GMT+2") is None
+
+
 # ── expected_offset_minutes ──────────────────────────────────────────────────
 
 def test_expected_offset_is_dst_aware():

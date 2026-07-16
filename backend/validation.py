@@ -276,7 +276,7 @@ def _flight_tz_mismatch(session: Session, it: ItineraryItem) -> list[dict]:
         stored = tz_check.parse_stored_offset_minutes(d.get(tz_key), dt.date())
         if stored is not None and abs(stored - expected) <= _TZ_MISMATCH_TOLERANCE_MIN:
             continue
-        exp_str = f"UTC{expected // 60:+d}" if expected % 60 == 0 else f"UTC{expected / 60:+.1f}"
+        exp_str = _fmt_offset(expected)
         reason = (
             f"{leg} timezone not set for {loc} — expected {exp_str} ({zone})" if stored is None else
             f"{leg} timezone {d.get(tz_key)} doesn't match {loc}'s real offset {exp_str} ({zone})"
@@ -294,13 +294,54 @@ def _flight_tz_mismatch(session: Session, it: ItineraryItem) -> list[dict]:
     return out
 
 
-def _timezone_mismatch_warnings(session: Session, all_items: list[ItineraryItem]) -> list[dict]:
-    """Flight-only for now — the one kind with reliable IATA origin/destination
-    codes and dedicated depart_tz/arrive_tz fields (see backend/tz_check.py)."""
+def _fmt_offset(minutes: int) -> str:
+    return f"UTC{minutes // 60:+d}" if minutes % 60 == 0 else f"UTC{minutes / 60:+.1f}"
+
+
+def _stop_tz_mismatch(session: Session, stop: Stop) -> list[dict]:
+    """Compare Stop.timezone (sheet-import's per-stop offset — see
+    backend/tz_check.py:parse_stop_offset_minutes for its "2"/"-5" convention)
+    against the location's real, DST-aware offset. Unlike flights, an UNSET
+    stop timezone is never flagged: "0" is the model default for every
+    manually-created stop (sheet import is the only writer), so treating it as
+    "missing" would warn on nearly every stop in the app — only a genuinely
+    *present-but-wrong* value is worth surfacing."""
+    if not stop.location:
+        return []
+    stored = tz_check.parse_stop_offset_minutes(stop.timezone)
+    if stored is None or stored == 0:
+        return []
+    on_date = stop.arrive or stop.depart
+    if not on_date:
+        return []
+    zone = tz_check.get_cached_zone(session, stop.location)
+    if not zone:
+        return []
+    expected = tz_check.expected_offset_minutes(zone, on_date.date())
+    if expected is None or abs(stored - expected) <= _TZ_MISMATCH_TOLERANCE_MIN:
+        return []
+    return [{
+        "item_id": None,
+        "name": "Timezone mismatch",
+        "kind": None,
+        "stop_location": stop.location,
+        "item_date": on_date.date().isoformat(),
+        "stop_arrive": stop.arrive.isoformat() if stop.arrive else None,
+        "stop_depart": stop.depart.isoformat() if stop.depart else None,
+        "reason": f"Stop timezone {stop.timezone} doesn't match {stop.location}'s real offset {_fmt_offset(expected)} ({zone})",
+    }]
+
+
+def _timezone_mismatch_warnings(session: Session, all_items: list[ItineraryItem], stops: list[Stop]) -> list[dict]:
+    """Flight-only for item-level checks so far — the one kind with reliable
+    IATA origin/destination codes and dedicated depart_tz/arrive_tz fields
+    (see backend/tz_check.py). Stop-level checks cover Stop.timezone itself."""
     out = []
     for it in all_items:
         if it.kind == "flight":
             out.extend(_flight_tz_mismatch(session, it))
+    for stop in stops:
+        out.extend(_stop_tz_mismatch(session, stop))
     return out
 
 
@@ -378,6 +419,6 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
     all_items_with_stop = [(stop_by_id[it.stop_id], it) for it in all_items if it.stop_id in stop_by_id]
     out.extend(_impossible_connection_warnings(all_items_with_stop))
 
-    out.extend(_timezone_mismatch_warnings(session, all_items))
+    out.extend(_timezone_mismatch_warnings(session, all_items, stops))
 
     return out

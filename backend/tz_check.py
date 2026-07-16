@@ -126,6 +126,19 @@ def parse_stored_offset_minutes(tz_str: str, on_date: date) -> Optional[int]:
         return None
 
 
+def parse_stop_offset_minutes(stop_timezone: str) -> Optional[int]:
+    """Stop.timezone is a plain hour-offset string ("2", "-5", "5.5" for a
+    half-hour zone) — a different convention from the flight tz fields' "GMT+2"
+    style (see backend/notifications.py:_stop_utc_offset_hours, which this
+    mirrors). Model default is "0", indistinguishable from "never set" by
+    sheet import, so callers must treat 0 as absent, same as that function does."""
+    try:
+        hours = float(str(stop_timezone or "").strip())
+    except ValueError:
+        return None
+    return round(hours * 60)
+
+
 def expected_offset_minutes(iana_zone: str, on_date: date) -> Optional[int]:
     """Real, DST-aware UTC offset for `iana_zone` on `on_date`."""
     try:

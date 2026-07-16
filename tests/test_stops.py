@@ -584,3 +584,65 @@ def test_date_warnings_flight_uncached_airport_not_flagged(client: TestClient, t
     })
     warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
     assert [w for w in warnings if "timezone" in w["reason"].lower()] == []
+
+
+def test_date_warnings_stop_timezone_wrong_flagged(client: TestClient, trip, session: Session):
+    # Rome is real GMT+2 in August; a sheet import that stored "5" is a genuine
+    # data error, not just an unset default — must be flagged.
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome"))
+    session.commit()
+
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned", "timezone": "5",
+        "arrive": "2026-08-04T00:00:00",
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    tz_warnings = [w for w in warnings if w["name"] == "Timezone mismatch"]
+    assert len(tz_warnings) == 1
+    assert tz_warnings[0]["stop_location"] == "Rome"
+    assert "Europe/Rome" in tz_warnings[0]["reason"]
+
+
+def test_date_warnings_stop_timezone_correct_not_flagged(client: TestClient, trip, session: Session):
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome"))
+    session.commit()
+
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned", "timezone": "2",
+        "arrive": "2026-08-04T00:00:00",
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if w["name"] == "Timezone mismatch"] == []
+
+
+def test_date_warnings_stop_default_timezone_not_flagged(client: TestClient, trip, session: Session):
+    # "0" is the model default for every manually-created stop — must never be
+    # treated as "missing and worth a warning" (that would fire on nearly
+    # every stop in the app).
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome"))
+    session.commit()
+
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned",
+        "arrive": "2026-08-04T00:00:00",
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if w["name"] == "Timezone mismatch"] == []
+
+
+def test_date_warnings_stop_dst_aware_winter_vs_summer(client: TestClient, trip, session: Session):
+    # Europe/Rome is GMT+1 in January (no DST) — a stop.timezone of "1" is
+    # correct for a January stop but would be wrong for an August one.
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome"))
+    session.commit()
+
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned", "timezone": "1",
+        "arrive": "2026-01-04T00:00:00",
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if w["name"] == "Timezone mismatch"] == []
