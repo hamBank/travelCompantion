@@ -461,6 +461,34 @@ RandomizedDelaySec=600
 [Install]
 WantedBy=timers.target" || true
 
+# Resolves each flight's real airport timezone in the background so
+# backend/validation.py's timezone-mismatch check has a cache to read —
+# never resolved live in a request (see backend/tz_check.py's docstring).
+# Locations are effectively permanent, so daily is plenty; a fresh airport
+# just waits until the next run before its first check.
+write_unit "/etc/systemd/system/${SERVICE_NAME}-loctz.service" "[Unit]
+Description=Travel Companion location timezone cache refresh
+
+[Service]
+Type=oneshot
+User=$APP_USER
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$ENV_FILE
+ExecStart=$VENV/bin/python $APP_DIR/scripts/refresh_location_timezones.py
+StandardOutput=append:/var/log/travelcomp/loctz-refresh.log
+StandardError=append:/var/log/travelcomp/loctz-refresh.log" || true
+
+write_unit "/etc/systemd/system/${SERVICE_NAME}-loctz.timer" "[Unit]
+Description=Run Travel Companion location timezone cache refresh daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target" || true
+
 # Only enable/start on first install. On updates the units are already active,
 # and calling systemctl from within the running update service itself causes
 # a circular dependency → systemd returns exit code 243/CREDENTIALS.
@@ -471,6 +499,7 @@ if ! $UPDATE_ONLY; then
   systemctl enable --now "${SERVICE_NAME}-weather.timer"
   systemctl enable --now "${SERVICE_NAME}-notifications.timer"
   systemctl enable --now "${SERVICE_NAME}-backup.timer"
+  systemctl enable --now "${SERVICE_NAME}-loctz.timer"
   ok "Systemd units created and enabled: ${SERVICE_FILE}"
 else
   # Never call daemon-reload or enable from within the running update service.
