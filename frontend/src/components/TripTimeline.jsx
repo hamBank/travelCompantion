@@ -148,8 +148,9 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
     return () => window.removeEventListener('modalNav', handleModalNav)
   }, [])
 
-  // Today-view day navigation — j/k and swipe left/right, mirroring the
-  // detail-modal item navigation above. Clamped to the trip's date span.
+  // Today-view day navigation — j/k, ArrowLeft/ArrowRight, and swipe left/
+  // right, mirroring the detail-modal item navigation above. Clamped to the
+  // trip's date span.
   const navigateDay = useCallback(direction => {
     setSelectedDay(day => (day == null ? day : clampedShiftDay(day, direction, timeline)))
   }, [timeline])
@@ -157,14 +158,17 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   useEffect(() => {
     if (!todayMode) return
     function onKey(e) {
-      if (e.key !== 'j' && e.key !== 'k') return
+      if (!['j', 'k', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return
       // A detail/edit modal owns j/k while it's open — don't fight it.
       if (isEditing() || getCurrentModal()) return
       const tag = document.activeElement?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
       // Deliberately the reverse of the item-detail-modal mapping (j=next,
-      // k=prev there) — k moves to the next day, j to the previous.
-      navigateDay(e.key === 'k' ? 'next' : 'prev')
+      // k=prev there) — k/ArrowRight move to the next day, j/ArrowLeft to
+      // the previous, matching ArrowRight/ArrowLeft's natural forward/back
+      // reading direction.
+      const goingNext = e.key === 'k' || e.key === 'ArrowRight'
+      navigateDay(goingNext ? 'next' : 'prev')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
