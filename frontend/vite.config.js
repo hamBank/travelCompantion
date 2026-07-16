@@ -54,10 +54,14 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,woff2}'],
         runtimeCaching: [
           {
-            // Static Maps proxy images (river-map/gpx-map/day-map) — CacheFirst
-            // since a given set of inputs (path points / locations) always
-            // renders the same image; the backend already marks these
-            // immutable-for-24h via Cache-Control+ETag. Must be listed before
+            // Static Maps proxy images (river-map/gpx-map/day-map) —
+            // StaleWhileRevalidate: show the cached image instantly (works
+            // offline), and if online, revalidate against the backend in the
+            // background so a genuinely updated map (e.g. a corrected
+            // river/GPX path) replaces the cached copy for next time. A given
+            // set of inputs (path points / locations) usually renders the
+            // same image, but unlike CacheFirst this doesn't commit to that
+            // for a full week without ever checking. Must be listed before
             // the api-reads rule below, which would otherwise NetworkFirst-
             // match river-map/gpx-map first (they're under /items) and never
             // let this rule take over.
@@ -65,12 +69,12 @@ export default defineConfig({
               request.method === 'GET' &&
               (/^\/items\/\d+\/(river|gpx)-map$/.test(url.pathname) ||
                 /^\/stops\/\d+\/day-map$/.test(url.pathname)),
-            handler: 'CacheFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'static-maps',
               expiration: {
                 maxEntries: 200,
-                maxAgeSeconds: 24 * 60 * 60,
+                maxAgeSeconds: 7 * 24 * 60 * 60,
               },
               cacheableResponse: { statuses: [200] },
             },
