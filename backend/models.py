@@ -507,6 +507,81 @@ class ItemAttachmentRead(SQLModel):
     created_at: datetime
 
 
+# ── Expense (actual, real-world logged spend — issue #59) ─────────────────────
+
+class ExpenseBase(SQLModel):
+    name: str
+    # Free-text cost string, e.g. "500 THB" — same convention as
+    # ItineraryItem.cost, parsed client-side via parseCost().
+    amount: str
+    occurred_at: datetime = Field(default_factory=datetime.utcnow)
+    notes: str = ""
+
+
+class Expense(ExpenseBase, table=True):
+    """An actual, real-world spend logged during a trip — distinct from
+    ItineraryItem.cost/details.amount_paid, which track a *planned* item's
+    expected cost and how much of it has been paid so far. An Expense is a
+    point-in-time event ("I spent X just now"), optionally tied to a specific
+    planned item (for a plan-vs-actual comparison) or a stop (for a per-stop/
+    per-day rollup) — but plenty of real spend has neither: a snack, a taxi,
+    a souvenir that was never itemized in the plan. Per-trip only (no
+    personal/shared split like PackingItem) — spend tracking is a whole-trip
+    concern.
+
+    converted_amount/converted_currency are a snapshot of the home-currency
+    conversion taken at entry time (same pattern as ItineraryItem's
+    details.converted_cost) — deliberately NOT recomputed if the user's home
+    currency preference changes later, so a trip's running total stays
+    stable rather than drifting underfoot each time it's viewed.
+
+    stop_id/item_id are real FKs (unlike ItemHistory's deliberately-bare
+    item_id) but deleting the stop/item only unlinks the expense (nulls the
+    FK) rather than deleting it — the money was still spent regardless of
+    whether the plan changed after the fact. See delete_stop/delete_item in
+    routers/stops.py/items.py. Deleting the whole trip removes its expenses
+    too (see delete_trip in routers/trips.py) — nothing to preserve them for.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    trip_id: int = Field(foreign_key="trip.id", index=True)
+    stop_id: Optional[int] = Field(default=None, foreign_key="stop.id", index=True)
+    item_id: Optional[int] = Field(default=None, foreign_key="itineraryitem.id", index=True)
+    converted_amount: Optional[float] = None
+    converted_currency: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ExpenseCreate(ExpenseBase):
+    stop_id: Optional[int] = None
+    item_id: Optional[int] = None
+    converted_amount: Optional[float] = None
+    converted_currency: Optional[str] = None
+
+
+class ExpenseUpdate(SQLModel):
+    """No offline-queue `base` field (unlike PackingItemUpdate/StopUpdate) —
+    expense logging follows Bag's precedent (also editor-gated, trip-wide
+    financial/organizational data) of being online-only for now, rather than
+    every mutable entity in the app automatically getting queue support."""
+    name: Optional[str] = None
+    amount: Optional[str] = None
+    stop_id: Optional[int] = None
+    item_id: Optional[int] = None
+    occurred_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    converted_amount: Optional[float] = None
+    converted_currency: Optional[str] = None
+
+
+class ExpenseRead(ExpenseBase):
+    id: int
+    trip_id: int
+    stop_id: Optional[int] = None
+    item_id: Optional[int] = None
+    converted_amount: Optional[float] = None
+    converted_currency: Optional[str] = None
+
+
 # ── UserDocument vault (passport/licence/visa scans, encrypted at rest) ───────
 
 class UserDocument(SQLModel, table=True):

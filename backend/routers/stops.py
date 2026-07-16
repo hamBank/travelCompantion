@@ -6,7 +6,7 @@ from ..database import get_session
 from sqlmodel import SQLModel as _SQLModel
 from ..auth import get_current_user
 from ..permissions import require_trip_role, require_stop_role
-from ..models import Stop, StopCreate, StopRead, StopUpdate, Trip, ItineraryItem, ItemAttachment, TripRole
+from ..models import Stop, StopCreate, StopRead, StopUpdate, Trip, ItineraryItem, ItemAttachment, TripRole, Expense
 from ..compare_and_set import resolve_fields
 
 router = APIRouter()
@@ -98,6 +98,19 @@ def delete_stop(stop_id: int, session: Session = Depends(get_session), user: dic
     for item in items:
         for attachment in session.exec(select(ItemAttachment).where(ItemAttachment.item_id == item.id)).all():
             session.delete(attachment)
+    # Expenses are actual logged spend, not part of the plan — unlink rather
+    # than delete (see the Expense docstring). Covers both expenses linked
+    # directly to this stop and expenses linked to one of its items (which
+    # are about to be deleted below).
+    item_ids = [item.id for item in items]
+    expenses = {e.id: e for e in session.exec(select(Expense).where(Expense.stop_id == stop_id)).all()}
+    if item_ids:
+        for e in session.exec(select(Expense).where(Expense.item_id.in_(item_ids))).all():
+            expenses[e.id] = e
+    for expense in expenses.values():
+        expense.stop_id = None
+        expense.item_id = None
+        session.add(expense)
     session.flush()
     for item in items:
         session.delete(item)

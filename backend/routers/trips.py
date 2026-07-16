@@ -12,7 +12,7 @@ from ..models import (
     Stop, StopRead,
     ItineraryItem, ItemRead, ItemKind, ItemStatus, ItemAttachment,
     TripMembership, TripRole, MembershipRead, MembershipCreate,
-    Bag, PackingItem,
+    Bag, PackingItem, Expense,
 )
 
 router = APIRouter()
@@ -81,6 +81,14 @@ def delete_trip(trip_id: int, session: Session = Depends(get_session), user: dic
     """
     require_trip_role(session, user, trip_id, TripRole.owner)
     trip = session.get(Trip, trip_id)
+
+    # Unlike delete_stop/delete_item (which unlink expenses, since the money
+    # was still spent), the whole trip is going away here — nothing to
+    # preserve the expenses for. Delete before the stops/items they may
+    # reference, same ordering-safety reasoning as everything else below.
+    for expense in session.exec(select(Expense).where(Expense.trip_id == trip_id)).all():
+        session.delete(expense)
+    session.flush()
 
     for stop in session.exec(select(Stop).where(Stop.trip_id == trip_id)).all():
         for item in session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop.id)).all():

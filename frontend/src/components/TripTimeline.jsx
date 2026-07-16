@@ -494,7 +494,7 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
               inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames}
               inboundConnection={inboundConnections[stop.id] ?? null}
               skipDays={skipDaysByStop[stop.id] ?? null}
-              forceOpen={!!activeDay} />
+              forceOpen={!!activeDay} tripId={tripId} />
           ))}
         </div>
 

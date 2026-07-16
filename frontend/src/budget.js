@@ -96,3 +96,76 @@ export function aggregateSpend(items, homeCurrency) {
 
   return { planned, paid, byKind, byCurrency, unconvertible, noRecognizableCost }
 }
+
+/**
+ * Aggregates actual logged Expense rows (issue #59) three ways: per-day burn,
+ * per-stop total, and plan-vs-actual for any item that has at least one
+ * linked expense. Distinct from aggregateSpend above, which works off
+ * ItineraryItem.cost/details.amount_paid (the *planned* cost and how much of
+ * it has been paid) — Expense rows are separate, point-in-time "I spent X"
+ * events that may or may not correspond to a planned item at all.
+ *
+ * Expense.converted_amount/converted_currency are a snapshot taken at entry
+ * time (see the Expense model docstring) — if the user's home currency
+ * preference has since changed, an old expense's snapshot no longer matches
+ * `homeCurrency` and would silently mis-sum if trusted blindly. Those go in
+ * `staleConversion` instead of any of the three rollups, same spirit as
+ * aggregateSpend's `unconvertible`.
+ *
+ * @param {Array} expenses - flat array of Expense rows for one trip
+ * @param {Array} items - flat array of the trip's ItineraryItems (for
+ *   plan-vs-actual: an expense's item_id is matched against item.id here)
+ * @param {string} homeCurrency
+ * @returns {{
+ *   total: number,
+ *   byDay: Object<string, number>,        // "YYYY-MM-DD" -> home-currency total
+ *   byStop: Object<string, {total: number, expenses: Array}>,  // stop_id (or "" for unlinked) -> ...
+ *   byItem: Object<string, {planned: number|null, actual: number, name: string}>,  // item_id -> ...
+ *   staleConversion: Array,                // expenses whose snapshot currency != home
+ * }}
+ */
+export function aggregateExpenses(expenses, items, homeCurrency) {
+  const home = homeCurrency || getHomeCurrency()
+  const itemsById = {}
+  for (const it of items ?? []) itemsById[it.id] = it
+
+  let total = 0
+  const byDay = {}
+  const byStop = {}
+  const byItem = {}
+  const staleConversion = []
+
+  for (const exp of expenses ?? []) {
+    const usable = exp.converted_amount != null && exp.converted_currency === home
+    if (!usable) {
+      staleConversion.push(exp)
+      continue
+    }
+    const amt = exp.converted_amount
+    total += amt
+
+    const dayKey = String(exp.occurred_at || '').slice(0, 10)
+    if (dayKey) byDay[dayKey] = (byDay[dayKey] || 0) + amt
+
+    const stopKey = exp.stop_id != null ? String(exp.stop_id) : ''
+    if (!byStop[stopKey]) byStop[stopKey] = { total: 0, expenses: [] }
+    byStop[stopKey].total += amt
+    byStop[stopKey].expenses.push(exp)
+
+    if (exp.item_id != null) {
+      const key = String(exp.item_id)
+      if (!byItem[key]) {
+        const item = itemsById[exp.item_id]
+        const parsedCost = item ? parseCost(item.cost, home) : null
+        const d = item?.details ?? {}
+        let planned = null
+        if (d.converted_cost != null && d.converted_currency === home) planned = d.converted_cost
+        else if (parsedCost?.code === home) planned = parsedCost.amount
+        byItem[key] = { planned, actual: 0, name: item?.name ?? '(deleted item)' }
+      }
+      byItem[key].actual += amt
+    }
+  }
+
+  return { total, byDay, byStop, byItem, staleConversion }
+}

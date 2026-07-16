@@ -9,6 +9,7 @@ import ItemRow from './ItemRow.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal, { buildMapsUrl } from './ItemEditModal.jsx'
+import ExpenseQuickAdd from './ExpenseQuickAdd.jsx'
 import CostDisplay from './CostDisplay.jsx'
 import RichText from './RichText.jsx'
 import { isFullyPaid } from '../currency.js'
@@ -655,11 +656,12 @@ function LayoverBadge({ duration, location }) {
   )
 }
 
-export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false, inboundConnection = null, skipDays = null, onItemAdded, forceOpen = false }) {
+export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false, inboundConnection = null, skipDays = null, onItemAdded, forceOpen = false, tripId = null }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
   const [itemEdits, setItemEdits] = useState({})  // Only track local edits, not synced items
+  const [showAddExpense, setShowAddExpense] = useState(false)
   const canEdit = useCanEdit()
   const canQueueEdit = useCanQueueEdit()
 
@@ -941,10 +943,28 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               <span style={{ color: 'var(--text-faint)' }} className="ml-auto shrink-0">{fmtDayTime(checkoutAccom.details.checkout)}</span>
             </div>
           )}
+
+          {canEdit && tripId && (
+            <button
+              onClick={() => setShowAddExpense(true)}
+              style={{ color: 'var(--text-faint)' }}
+              className="text-xs hover:opacity-70"
+            >
+              + Log expense
+            </button>
+          )}
         </div>
       )}
 
     </div>
+
+    {showAddExpense && (
+      <ExpenseQuickAdd
+        tripId={tripId} stopId={stop.id} items={items}
+        onSaved={() => onUpdate?.()}
+        onClose={() => setShowAddExpense(false)}
+      />
+    )}
 
     </>
   )

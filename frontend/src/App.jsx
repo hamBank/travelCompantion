@@ -211,7 +211,11 @@ function AppShell({ user, onLogout }) {
       {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={() => setShowShare(false)} />}
 
       {showBudget && selectedTrip && (
-        <BudgetSummary trip={selectedTrip} stops={tripStops} onClose={() => setShowBudget(false)} />
+        <BudgetSummary
+          trip={selectedTrip} stops={tripStops}
+          canEdit={online && canEdit(selectedTrip.role)}
+          onClose={() => setShowBudget(false)}
+        />
       )}
       {showImports && (
         <PendingReview

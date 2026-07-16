@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from ..database import get_session
 from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
-from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, ItemAttachment, ItemKind, Stop, StopRead, TripRole
+from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, ItemAttachment, ItemKind, Stop, StopRead, TripRole, Expense
 from ..river_path import estimate_river_path, NoPlausiblePath
 from ..metrics import record_external_call
 from ..compare_and_set import resolve_fields
@@ -153,6 +153,16 @@ def delete_item(item_id: int, session: Session = Depends(get_session), user: dic
         select(ItemAttachment).where(ItemAttachment.item_id == item_id)
     ).all():
         session.delete(attachment)
+    # Expenses linked to this item are actual logged spend, not part of the
+    # plan — unlink rather than delete (see the Expense docstring). Flushed
+    # before the item's own delete below: Expense<->ItineraryItem has no ORM
+    # Relationship(), so the unit-of-work has no dependency info to order an
+    # UPDATE against a DELETE on its own (same class of bug as the
+    # ItemAttachment ordering issue this file already works around).
+    for expense in session.exec(select(Expense).where(Expense.item_id == item_id)).all():
+        expense.item_id = None
+        session.add(expense)
+    session.flush()
     record_item_history(session, item, "delete", user["email"], before=before)
     session.delete(item)
     session.commit()

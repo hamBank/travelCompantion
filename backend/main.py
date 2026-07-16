@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from .database import create_db_and_tables
-from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me, weather, packing, push, attachments, calendar, shared, vault
+from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me, weather, packing, push, attachments, calendar, shared, vault, expenses
 from .routers.auth_router import router as auth_router
 from . import metrics as _metrics  # registers all travelcomp_* counters at startup
 
@@ -109,6 +109,7 @@ app.include_router(attachments.router, tags=["attachments"])
 app.include_router(calendar.router, tags=["calendar"])
 app.include_router(shared.router, tags=["shared"])
 app.include_router(vault.router, tags=["vault"])
+app.include_router(expenses.router, tags=["expenses"])
 
 
 @app.post("/deploy")
