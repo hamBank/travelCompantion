@@ -1,13 +1,35 @@
-import { useState } from 'react'
-import { aggregateSpend } from '../budget.js'
+import { useState, useEffect } from 'react'
+import { aggregateSpend, aggregateExpenses } from '../budget.js'
 import { formatCurrencyAmount, getHomeCurrency } from '../currency.js'
 import { KIND_LABEL } from '../kinds.js'
+import { listExpenses, deleteExpense as apiDeleteExpense } from '../api.js'
+import ExpenseQuickAdd from './ExpenseQuickAdd.jsx'
 
-export default function BudgetSummary({ trip, stops, onClose }) {
+export default function BudgetSummary({ trip, stops, canEdit = true, onClose }) {
   const home = getHomeCurrency() || 'AUD'
   const items = (stops ?? []).flatMap(s => s.items ?? [])
   const { planned, paid, byKind, byCurrency, unconvertible, noRecognizableCost } = aggregateSpend(items, home)
   const [expandedCurrency, setExpandedCurrency] = useState(null)
+
+  const [expenses, setExpenses] = useState([])
+  const [showAddExpense, setShowAddExpense] = useState(false)
+  const [editingExpense, setEditingExpense] = useState(null)
+
+  function refreshExpenses() {
+    if (trip?.id) listExpenses(trip.id).then(setExpenses).catch(() => {})
+  }
+  useEffect(() => { refreshExpenses() }, [trip?.id])
+
+  const { total: actualTotal, byDay, byStop, byItem, staleConversion } = aggregateExpenses(expenses, items, home)
+  const stopName = stopId => stops?.find(s => String(s.id) === stopId)?.location || 'No stop'
+  const dayRows = Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b))
+  const stopRows = Object.entries(byStop).sort(([a], [b]) => stopName(a).localeCompare(stopName(b)))
+  const itemRows = Object.entries(byItem)
+
+  async function removeExpense(id) {
+    await apiDeleteExpense(id)
+    refreshExpenses()
+  }
 
   const budget = trip?.budget ? parseFloat(trip.budget) : null
   const budgetValid = budget != null && !Number.isNaN(budget) && budget > 0
@@ -159,8 +181,136 @@ export default function BudgetSummary({ trip, stops, onClose }) {
               Not included anywhere above — no recognisable cost amount ({noRecognizableCost.length} item{noRecognizableCost.length === 1 ? '' : 's'}): {noRecognizableCost.join(', ')}
             </p>
           )}
+
+          {/* Actual logged spend (issue #59) — distinct from the planned/paid
+              rollup above, which comes from each item's own cost/amount_paid
+              fields. This section tracks real, point-in-time Expense rows. */}
+          <div style={{ borderTop: '1px solid var(--border)' }} className="pt-3 space-y-3">
+            <div className="flex items-baseline justify-between">
+              <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Actual spend logged</span>
+              <span style={{ color: 'var(--text)' }} className="text-sm">{fmt(actualTotal)}</span>
+            </div>
+
+            {canEdit && (
+              <button
+                onClick={() => setShowAddExpense(true)}
+                style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}
+                className="text-xs px-3 py-1.5 rounded-lg font-medium hover:opacity-80"
+              >
+                + Log expense
+              </button>
+            )}
+
+            {dayRows.length > 0 && (
+              <div>
+                <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide block mb-1.5">By day</span>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {dayRows.map(([day, amt]) => (
+                      <tr key={day}>
+                        <td style={{ color: 'var(--text-muted)' }} className="py-0.5">{day}</td>
+                        <td style={{ color: 'var(--text)' }} className="py-0.5 text-right">{fmt(amt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {stopRows.length > 0 && (
+              <div>
+                <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide block mb-1.5">By stop</span>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {stopRows.map(([stopId, sums]) => (
+                      <tr key={stopId || 'none'}>
+                        <td style={{ color: 'var(--text-muted)' }} className="py-0.5">{stopName(stopId)}</td>
+                        <td style={{ color: 'var(--text)' }} className="py-0.5 text-right">{fmt(sums.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {itemRows.length > 0 && (
+              <div>
+                <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide block mb-1.5">Plan vs actual</span>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {itemRows.map(([itemId, sums]) => (
+                      <tr key={itemId}>
+                        <td style={{ color: 'var(--text-muted)' }} className="py-0.5">{sums.name}</td>
+                        <td style={{ color: 'var(--text-faint)' }} className="py-0.5 text-right">
+                          {sums.planned != null ? `planned ${fmt(sums.planned)}` : ''}
+                        </td>
+                        <td
+                          style={{ color: sums.planned != null && sums.actual > sums.planned ? 'var(--error)' : 'var(--text)' }}
+                          className="py-0.5 text-right pl-2"
+                        >
+                          actual {fmt(sums.actual)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {expenses.length > 0 && (
+              <div>
+                <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide block mb-1.5">All logged expenses</span>
+                <div className="space-y-1">
+                  {expenses.map(exp => (
+                    <div key={exp.id} className="flex items-center gap-2 text-xs group">
+                      <button
+                        onClick={() => canEdit && setEditingExpense(exp)}
+                        className="flex-1 min-w-0 text-left truncate hover:opacity-80"
+                        style={{ color: 'var(--text-muted)' }}
+                        disabled={!canEdit}
+                      >
+                        {String(exp.occurred_at).slice(0, 10)} — {exp.name}
+                      </button>
+                      <span style={{ color: 'var(--text)' }} className="shrink-0">
+                        {exp.converted_amount != null && exp.converted_currency === home
+                          ? fmt(exp.converted_amount)
+                          : exp.amount}
+                      </span>
+                      {canEdit && (
+                        <button
+                          onClick={() => removeExpense(exp.id)}
+                          style={{ color: 'var(--text-faint)' }}
+                          className="shrink-0 hover:opacity-70"
+                          title="Delete expense"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {staleConversion.length > 0 && (
+              <p style={{ color: 'var(--text-faint)' }} className="text-xs">
+                {staleConversion.length} logged expense{staleConversion.length === 1 ? '' : 's'} not included above —
+                home currency changed since they were logged. Edit and re-save to refresh the conversion.
+              </p>
+            )}
+          </div>
         </div>
       </div>
+
+      {(showAddExpense || editingExpense) && (
+        <ExpenseQuickAdd
+          tripId={trip?.id}
+          items={items}
+          expense={editingExpense}
+          onSaved={refreshExpenses}
+          onClose={() => { setShowAddExpense(false); setEditingExpense(null) }}
+        />
+      )}
     </div>
   )
 }

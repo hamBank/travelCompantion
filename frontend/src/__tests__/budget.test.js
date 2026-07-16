@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { aggregateSpend } from '../budget.js'
+import { aggregateSpend, aggregateExpenses } from '../budget.js'
 
 describe('aggregateSpend', () => {
   it('uses converted_cost/converted_amount_paid when present and currency matches home', () => {
@@ -153,5 +153,103 @@ describe('aggregateSpend', () => {
     ]
     const result = aggregateSpend(items, 'AUD')
     expect(result.byCurrency.EUR.items).toEqual([{ name: 'Hotel', planned: 500, paid: 200 }])
+  })
+})
+
+describe('aggregateExpenses', () => {
+  it('sums usable expenses (converted_currency matches home) into the total', () => {
+    const expenses = [
+      { id: 1, occurred_at: '2026-08-01T10:00:00', converted_amount: 20, converted_currency: 'AUD' },
+      { id: 2, occurred_at: '2026-08-01T18:00:00', converted_amount: 15, converted_currency: 'AUD' },
+    ]
+    const result = aggregateExpenses(expenses, [], 'AUD')
+    expect(result.total).toBe(35)
+    expect(result.staleConversion).toEqual([])
+  })
+
+  it('buckets an expense whose snapshot currency no longer matches home into staleConversion', () => {
+    const expenses = [
+      { id: 1, occurred_at: '2026-08-01T10:00:00', converted_amount: 20, converted_currency: 'USD' },
+    ]
+    const result = aggregateExpenses(expenses, [], 'AUD')
+    expect(result.total).toBe(0)
+    expect(result.staleConversion).toHaveLength(1)
+    expect(result.staleConversion[0].id).toBe(1)
+  })
+
+  it('buckets an expense with no converted_amount at all into staleConversion', () => {
+    const expenses = [{ id: 1, occurred_at: '2026-08-01T10:00:00', converted_amount: null, converted_currency: null }]
+    const result = aggregateExpenses(expenses, [], 'AUD')
+    expect(result.staleConversion).toHaveLength(1)
+  })
+
+  it('groups per-day burn by the occurred_at date', () => {
+    const expenses = [
+      { id: 1, occurred_at: '2026-08-01T09:00:00', converted_amount: 10, converted_currency: 'AUD' },
+      { id: 2, occurred_at: '2026-08-01T20:00:00', converted_amount: 5, converted_currency: 'AUD' },
+      { id: 3, occurred_at: '2026-08-02T09:00:00', converted_amount: 40, converted_currency: 'AUD' },
+    ]
+    const result = aggregateExpenses(expenses, [], 'AUD')
+    expect(result.byDay).toEqual({ '2026-08-01': 15, '2026-08-02': 40 })
+  })
+
+  it('groups per-stop totals, using an empty-string key for unlinked expenses', () => {
+    const expenses = [
+      { id: 1, occurred_at: '2026-08-01', stop_id: 7, converted_amount: 10, converted_currency: 'AUD' },
+      { id: 2, occurred_at: '2026-08-01', stop_id: 7, converted_amount: 5, converted_currency: 'AUD' },
+      { id: 3, occurred_at: '2026-08-01', stop_id: null, converted_amount: 20, converted_currency: 'AUD' },
+    ]
+    const result = aggregateExpenses(expenses, [], 'AUD')
+    expect(result.byStop['7'].total).toBe(15)
+    expect(result.byStop['7'].expenses).toHaveLength(2)
+    expect(result.byStop[''].total).toBe(20)
+  })
+
+  it('computes plan-vs-actual for an item with a linked expense, using converted_cost when present', () => {
+    const items = [
+      { id: 42, name: 'Louvre tickets', cost: '30 EUR', details: { converted_cost: 48, converted_currency: 'AUD' } },
+    ]
+    const expenses = [
+      { id: 1, occurred_at: '2026-08-01', item_id: 42, converted_amount: 50, converted_currency: 'AUD' },
+    ]
+    const result = aggregateExpenses(expenses, items, 'AUD')
+    expect(result.byItem['42']).toEqual({ planned: 48, actual: 50, name: 'Louvre tickets' })
+  })
+
+  it('sums multiple expenses linked to the same item', () => {
+    const items = [{ id: 1, name: 'Dinner', cost: '100 AUD', details: {} }]
+    const expenses = [
+      { id: 1, occurred_at: '2026-08-01', item_id: 1, converted_amount: 40, converted_currency: 'AUD' },
+      { id: 2, occurred_at: '2026-08-01', item_id: 1, converted_amount: 65, converted_currency: 'AUD' },
+    ]
+    const result = aggregateExpenses(expenses, items, 'AUD')
+    expect(result.byItem['1'].actual).toBe(105)
+    expect(result.byItem['1'].planned).toBe(100)
+  })
+
+  it('reports planned: null for a linked item with no home-currency cost, without crashing', () => {
+    const items = [{ id: 1, name: 'Souvenir', cost: '500 THB', details: {} }]
+    const expenses = [
+      { id: 1, occurred_at: '2026-08-01', item_id: 1, converted_amount: 21, converted_currency: 'AUD' },
+    ]
+    const result = aggregateExpenses(expenses, items, 'AUD')
+    expect(result.byItem['1'].planned).toBeNull()
+    expect(result.byItem['1'].actual).toBe(21)
+  })
+
+  it('labels an expense linked to a since-deleted item gracefully', () => {
+    const expenses = [
+      { id: 1, occurred_at: '2026-08-01', item_id: 999, converted_amount: 10, converted_currency: 'AUD' },
+    ]
+    const result = aggregateExpenses(expenses, [], 'AUD')
+    expect(result.byItem['999'].name).toBe('(deleted item)')
+  })
+
+  it('does not count an expense with no item_id toward byItem', () => {
+    const expenses = [
+      { id: 1, occurred_at: '2026-08-01', item_id: null, converted_amount: 10, converted_currency: 'AUD' },
+    ]
+    const result = aggregateExpenses(expenses, [], 'AUD')
+    expect(result.byItem).toEqual({})
   })
 })

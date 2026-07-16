@@ -47,6 +47,12 @@ export const createBag        = (tripId, data)  => req(`/trips/${tripId}/bags`, 
 export const updateBag        = (id, data)      => req(`/bags/${id}`, { method: 'PATCH', body: JSON.stringify(typeof data === 'string' ? { name: data } : data) })
 export const deleteBag        = (id)            => req(`/bags/${id}`, { method: 'DELETE' })
 
+// ── Expenses (actual logged spend, issue #59) ───────────────────────────────
+export const listExpenses  = (tripId)   => req(`/trips/${tripId}/expenses`)
+export const createExpense = (tripId, data) => req(`/trips/${tripId}/expenses`, { method: 'POST', body: JSON.stringify(data) })
+export const updateExpense = (id, data) => req(`/expenses/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const deleteExpense = (id)       => req(`/expenses/${id}`, { method: 'DELETE' })
+
 // ── Push notifications ──────────────────────────────────────────────────────
 export const getVapidPublicKey = () => req('/push/vapid-public-key')
 export const subscribePush     = (data) => req('/push/subscribe', { method: 'POST', body: JSON.stringify(data) })
