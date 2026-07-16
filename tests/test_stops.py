@@ -593,15 +593,23 @@ def test_date_warnings_stop_timezone_wrong_flagged(client: TestClient, trip, ses
     session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome"))
     session.commit()
 
-    client.post(f"/trips/{trip['id']}/stops", json={
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
         "location": "Rome", "status": "planned", "timezone": "5",
         "arrive": "2026-08-04T00:00:00",
-    })
+    }).json()
     warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
     tz_warnings = [w for w in warnings if w["name"] == "Timezone mismatch"]
     assert len(tz_warnings) == 1
     assert tz_warnings[0]["stop_location"] == "Rome"
     assert "Europe/Rome" in tz_warnings[0]["reason"]
+    # Autofix payload: the UI's one-click fix PATCHes this stop to this value.
+    assert tz_warnings[0]["stop_id"] == stop["id"]
+    assert tz_warnings[0]["suggested_timezone"] == "2"
+
+    # And applying the suggestion clears the warning.
+    client.patch(f"/stops/{stop['id']}", json={"timezone": tz_warnings[0]["suggested_timezone"]})
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if w["name"] == "Timezone mismatch"] == []
 
 
 def test_date_warnings_stop_timezone_correct_not_flagged(client: TestClient, trip, session: Session):

@@ -320,6 +320,9 @@ def _stop_tz_mismatch(session: Session, stop: Stop) -> list[dict]:
     expected = tz_check.expected_offset_minutes(zone, on_date.date())
     if expected is None or abs(stored - expected) <= _TZ_MISMATCH_TOLERANCE_MIN:
         return []
+    # Suggested value in Stop.timezone's own plain-hours convention ("2",
+    # "5.5") so the UI's one-click fix can PATCH it back verbatim.
+    suggested = f"{expected // 60}" if expected % 60 == 0 else f"{expected / 60}"
     return [{
         "item_id": None,
         "name": "Timezone mismatch",
@@ -329,6 +332,8 @@ def _stop_tz_mismatch(session: Session, stop: Stop) -> list[dict]:
         "stop_arrive": stop.arrive.isoformat() if stop.arrive else None,
         "stop_depart": stop.depart.isoformat() if stop.depart else None,
         "reason": f"Stop timezone {stop.timezone} doesn't match {stop.location}'s real offset {_fmt_offset(expected)} ({zone})",
+        "stop_id": stop.id,
+        "suggested_timezone": suggested,
     }]
 
 
