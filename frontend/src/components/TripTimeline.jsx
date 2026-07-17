@@ -221,6 +221,18 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
       const tl = await getTripTimeline(tripId)
       setTimeline(tl)
       if (remount) setRenderKey(k => k + 1)
+      // Every successful fetch already reflects the data as of *now* — sync
+      // dataVersionRef so the poller doesn't mistake a change we just picked
+      // up (e.g. a same-tab item save, whose onUpdate calls load() directly
+      // with remount:false) for one it hasn't seen yet. Without this, the
+      // next 30s poll tick would see the bumped version, think it's an
+      // unseen external change, and force the jarring full-remount reload
+      // on data the view already has.
+      try {
+        const r = await fetch('/health', { cache: 'no-store' })
+        const { data_version } = await r.json()
+        if (data_version) dataVersionRef.current = data_version
+      } catch (_) { /* offline — next poll tick will retry */ }
       // Legacy accommodation backfill — editors only (timeline also lazy-migrates).
       if (canEdit(tl.role)) { try { await backfillAccommodations(tripId) } catch (_) {} }
       try { const w = await getDateWarnings(tripId); setWarnings(w.warnings ?? []) } catch (_) {}
