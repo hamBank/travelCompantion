@@ -26,7 +26,11 @@ creates), and the credit balance auto-refills below a floor of
 live reconcile run 429'd — RapidAPI's BASIC plan rejects two AeroDataBox
 calls made back-to-back. Fixed in `backend/rate_limit.py`, a minimal
 per-service call-spacing throttle shared by `flight_alert_subscriptions.py`
-and `flight_live.py` (same key, same limit).
+and `flight_live.py` (same key, same limit). Initial fix used a 1.2s
+interval (matching one successful manual test) but still 429'd occasionally
+in production — a "per-second" cap enforced as a fixed window can reject two
+calls 1.2s apart if they straddle a window boundary. Bumped to 2.0s for real
+margin; irrelevant cost on a 15-minute cron.
 
 **Airport coverage checking (2026-07-18):** per the Flight Alert API's own
 guidance — "there is no sense in subscribing to a flight which operates in
