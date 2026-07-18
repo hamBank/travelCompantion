@@ -10,6 +10,7 @@ from typing import Optional
 import httpx
 
 from .metrics import record_external_call
+from .rate_limit import throttle
 
 AERODATABOX_KEY = os.getenv("AERODATABOX_KEY", "")
 _AERODATABOX_BASE = "https://aerodatabox.p.rapidapi.com"
@@ -27,6 +28,9 @@ def fetch_flight(flight_iata: str, dep_date: str) -> Optional[dict]:
     data for that flight/date. Raises FlightLiveError on network failure, a
     non-2xx response, or a non-JSON body.
     """
+    # Shares RapidAPI's per-second cap with flight_alert_subscriptions.py's
+    # webhook calls — same key, same limit (see backend/rate_limit.py).
+    throttle("aerodatabox")
     try:
         with httpx.Client(timeout=12) as client:
             r = client.get(
