@@ -446,12 +446,92 @@ def _flight_label(details: dict, item: ItineraryItem) -> str:
     return label or item.name or "Flight"
 
 
+def evaluate_flight_alert(session: Session, item: ItineraryItem, live: dict, *,
+                          sender=None, logged: Optional[set] = None) -> int:
+    """Evaluate one flight's live data against its item and push any due
+    cancel/delay-bucket/gate-change alerts. Shared by the polling path
+    (send_flight_alerts) and the webhook receiver (backend/routers/webhooks.py)
+    so both trigger sources produce identical, NotificationLog-idempotent
+    alerts. `live` is the flight dict — the webhook's
+    FlightNotificationItemContract uses the same status/departure movement
+    shape as the polling endpoint (confirmed in plan-14's spike). Returns
+    alerts sent. Commits its own NotificationLog rows.
+    """
+    # Late-bound default so tests (and any future config) can monkeypatch
+    # this module's send_push and have it take effect here too.
+    if sender is None:
+        sender = send_push
+    if logged is None:
+        logged = {
+            (row.item_id, row.kind)
+            for row in session.exec(select(NotificationLog).where(NotificationLog.item_id == item.id)).all()
+        }
+    d = item.details or {}
+    stop = session.get(Stop, item.stop_id)
+    if not stop:
+        return 0
+    recipients = _recipients(session, stop.trip_id)
+    label = _flight_label(d, item)
+    sent = 0
+
+    def _send(kind: str, title: str, body: str) -> None:
+        nonlocal sent
+        if (item.id, kind) in logged:
+            return
+        payload = {"title": title, "body": body, "url": "/", "urgent": True}
+        for sub in recipients:
+            info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
+            try:
+                sender(info, payload, urgent=True)
+            except PushSendError as e:
+                if e.expired:
+                    session.delete(sub)
+        session.add(NotificationLog(item_id=item.id, kind=kind))
+        logged.add((item.id, kind))
+        sent += 1
+
+    status = live.get("status")
+    dep_movement = live.get("departure") or {}
+
+    if status in ("Canceled", "CanceledUncertain"):
+        _send("flight_cancel", "Flight cancelled", f"{label} has been cancelled")
+    else:
+        dep_delay = flight_live.delay_min(dep_movement)
+        if dep_delay is not None:
+            applicable = [b for b in DELAY_BUCKETS_MIN if b <= dep_delay]
+            if applicable:
+                bucket = max(applicable)
+                revised_local = (dep_movement.get("revisedTime") or {}).get("local")
+                when = revised_local[11:16] if revised_local else "?"
+                _send(
+                    f"flight_delay:{bucket}", "Flight delayed",
+                    f"{label} now departing {when} ({flight_live.delay_str(dep_delay)})",
+                )
+
+        live_gate = dep_movement.get("gate")
+        stored_gate = d.get("origin_gate")
+        if live_gate and stored_gate and str(live_gate) != str(stored_gate):
+            _send(
+                f"flight_gate:{live_gate}", "Gate changed",
+                f"Gate changed: {stored_gate} → {live_gate}",
+            )
+
+    session.commit()
+    return sent
+
+
 def send_flight_alerts(session: Session, *, now: Optional[datetime] = None,
                        sender=send_push, fetch=None) -> int:
     """Poll near-departure flights for live status and push an alert on
     cancellation, a delay-bucket escalation, or a gate change. Idempotent via
     NotificationLog like send_due_notifications — kinds are "flight_cancel",
     "flight_delay:{bucket}", and "flight_gate:{gate}". Returns alerts sent.
+
+    Flights with an active webhook subscription (alert_subscription_id in
+    details — set by flight_alert_subscriptions.reconcile_subscriptions) are
+    skipped: the webhook path delivers their alerts. Polling remains the
+    per-flight fallback whenever subscription creation failed or webhook mode
+    isn't configured at all.
 
     `fetch` defaults to flight_live.fetch_flight; injectable for tests.
     """
@@ -472,6 +552,8 @@ def send_flight_alerts(session: Session, *, now: Optional[datetime] = None,
         depart_local = d.get("depart_time")
         if not flight_iata or not depart_local:
             continue
+        if d.get("alert_subscription_id"):
+            continue  # webhook-subscribed — alerts arrive via /webhooks/aerodatabox
 
         fallback = None if d.get("depart_tz") else _stop_utc_offset_hours(session, item)
         depart = _local_to_utc(depart_local, d.get("depart_tz"), fallback_offset_hours=fallback)
@@ -500,55 +582,7 @@ def send_flight_alerts(session: Session, *, now: Optional[datetime] = None,
         if live is None:
             continue
 
-        stop = session.get(Stop, item.stop_id)
-        if not stop:
-            continue
-        recipients = _recipients(session, stop.trip_id)
-        label = _flight_label(d, item)
-
-        def _send(kind: str, title: str, body: str) -> None:
-            nonlocal sent
-            if (item.id, kind) in logged:
-                return
-            payload = {"title": title, "body": body, "url": "/", "urgent": True}
-            for sub in recipients:
-                info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
-                try:
-                    sender(info, payload, urgent=True)
-                except PushSendError as e:
-                    if e.expired:
-                        session.delete(sub)
-            session.add(NotificationLog(item_id=item.id, kind=kind))
-            logged.add((item.id, kind))
-            sent += 1
-
-        status = live.get("status")
-        dep_movement = live.get("departure") or {}
-
-        if status in ("Canceled", "CanceledUncertain"):
-            _send("flight_cancel", "Flight cancelled", f"{label} has been cancelled")
-        else:
-            dep_delay = flight_live.delay_min(dep_movement)
-            if dep_delay is not None:
-                applicable = [b for b in DELAY_BUCKETS_MIN if b <= dep_delay]
-                if applicable:
-                    bucket = max(applicable)
-                    revised_local = (dep_movement.get("revisedTime") or {}).get("local")
-                    when = revised_local[11:16] if revised_local else "?"
-                    _send(
-                        f"flight_delay:{bucket}", "Flight delayed",
-                        f"{label} now departing {when} ({flight_live.delay_str(dep_delay)})",
-                    )
-
-            live_gate = dep_movement.get("gate")
-            stored_gate = d.get("origin_gate")
-            if live_gate and stored_gate and str(live_gate) != str(stored_gate):
-                _send(
-                    f"flight_gate:{live_gate}", "Gate changed",
-                    f"Gate changed: {stored_gate} → {live_gate}",
-                )
-
-        session.commit()
+        sent += evaluate_flight_alert(session, item, live, sender=sender, logged=logged)
 
     return sent
 
