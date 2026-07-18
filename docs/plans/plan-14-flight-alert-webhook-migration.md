@@ -2,14 +2,12 @@
 
 Read `docs/plans/README.md` first (conventions, test gates, build workflow).
 
-## Status: investigation plan, NOT ready to implement
+## Status: spikes resolved 2026-07-18 — ready to implement
 
-Unlike the other plans in this directory, this one has open questions that
-need answering **before** an agent can build it — see "Open questions /
-required spikes" below. Do not start implementation until those are resolved
-(either by a human with AeroDataBox/api.market account access, or by a
-follow-up research pass once one is available). This doc exists to capture
-the investigation so the eventual work doesn't have to re-derive it.
+The open questions below were all resolved by live testing against the
+production RapidAPI key (see "Spike results"). The implementation sketch
+further down has been updated to match what was actually observed and can
+now be built as written.
 
 ## Why
 
@@ -55,56 +53,81 @@ that are actually sent (not for polls that found nothing).
   changes over its whole lifecycle costs 0 credits, vs. ~32 units today
   regardless of outcome.
 - **Free tier**: the Basic plan (600 credits) includes Flight Alert API
-  access — same headline number this codebase already budgets against, but
-  the "maximum credits per refill" phrasing in their pricing page suggests a
-  balance/refill model rather than a flat monthly reset; not confirmed how
-  that differs in practice.
+  access — same headline number this codebase already budgets against. The
+  balance/refill model this implies is now confirmed and documented in
+  "Spike results" below: alert credits are a separate balance, refilled
+  explicitly out of the API quota at 1:1.
 - **Endpoints**: `GET/DELETE /subscriptions/webhook/{subscriptionId}` to
   inspect/remove a subscription; `GET /subscriptions/webhook` to list all;
   `/subscriptions/balance` for the separate Flight Alert credit balance.
 
-## Open questions / required spikes
+## Spike results (2026-07-18, tested live with the production RapidAPI key)
 
-These need a real AeroDataBox/api.market account (or a support ticket) to
-resolve — they aren't answerable from public marketing/docs pages alone:
+All four open questions resolved by direct testing against
+`aerodatabox.p.rapidapi.com` and the RapidAPI-specific OpenAPI spec
+(`https://doc.aerodatabox.com/docs/openapi-rapidapi-v1.json` — note
+doc.aerodatabox.com publishes *two* spec variants; the `x-api-market-key`
+scheme that motivated question 1 belongs to the api.market variant only).
 
-1. **Auth compatibility.** The webhook endpoints in the OpenAPI spec require
-   an `x-api-market-key` header — a different scheme from the
-   `X-RapidAPI-Key`/`X-RapidAPI-Host` pair `backend/flight_live.py` currently
-   sends (provisioned via RapidAPI, see `AERODATABOX_KEY`). This strongly
-   suggests the Flight Alert API is exposed through **api.market**, a
-   separate marketplace from RapidAPI, not necessarily reachable with the
-   existing key. **Spike:** confirm whether the current RapidAPI-provisioned
-   key works against `/subscriptions/webhook/*`, or whether a *separate*
-   api.market account/key is required (and if so, whether it shares the same
-   600-credit free allowance or is billed independently).
-2. **Notification payload schema.** Public docs describe the wrapper
-   (`FlightNotificationContract` containing "flights information") but not
-   the field-level shape. It's *likely* the same `status`/`departure.gate`/
-   `departure.revisedTime` shape the existing flight-status-by-number
-   response already has (same underlying provider, same data) — `delay_min()`
-   and `delay_str()` in `backend/flight_live.py` may well work unmodified —
-   but this needs confirming against a real captured payload before relying
-   on it, not assumed.
-3. **Retry/delivery semantics.** Docs mention `maxDeliveryRetries` on
-   subscription creation and that "each retry attempt costs the same as the
-   original delivery" — need to understand default retry count and whether a
-   flaky/slow webhook receiver risks burning credits on retries of
-   notifications it already received (idempotency handling — see below).
-4. **Credit balance / refill model**, not yet understood well enough to
-   reason about budget the way the flat-polling comment in
-   `backend/notifications.py` currently does.
+1. **Auth compatibility — RESOLVED: the existing RapidAPI key works.** Every
+   `/subscriptions/*` endpoint (create, get, list, delete, balance, refill)
+   accepted the production `AERODATABOX_KEY` with the standard
+   `x-rapidapi-key`/`x-rapidapi-host` headers `backend/flight_live.py`
+   already sends. Verified end-to-end: created a `FlightByNumber` webhook
+   subscription for KL1395, inspected it, listed it, and deleted it — all
+   HTTP 200/204. No api.market account needed.
+2. **Notification payload schema — RESOLVED from the RapidAPI OpenAPI spec.**
+   `FlightNotificationContract` = `{flights: [...], subscription: {...},
+   balance: {...}}`. Each entry in `flights` is a
+   `FlightNotificationItemContract` with `number`, `status`,
+   `lastUpdatedUtc`, and `departure`/`arrival` as
+   `FlightAirportMovementContract` — the **same movement shape the polling
+   endpoint returns**, so `flight_live.delay_min()`/`delay_str()` and the
+   gate-change check should work on `flights[i].departure` unmodified. Bonus:
+   each item also carries `notificationSummary` and `notificationRemark`
+   (human-readable strings) usable directly as push-notification body text.
+3. **Retry/delivery semantics — RESOLVED.** Delivery is best-effort, no
+   replay. Default `maxDeliveryRetries` is **0** for credit-based
+   subscriptions (max allowed: 2); each retry costs the same as the original
+   delivery. The receiver must be a public HTTP(S) URL on ports
+   80/443/8008/8080/≥49152, accept a JSON POST, and return 2xx within 10
+   seconds — **no auth/signature header support**, so the receiver endpoint
+   must be secured by an unguessable path segment (the plan's fallback
+   approach, now confirmed as the only option).
+4. **Credit balance / refill model — RESOLVED.** Flight-alert credits are a
+   **separate balance from the API quota, starting at 0**. Refill via `POST
+   /subscriptions/balance/refill {"credits": N}` converts API quota units to
+   alert credits at 1:1 (tested: worked on the current BASIC plan despite the
+   spec summary labeling refill "TIER 1"). Semantics observed live:
+   - A subscription created while the balance is 0 comes back
+     `isActive: false`; it **auto-activated the moment the balance went
+     positive** (no separate activation call exists or is needed).
+   - Balance hitting 0 pauses all subscriptions; refilling resumes them.
+   - Subscriptions never expire; billing is 1 credit per flight item per
+     notification actually sent (a `FlightByNumber` notification carries 1
+     flight, so effectively 1 credit per real change event).
+   - The test left a residual balance of **5 credits** on the account
+     (refills can't be reversed) — the eventual implementation will consume
+     them.
 
-## Sketch of the eventual implementation (once the above is resolved)
+## Implementation sketch (updated to match spike findings)
 
-Not a committed design — written so the shape is visible, but expect it to
-change once the open questions are answered.
-
-- **New public endpoint**, `POST /webhooks/aerodatabox`, following the same
-  pattern as the existing public webhook receivers in this app
+- **New public endpoint**, `POST /webhooks/aerodatabox/{secret}`, following
+  the same pattern as the existing public webhook receivers in this app
   (`/ingest/email`'s `MAIL_INGEST_SECRET`, the GitHub deploy webhook's
-  `DEPLOY_SECRET`) — shared-secret auth if AeroDataBox supports a signature/
-  secret header, otherwise an unguessable path segment as a fallback.
+  `DEPLOY_SECRET`). AeroDataBox confirmed to support **no** signature/secret
+  header, so the unguessable path segment is the mechanism, not a fallback —
+  generate it once (env var, e.g. `AERODATABOX_WEBHOOK_SECRET`), bake it into
+  the subscription URL, and 404 on mismatch. Must respond 2xx within 10s —
+  do the actual alert evaluation after acknowledging (or keep it fast: the
+  evaluation logic is a few dict reads and DB writes, well under budget).
+- **Credit management**: on startup or via the notification cron, check
+  `GET /subscriptions/balance` and refill from the API quota
+  (`POST /subscriptions/balance/refill`, 1 API unit = 1 credit) when it drops
+  below a floor (e.g. 20). This is what keeps subscriptions active — a zero
+  balance silently pauses ALL subscriptions (observed live), which would look
+  exactly like "alerts stopped working". Expose `creditsRemaining` in
+  `/health` or metrics so Prometheus can alert on it approaching zero.
 - **Subscription lifecycle**: create a webhook subscription when a flight
   item is saved with a `flight_number` + future `depart_time`; delete it once
   the flight has departed (or the item/details are edited to remove the
