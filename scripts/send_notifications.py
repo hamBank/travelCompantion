@@ -41,8 +41,9 @@ def main() -> None:
         e = send_document_expiry_reminders(session)
     if w:
         refilled = f", refilled {w['refilled']}" if w["refilled"] else ""
+        no_coverage = f", {w['no_coverage']} skipped (no live coverage)" if w["no_coverage"] else ""
         webhook_part = (f", webhook subs +{w['subscribed']}/-{w['unsubscribed']}"
-                        f" (credits: {w['credits']}{refilled})")
+                        f" (credits: {w['credits']}{refilled}){no_coverage}")
     else:
         webhook_part = ""
     print(

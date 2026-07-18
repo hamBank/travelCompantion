@@ -446,6 +446,22 @@ class LocationTimezone(SQLModel, table=True):
     resolved_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class AirportCoverage(SQLModel, table=True):
+    """Cache of AeroDataBox ADS-B/live-flight-update coverage per airport, used
+    by backend/flight_alert_subscriptions.py to skip webhook subscriptions for
+    flights whose airport has no live data feed — such a subscription would
+    never deliver a notification (confirmed live 2026-07-18: Rome Fiumicino's
+    liveFlightUpdatesFeed was "Down"). `icao` is cached permanently once
+    resolved (airport codes don't change; resolving it costs API quota, unlike
+    the free-tier coverage-status check); `live_updates_ok`/`checked_at` are
+    re-checked periodically since feed outages come and go.
+    """
+    iata: str = Field(primary_key=True)          # as stored in item.details["origin"]
+    icao: Optional[str] = None                     # None if IATA→ICAO lookup failed
+    live_updates_ok: bool = True                   # conservative default until checked
+    checked_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # ── ItemHistory (versioning / audit log) ──────────────────────────────────────
 
 class ItemHistory(SQLModel, table=True):

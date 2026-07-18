@@ -61,11 +61,14 @@ class FakeResponse:
 class FakeApi:
     """Records subscription API calls and plays back canned behavior."""
 
-    def __init__(self, balance=100, existing=None):
+    def __init__(self, balance=100, existing=None, airports=None, feed_status=None):
         self.balance = balance
         self.existing = list(existing or [])
         self.calls = []
         self._next_id = 0
+        # iata -> icao, and icao -> liveFlightUpdatesFeed status string
+        self.airports = airports or {}
+        self.feed_status = feed_status or {}
 
     def __call__(self, method, path, json_body=None):
         self.calls.append((method, path, json_body))
@@ -89,6 +92,13 @@ class FakeApi:
         if method == "POST" and path == "/subscriptions/balance/refill":
             self.balance += json_body["credits"]
             return FakeResponse(200, {"creditsRemaining": self.balance})
+        if method == "GET" and path.startswith("/airports/Iata/"):
+            iata = path.rsplit("/", 1)[1]
+            return FakeResponse(200, {"icao": self.airports.get(iata)})
+        if method == "GET" and path.startswith("/health/services/airports/") and path.endswith("/feeds"):
+            icao = path.split("/")[4]
+            status = self.feed_status.get(icao, "OK")
+            return FakeResponse(200, {"liveFlightUpdatesFeed": {"status": status}})
         raise AssertionError(f"unexpected call {method} {path}")
 
 
@@ -174,6 +184,101 @@ def test_reconcile_failed_create_leaves_no_id_so_polling_covers_it(session, monk
     assert summary["subscribed"] == 0
     session.refresh(item)
     assert "alert_subscription_id" not in (item.details or {})
+
+
+# ── airport coverage ──────────────────────────────────────────────────────────
+
+def test_resolve_icao_maps_iata_to_icao():
+    api = FakeApi(airports={"FCO": "LIRF"})
+    assert fas.resolve_icao("FCO", request=api) == "LIRF"
+
+
+def test_check_live_updates_ok_true_for_ok_status():
+    api = FakeApi(feed_status={"LIRF": "OK"})
+    assert fas.check_live_updates_ok("LIRF", request=api) is True
+
+
+def test_check_live_updates_ok_false_when_down():
+    api = FakeApi(feed_status={"LIRF": "Down"})
+    assert fas.check_live_updates_ok("LIRF", request=api) is False
+
+
+def test_check_live_updates_ok_false_when_unavailable():
+    api = FakeApi(feed_status={"LIRF": "Unavailable"})
+    assert fas.check_live_updates_ok("LIRF", request=api) is False
+
+
+def test_check_live_updates_ok_true_for_partial_and_degraded_and_unknown():
+    for status in ("OKPartial", "Degraded", "Unknown"):
+        api = FakeApi(feed_status={"LIRF": status})
+        assert fas.check_live_updates_ok("LIRF", request=api) is True, status
+
+
+def test_get_coverage_caches_result(session):
+    api = FakeApi(airports={"FCO": "LIRF"}, feed_status={"LIRF": "Down"})
+    assert fas.get_coverage(session, "FCO", request=api) is False
+    icao_calls = [c for c in api.calls if c[1].startswith("/airports/")]
+    feed_calls = [c for c in api.calls if "/feeds" in c[1]]
+    assert len(icao_calls) == 1 and len(feed_calls) == 1
+
+    # Second call within the recheck window hits neither endpoint again.
+    assert fas.get_coverage(session, "FCO", request=api) is False
+    assert len(api.calls) == 2  # unchanged
+
+
+def test_get_coverage_rechecks_feed_status_but_not_icao_after_ttl(session):
+    from backend.models import AirportCoverage
+    api = FakeApi(airports={"FCO": "LIRF"}, feed_status={"LIRF": "OK"})
+    stale = NOW - timedelta(days=fas.COVERAGE_RECHECK_DAYS + 1)
+    session.add(AirportCoverage(iata="FCO", icao="LIRF", live_updates_ok=False, checked_at=stale))
+    session.commit()
+
+    assert fas.get_coverage(session, "FCO", now=NOW, request=api) is True  # flipped since last check
+    icao_calls = [c for c in api.calls if c[1].startswith("/airports/")]
+    assert icao_calls == []  # icao already known — not re-resolved
+
+
+def test_get_coverage_defaults_true_when_icao_unresolvable(session):
+    api = FakeApi(airports={})  # FCO not in the map -> icao stays None
+    assert fas.get_coverage(session, "FCO", request=api) is True
+
+
+def test_reconcile_skips_subscribing_when_origin_has_no_live_coverage(session):
+    _, stop = _seed_trip(session)
+    item = _flight(session, stop, (NOW + timedelta(hours=10)).isoformat(),
+                   details_extra={"origin": "FCO"})
+
+    api = FakeApi(balance=100, airports={"FCO": "LIRF"}, feed_status={"LIRF": "Down"})
+    summary = fas.reconcile_subscriptions(session, now=NOW, request=api)
+
+    assert summary["subscribed"] == 0
+    assert summary["no_coverage"] == 1
+    session.refresh(item)
+    assert "alert_subscription_id" not in item.details
+    create_calls = [c for c in api.calls if "FlightByNumber" in c[1]]
+    assert create_calls == []
+
+
+def test_reconcile_subscribes_when_origin_has_coverage(session):
+    _, stop = _seed_trip(session)
+    item = _flight(session, stop, (NOW + timedelta(hours=10)).isoformat(),
+                   details_extra={"origin": "ZRH"})
+
+    api = FakeApi(balance=100, airports={"ZRH": "LSZH"}, feed_status={"LSZH": "OK"})
+    summary = fas.reconcile_subscriptions(session, now=NOW, request=api)
+
+    assert summary["subscribed"] == 1
+    assert summary["no_coverage"] == 0
+
+
+def test_reconcile_subscribes_when_flight_has_no_origin_field(session):
+    # No coverage info available at all — don't block on missing data.
+    _, stop = _seed_trip(session)
+    item = _flight(session, stop, (NOW + timedelta(hours=10)).isoformat())
+
+    api = FakeApi(balance=100)
+    summary = fas.reconcile_subscriptions(session, now=NOW, request=api)
+    assert summary["subscribed"] == 1
 
 
 # ── polling fallback skip ─────────────────────────────────────────────────────
