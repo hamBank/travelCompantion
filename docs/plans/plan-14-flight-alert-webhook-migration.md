@@ -22,6 +22,38 @@ creates), and the credit balance auto-refills below a floor of
 `FLIGHT_ALERT_CREDIT_FLOOR` (default 20) by `FLIGHT_ALERT_CREDIT_REFILL`
 (default 50) API units.
 
+**Rate limiting (found immediately in production, 2026-07-18):** the first
+live reconcile run 429'd — RapidAPI's BASIC plan rejects two AeroDataBox
+calls made back-to-back. Fixed in `backend/rate_limit.py`, a minimal
+per-service call-spacing throttle shared by `flight_alert_subscriptions.py`
+and `flight_live.py` (same key, same limit). Initial fix used a 1.2s
+interval (matching one successful manual test) but still 429'd occasionally
+in production — a "per-second" cap enforced as a fixed window can reject two
+calls 1.2s apart if they straddle a window boundary. Bumped to 2.0s for real
+margin; irrelevant cost on a 15-minute cron.
+
+**Airport coverage checking (2026-07-18):** per the Flight Alert API's own
+guidance — "there is no sense in subscribing to a flight which operates in
+airports having poor or no live updates or ADS-B coverage: there simply will
+be no updates" — `reconcile_subscriptions` now checks the origin airport's
+live-updates feed status (`GET /health/services/airports/{icao}/feeds`, FREE
+TIER) before creating a subscription, via `get_coverage()`. Confirmed this
+matters with a live example: **Rome Fiumicino (FCO/LIRF) currently shows
+`liveFlightUpdatesFeed: Down`** — the exact airport from the Rome→Zurich
+timezone bug earlier in this session. A flight departing FCO right now would
+consume a subscription slot and never deliver a single notification.
+
+IATA→ICAO resolution (`GET /airports/Iata/{code}`) costs API quota (TIER 1,
+not free), so it's cached permanently once resolved in the new
+`AirportCoverage` table — airport codes don't change. The live-updates
+feed-status check itself is free and re-checked every
+`FLIGHT_ALERT_COVERAGE_RECHECK_DAYS` (default 7) since outages come and go.
+A flight whose origin has no coverage is left unsubscribed — same mechanism
+as a failed subscription create — so polling remains its fallback (and will
+likely also get nothing useful from that airport, since polling draws on the
+same underlying feed, but at least no credits/subscription slots are wasted
+on a webhook that structurally cannot fire).
+
 The open questions below were all resolved by live testing against the
 production RapidAPI key (see "Spike results"). The implementation sketch
 further down has been updated to match what was actually observed and can

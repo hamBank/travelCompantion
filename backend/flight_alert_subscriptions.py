@@ -26,7 +26,7 @@ from sqlmodel import Session, select
 
 from .flight_live import AERODATABOX_KEY, _AERODATABOX_BASE
 from .metrics import record_external_call, flight_alert_credits
-from .models import ItineraryItem, ItemKind
+from .models import AirportCoverage, ItineraryItem, ItemKind
 from .rate_limit import throttle
 
 WEBHOOK_SECRET = os.getenv("AERODATABOX_WEBHOOK_SECRET", "")
@@ -42,6 +42,18 @@ SUBSCRIBE_WINDOW_HOURS = 72
 # balance silently pauses ALL subscriptions, so the floor is load-bearing.
 CREDIT_FLOOR = int(os.getenv("FLIGHT_ALERT_CREDIT_FLOOR", "20"))
 CREDIT_REFILL = int(os.getenv("FLIGHT_ALERT_CREDIT_REFILL", "50"))
+
+# Feed statuses that mean "there's a real chance of getting live updates" —
+# only Down/Unavailable are a confident "this subscription would never fire"
+# signal (see FeedServiceStatus in the RapidAPI spec: Degraded/OKPartial/OK
+# all mean the feed is at least partially live; Unknown is genuinely unknown,
+# not evidence of absence, so it's treated the same as "usable").
+_COVERAGE_OK_STATUSES = {"OK", "OKPartial", "Degraded", "Unknown"}
+
+# How long a cached coverage check is trusted before re-checking (the FREE
+# TIER feed-status call, not the ICAO lookup — that's cached forever once
+# resolved, since airport codes don't change).
+COVERAGE_RECHECK_DAYS = int(os.getenv("FLIGHT_ALERT_COVERAGE_RECHECK_DAYS", "7"))
 
 
 class FlightAlertApiError(Exception):
@@ -109,6 +121,56 @@ def refill_balance(credits: int, *, request=_request) -> int:
     return int(r.json().get("creditsRemaining", credits))
 
 
+def resolve_icao(iata: str, *, request=_request) -> Optional[str]:
+    """IATA → ICAO code (costs API quota, unlike the coverage-status check
+    below — this is why it's cached permanently in AirportCoverage.icao)."""
+    try:
+        r = request("GET", f"/airports/Iata/{iata}")
+    except FlightAlertApiError:
+        return None
+    return r.json().get("icao")
+
+
+def check_live_updates_ok(icao: str, *, request=_request) -> bool:
+    """FREE TIER — whether `icao`'s live-flight-updates feed is usable. See
+    docs/plans/plan-14-flight-alert-webhook-migration.md: confirmed live that
+    a Down feed means a webhook subscription for that airport never fires."""
+    try:
+        r = request("GET", f"/health/services/airports/{icao}/feeds")
+    except FlightAlertApiError:
+        return True  # a failed *check* isn't evidence of no coverage
+    status = ((r.json().get("liveFlightUpdatesFeed") or {}).get("status") or "Unknown")
+    return status in _COVERAGE_OK_STATUSES
+
+
+def get_coverage(session: Session, iata: str, *, now: Optional[datetime] = None,
+                  request=_request) -> bool:
+    """Cached live-updates coverage for `iata`, refreshing when missing or
+    past COVERAGE_RECHECK_DAYS. Defaults to True (attempt subscription) when
+    the ICAO lookup itself fails — an API hiccup isn't evidence of no
+    coverage, and polling remains the fallback either way if the subscription
+    then never delivers anything."""
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    iata = iata.strip().upper()
+    row = session.get(AirportCoverage, iata)
+    stale = row is None or (now - row.checked_at) > timedelta(days=COVERAGE_RECHECK_DAYS)
+    if not stale:
+        return row.live_updates_ok
+
+    icao = row.icao if row and row.icao else resolve_icao(iata, request=request)
+    live_ok = check_live_updates_ok(icao, request=request) if icao else True
+
+    if row:
+        row.icao = icao
+        row.live_updates_ok = live_ok
+        row.checked_at = now
+    else:
+        row = AirportCoverage(iata=iata, icao=icao, live_updates_ok=live_ok, checked_at=now)
+    session.add(row)
+    session.commit()
+    return live_ok
+
+
 def _flight_depart_utc(session: Session, item: ItineraryItem) -> Optional[datetime]:
     # Late import: notifications.py must stay importable without this module.
     from .notifications import _local_to_utc, _stop_utc_offset_hours
@@ -135,12 +197,18 @@ def reconcile_subscriptions(session: Session, *, now: Optional[datetime] = None,
       clears the stale id from any item still carrying it.
     * Tops up the alert-credit balance when below CREDIT_FLOOR and exports it
       as a Prometheus gauge either way.
+    * Skips subscribing a flight whose origin airport's live-updates feed is
+      Down/Unavailable (see get_coverage) — such a subscription would never
+      deliver a notification, wasting a credit-consuming subscription for
+      nothing. The flight is left unsubscribed, same as a failed create, so
+      polling remains its fallback.
 
     Returns a summary dict for the cron log.
     """
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     window_end = now + timedelta(hours=SUBSCRIBE_WINDOW_HOURS)
-    summary = {"subscribed": 0, "unsubscribed": 0, "credits": None, "refilled": 0}
+    summary = {"subscribed": 0, "unsubscribed": 0, "credits": None, "refilled": 0,
+               "no_coverage": 0}
 
     flights = session.exec(
         select(ItineraryItem).where(ItineraryItem.kind == ItemKind.flight)
@@ -183,6 +251,10 @@ def reconcile_subscriptions(session: Session, *, now: Optional[datetime] = None,
     for item in to_subscribe:
         d = item.details or {}
         flight_iata = (d.get("flight_number") or "").replace(" ", "").upper()
+        origin = (d.get("origin") or "").strip()
+        if origin and not get_coverage(session, origin, now=now, request=request):
+            summary["no_coverage"] += 1
+            continue  # no id stored → polling keeps covering this flight
         try:
             sub = create_subscription(flight_iata, request=request)
         except FlightAlertApiError:
