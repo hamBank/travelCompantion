@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getTrips, loginWithGoogle, AUTH_EXPIRED_EVENT } from '../api.js'
+import { getTrips, loginWithGoogle, refreshAuthToken, AUTH_EXPIRED_EVENT } from '../api.js'
 
 /**
  * An expired JWT means every authed request 401s. api.js must announce that
@@ -54,5 +54,39 @@ describe('expired-session handling in api.req', () => {
     })
     await expect(getTrips()).rejects.toThrow('boom')
     expect(dispatched).toHaveLength(0)
+  })
+})
+
+describe('sliding-session token refresh', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('stores the freshly-minted token from /auth/refresh', async () => {
+    localStorage.setItem('tc-token', 'aging-jwt')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ access_token: 'brand-new-jwt', user: { email: 'a@x.com' } }),
+    })
+    await refreshAuthToken()
+    expect(localStorage.getItem('tc-token')).toBe('brand-new-jwt')
+    const [url, opts] = global.fetch.mock.calls[0]
+    expect(url).toBe('/auth/refresh')
+    expect(opts.method).toBe('POST')
+    expect(opts.headers.Authorization).toBe('Bearer aging-jwt')
+  })
+
+  it('leaves the stored token untouched when refresh fails', async () => {
+    localStorage.setItem('tc-token', 'aging-jwt')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+      text: async () => JSON.stringify({ detail: 'nope' }),
+    })
+    await expect(refreshAuthToken()).rejects.toThrow('nope')
+    expect(localStorage.getItem('tc-token')).toBe('aging-jwt')
   })
 })

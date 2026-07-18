@@ -15,7 +15,7 @@ import BudgetSummary from './components/BudgetSummary.jsx'
 import DocumentsModal from './components/DocumentsModal.jsx'
 import MenuDropdown from './components/MenuDropdown.jsx'
 import { DEFAULT_THEME } from './themes.js'
-import { getAuthConfig, exportTripPdf, getPending, AUTH_EXPIRED_EVENT } from './api.js'
+import { getAuthConfig, exportTripPdf, getPending, refreshAuthToken, AUTH_EXPIRED_EVENT } from './api.js'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale, KindFilterContext } from './settings.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
@@ -412,6 +412,20 @@ function AuthenticatedApp() {
     window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
   }, [authEnabled])
+
+  // Sliding session: refresh the stored JWT on boot and daily while the app
+  // stays open (a phone PWA can stay "open" for weeks without rebooting the
+  // page), so an actively-used session never hits the fixed JWT_EXPIRE_DAYS
+  // cliff — it only expires after that long of not using the app at all.
+  // Failures are ignored: offline is fine (next interval/boot retries), and
+  // an actually-dead token 401s → the expiry handler above signs out.
+  useEffect(() => {
+    if (!authEnabled || !user) return
+    const doRefresh = () => { refreshAuthToken().catch(() => {}) }
+    doRefresh()
+    const id = setInterval(doRefresh, 24 * 60 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [authEnabled, user])
 
   if (!authReady) {
     return (

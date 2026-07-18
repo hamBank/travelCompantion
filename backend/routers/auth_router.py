@@ -42,6 +42,30 @@ def get_me(user: dict = Depends(get_current_user)):
     return user
 
 
+@router.post("/auth/refresh")
+def refresh_token(user: dict = Depends(get_current_user), session: Session = Depends(get_session)):
+    """Issue a fresh JWT to a currently-authenticated user — a sliding
+    session, so a token only ever hard-expires after JWT_EXPIRE_DAYS of the
+    app not being opened at all, instead of a fixed 30 days from login.
+
+    Re-runs the same authorisation gate as /auth/google (bootstrap admin OR
+    any trip membership): someone whose access has been revoked since login
+    can see out their current token's lifetime but can't extend it.
+    """
+    if not AUTH_ENABLED:
+        raise HTTPException(status_code=503, detail="Auth not configured (GOOGLE_CLIENT_ID not set)")
+
+    email = user["email"].lower()
+    if ALLOWED_EMAIL and email != ALLOWED_EMAIL:
+        has_membership = session.exec(
+            select(TripMembership).where(TripMembership.user_email == email)
+        ).first()
+        if not has_membership:
+            raise HTTPException(status_code=403, detail="This Google account is not authorised")
+
+    return {"access_token": create_jwt(user), "user": user}
+
+
 @router.get("/auth/config")
 def auth_config():
     """Let the frontend know whether auth is enabled and which client ID to use."""
