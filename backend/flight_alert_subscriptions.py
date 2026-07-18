@@ -27,6 +27,7 @@ from sqlmodel import Session, select
 from .flight_live import AERODATABOX_KEY, _AERODATABOX_BASE
 from .metrics import record_external_call, flight_alert_credits
 from .models import ItineraryItem, ItemKind
+from .rate_limit import throttle
 
 WEBHOOK_SECRET = os.getenv("AERODATABOX_WEBHOOK_SECRET", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
@@ -56,6 +57,7 @@ def webhook_url() -> str:
 
 
 def _request(method: str, path: str, json_body: Optional[dict] = None) -> httpx.Response:
+    throttle("aerodatabox")
     try:
         with httpx.Client(timeout=12) as client:
             r = client.request(

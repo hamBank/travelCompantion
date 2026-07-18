@@ -6,6 +6,7 @@ from sqlmodel.pool import StaticPool
 from backend.main import app
 from backend.database import get_session
 from backend import database as database_mod
+from backend import flight_live, flight_alert_subscriptions
 
 # The Postgres CI job (.github/workflows/ci.yml) points DATABASE_URL at a
 # real Postgres service so the suite exercises JSON/enum/datetime dialect
@@ -39,6 +40,19 @@ def make_test_session() -> Session:
     )
     SQLModel.metadata.create_all(engine)
     return Session(engine)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_rate_limit_sleeps(monkeypatch):
+    """backend/rate_limit.py's throttle() protects the real AeroDataBox API
+    from a per-second cap (see backend/flight_live.py, backend/
+    flight_alert_subscriptions.py) — tests fake the HTTP layer already, so a
+    real sleep() here only slows the suite (confirmed: ~1.2s x every
+    test_flight_check.py test with no fix). backend/rate_limit.py's own tests
+    import throttle directly and are unaffected — this only patches the two
+    consumer modules' bound reference."""
+    monkeypatch.setattr(flight_live, "throttle", lambda *a, **k: None)
+    monkeypatch.setattr(flight_alert_subscriptions, "throttle", lambda *a, **k: None)
 
 
 @pytest.fixture(name="session")
