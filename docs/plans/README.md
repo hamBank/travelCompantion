@@ -18,6 +18,7 @@ assigned plan.** Each plan is one PR-sized unit of work.
 | [plan-12b-document-vault-expiry.md](plan-12b-document-vault-expiry.md) | Document vault — expiry reminder push notification cron | S | plan-12a |
 | [plan-12c-document-vault-ui.md](plan-12c-document-vault-ui.md) | Document vault — Settings UI, viewer, offline cache | M | plan-12a |
 | [plan-13-passport-ocr.md](plan-13-passport-ocr.md) | Passport MRZ OCR (local Tesseract, no cloud call) with per-field selectable review | M | plan-12a, plan-12c (reads/writes the Documents section) |
+| [plan-14-flight-alert-webhook-migration.md](plan-14-flight-alert-webhook-migration.md) | Investigation: migrate flight live-alerts from polling to AeroDataBox's webhook Flight Alert API | — (spike first) | plan-2 (replaces its polling loop) — **not ready to implement**, see doc |
 
 If implementing both plan-2 and plan-10, do plan-2 first — it extracts the
 AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
