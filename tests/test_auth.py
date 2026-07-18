@@ -222,6 +222,74 @@ def test_google_auth_allows_any_account_when_allowed_email_unset(client: TestCli
     assert r.json()["user"]["email"] == "anyone@example.com"
 
 
+# ── POST /auth/refresh ───────────────────────────────────────────────────────
+
+def test_refresh_returns_503_when_auth_not_configured(client: TestClient):
+    r = client.post("/auth/refresh")
+    assert r.status_code == 503
+
+
+def test_refresh_requires_valid_token(client: TestClient, monkeypatch):
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
+    r = client.post("/auth/refresh")
+    assert r.status_code == 401
+    r = client.post("/auth/refresh", headers={"Authorization": "Bearer not.a.jwt"})
+    assert r.status_code == 401
+
+
+def test_refresh_issues_a_new_token_with_fresh_expiry(client: TestClient, monkeypatch):
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "admin@example.com")
+    # A token nearing the end of its life (2 days left of a 30-day lifetime).
+    old_payload = {
+        "sub": "admin@example.com", "name": "Admin", "picture": "p.png",
+        "exp": datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=2),
+    }
+    old_token = jwt.encode(old_payload, auth.JWT_SECRET, algorithm=auth.JWT_ALGORITHM)
+
+    r = client.post("/auth/refresh", headers={"Authorization": f"Bearer {old_token}"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["user"]["email"] == "admin@example.com"
+    new_payload = jwt.decode(data["access_token"], auth.JWT_SECRET, algorithms=[auth.JWT_ALGORITHM])
+    assert new_payload["sub"] == "admin@example.com"
+    assert new_payload["name"] == "Admin"
+    assert new_payload["picture"] == "p.png"
+    # Fresh full lifetime, not the old token's remaining 2 days.
+    new_exp = datetime.fromtimestamp(new_payload["exp"], timezone.utc).replace(tzinfo=None)
+    assert new_exp - datetime.now(timezone.utc).replace(tzinfo=None) > timedelta(days=auth.JWT_EXPIRE_DAYS - 1)
+
+
+def test_refresh_rejects_revoked_user_with_no_membership(client: TestClient, monkeypatch):
+    """Same gate as login: a user removed from every trip since signing in
+    can't extend their session."""
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "admin@example.com")
+    token = auth.create_jwt({"email": "revoked@example.com", "name": "Gone"})
+    r = client.post("/auth/refresh", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+def test_refresh_allows_member_user(client: TestClient, session: Session, monkeypatch):
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
+    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "admin@example.com")
+    trip = Trip(name="T")
+    session.add(trip)
+    session.commit()
+    session.refresh(trip)
+    session.add(TripMembership(trip_id=trip.id, user_email="shared@example.com", role="viewer"))
+    session.commit()
+
+    token = auth.create_jwt({"email": "shared@example.com", "name": "Shared"})
+    r = client.post("/auth/refresh", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json()["user"]["email"] == "shared@example.com"
+
+
 def test_google_auth_allows_email_with_existing_trip_membership(
     client: TestClient, session: Session, monkeypatch
 ):

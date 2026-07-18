@@ -46,6 +46,17 @@ export const getAuthConfig  = ()       => req('/auth/config')
 export const loginWithGoogle = (credential) =>
   req('/auth/google', { method: 'POST', body: JSON.stringify({ credential }) })
 
+/** Sliding session: swap the stored JWT for a freshly-minted one (see
+ * POST /auth/refresh). Called on boot and periodically while the app stays
+ * open, so the session only hard-expires after JWT_EXPIRE_DAYS of the app
+ * not being used at all. A 401 here means the current token is already
+ * dead — req() fires AUTH_EXPIRED_EVENT and the user lands on login. */
+export async function refreshAuthToken() {
+  const data = await req('/auth/refresh', { method: 'POST' })
+  if (data?.access_token) localStorage.setItem('tc-token', data.access_token)
+  return data
+}
+
 export const getTrips   = () => req('/trips/')
 export const deleteTrip = (id) => req(`/trips/${id}`, { method: 'DELETE' })
 export const updateTrip = (id, data) =>
