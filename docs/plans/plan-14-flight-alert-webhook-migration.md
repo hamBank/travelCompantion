@@ -2,7 +2,25 @@
 
 Read `docs/plans/README.md` first (conventions, test gates, build workflow).
 
-## Status: spikes resolved 2026-07-18 — ready to implement
+## Status: IMPLEMENTED 2026-07-18
+
+Shipped as `backend/flight_alert_subscriptions.py` (subscription client +
+reconciler + credit auto-refill), `backend/routers/webhooks.py` (receiver),
+`evaluate_flight_alert` extracted in `backend/notifications.py` (shared by
+poller and receiver), wired into `scripts/send_notifications.py`. To activate
+in production, add to `/opt/travelcomp/.env`:
+
+```
+AERODATABOX_WEBHOOK_SECRET=<long random string, e.g. openssl rand -hex 24>
+PUBLIC_BASE_URL=https://tripplan.hups.club
+```
+
+Without those two vars everything behaves exactly as before (pure polling).
+With them, the notification cron reconciles subscriptions each tick, polling
+skips subscribed flights (and remains the per-flight fallback for failed
+creates), and the credit balance auto-refills below a floor of
+`FLIGHT_ALERT_CREDIT_FLOOR` (default 20) by `FLIGHT_ALERT_CREDIT_REFILL`
+(default 50) API units.
 
 The open questions below were all resolved by live testing against the
 production RapidAPI key (see "Spike results"). The implementation sketch

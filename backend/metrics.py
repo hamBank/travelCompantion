@@ -4,7 +4,7 @@ HTTP metrics are registered automatically by prometheus-fastapi-instrumentator
 in main.py.  Everything below is application-level.
 """
 import logging
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 _external_logger = logging.getLogger("travelcomp.external")
 
@@ -30,6 +30,22 @@ def record_external_call(service: str, ok: bool, error: str = "") -> None:
     external_requests.labels(service=service, status="success" if ok else "error").inc()
     if not ok:
         _external_logger.warning("external call failed: service=%s error=%s", service, error)
+
+
+# ── Flight alert (webhook) credits ────────────────────────────────────────────
+# AeroDataBox's flight-alert credit balance is separate from the API quota and
+# silently pauses ALL webhook subscriptions when it hits zero — this gauge
+# exists so Prometheus can alert before that happens. Set by
+# backend/flight_alert_subscriptions.py:reconcile_subscriptions on each cron
+# tick (the cron process serves no /metrics endpoint, so scrapes of the web
+# app see the last value only if they share a process — in practice this is
+# exported for the cron's own textfile/logging path and future use; the
+# load-bearing safety net is the auto-refill in reconcile itself).
+
+flight_alert_credits = Gauge(
+    "travelcomp_flight_alert_credits",
+    "Remaining AeroDataBox flight-alert credits (separate from API quota)",
+)
 
 
 # ── Email ingestion ────────────────────────────────────────────────────────────

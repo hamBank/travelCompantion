@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from .database import create_db_and_tables
-from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me, weather, packing, push, attachments, calendar, shared, vault, expenses
+from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me, weather, packing, push, attachments, calendar, shared, vault, expenses, webhooks
 from .routers.auth_router import router as auth_router
 from . import metrics as _metrics  # registers all travelcomp_* counters at startup
 
@@ -66,7 +66,11 @@ _PUBLIC_PREFIXES = ("/auth/", "/health", "/metrics", "/currency/", "/weather",
                     "/calendar/",
                     # Public read-only trip share link (backend/routers/shared.py) —
                     # same token-as-access-control pattern as /calendar/ above.
-                    "/shared/")
+                    "/shared/",
+                    # AeroDataBox flight-alert webhook (backend/routers/webhooks.py) —
+                    # the unguessable path secret is the access control; AeroDataBox
+                    # sends no auth header (plan-14 spike).
+                    "/webhooks/")
 _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
                     "/favicon.ico", "/icon-192.png", "/icon-512.png",
                     "/apple-touch-icon.png", "/deploy"}
@@ -110,6 +114,7 @@ app.include_router(calendar.router, tags=["calendar"])
 app.include_router(shared.router, tags=["shared"])
 app.include_router(vault.router, tags=["vault"])
 app.include_router(expenses.router, tags=["expenses"])
+app.include_router(webhooks.router, tags=["webhooks"])
 
 
 @app.post("/deploy")
