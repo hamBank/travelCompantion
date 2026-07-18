@@ -15,7 +15,7 @@ import BudgetSummary from './components/BudgetSummary.jsx'
 import DocumentsModal from './components/DocumentsModal.jsx'
 import MenuDropdown from './components/MenuDropdown.jsx'
 import { DEFAULT_THEME } from './themes.js'
-import { getAuthConfig, exportTripPdf, getPending } from './api.js'
+import { getAuthConfig, exportTripPdf, getPending, AUTH_EXPIRED_EVENT } from './api.js'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale, KindFilterContext } from './settings.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
@@ -402,6 +402,16 @@ function AuthenticatedApp() {
     localStorage.removeItem('tc-token')
     setUser(null)
   }
+
+  // Expired/invalidated session (any authed request came back 401, see
+  // api.js) — sign out so the login page shows, rather than leaving the app
+  // up with every request failing until the user finds Sign out themselves.
+  useEffect(() => {
+    if (!authEnabled) return
+    const onExpired = () => handleLogout()
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
+  }, [authEnabled])
 
   if (!authReady) {
     return (

@@ -1,5 +1,13 @@
 function getToken() { return localStorage.getItem('tc-token') }
 
+// Fired when a request that carried a token comes back 401 — the stored JWT
+// has expired (JWT_EXPIRE_DAYS) or been invalidated. AuthenticatedApp
+// (App.jsx) listens and signs the user out so they land on the login page,
+// instead of the app sitting in a broken every-request-fails state until a
+// manual sign-out. The offline write queue survives this (IndexedDB, not
+// touched by logout), so queued edits still sync after signing back in.
+export const AUTH_EXPIRED_EVENT = 'tc-auth-expired'
+
 async function req(path, opts = {}) {
   const token = getToken()
   const r = await fetch(path, {
@@ -10,6 +18,11 @@ async function req(path, opts = {}) {
     cache: 'no-store',
     ...opts,
   })
+  // Only when a token was actually sent: a 401 on a token-less request (e.g.
+  // a failed login attempt on the login page) is not an expired session.
+  if (r.status === 401 && token && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  }
   if (r.status === 204) return null
   const text = await r.text()
   if (!text) return null
