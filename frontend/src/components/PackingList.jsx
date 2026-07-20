@@ -134,6 +134,7 @@ export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit =
             <input
               type="checkbox" checked={bagPacked} onChange={() => toggleBagPacked(bag)}
               className="shrink-0" title={bagPacked ? 'Mark bag as not packed' : 'Mark bag as packed'}
+              aria-label={`${bag.name} packed`}
             />
           )}
           <button onClick={() => toggleCollapse(String(bag.id))} className="flex items-center gap-2 hover:opacity-80 transition-opacity" title={isCollapsed ? 'Expand' : 'Collapse'}>
@@ -262,7 +263,7 @@ function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, onEdit, canEdi
       className="flex items-center gap-2 py-1.5 group"
       style={shared ? { borderLeft: '2px solid var(--accent)', paddingLeft: '0.5rem' } : { paddingLeft: 'calc(0.5rem + 2px)' }}
     >
-      <input type="checkbox" checked={packed} onChange={() => onToggle(it)} className="shrink-0" />
+      <input type="checkbox" checked={packed} onChange={() => onToggle(it)} className="shrink-0" aria-label={`${it.name} packed`} />
       <span
         className="text-sm flex-1 min-w-[2.5rem] truncate"
         style={{ color: packed ? 'var(--text-faint)' : 'var(--text)' }}

@@ -272,6 +272,7 @@ function AppShell({ user, onLogout }) {
             <select
               value={kindFilter}
               onChange={e => setKindFilter(e.target.value)}
+              aria-label="Filter by item kind"
               style={{
                 background: kindFilter ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'transparent',
                 color: kindFilter ? 'var(--accent)' : 'var(--text-muted)',
@@ -291,6 +292,7 @@ function AppShell({ user, onLogout }) {
             <select
               value={hidePacked ? 'hide' : 'all'}
               onChange={e => setHidePacked(e.target.value === 'hide')}
+              aria-label="Show or hide packed items"
               title="Bags are always shown, even when their packed items are hidden"
               style={{
                 background: hidePacked ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))' : 'transparent',
