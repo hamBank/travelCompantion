@@ -5,7 +5,7 @@ import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
 import { useCanEdit, useCanQueueEdit } from '../roles.js'
 import { KindIcon } from '../kindIcons.jsx'
-import { Check, Pencil } from 'lucide-react'
+import { Check, Pencil, Wind, BedDouble } from 'lucide-react'
 import { offlineQueue } from '../offlineQueue.js'
 import ItemRow from './ItemRow.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
@@ -165,7 +165,7 @@ function fmtDayHeader(dateKey) {
 export function DayBanner({ dateKey, weather }) {
   return (
     <div
-      style={{ background: 'var(--surface-2)', borderRadius: '0.375rem' }}
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '0.375rem' }}
       className="px-3 py-1.5 text-xs font-semibold flex items-center"
     >
       <span>{fmtDayHeader(dateKey)}</span>
@@ -181,7 +181,7 @@ export function DayBanner({ dateKey, weather }) {
         >
           {weather.icon} {Math.round(weather.tmin)}–{Math.round(weather.tmax)}°C
           {weather.wind != null && (
-            <span className="ml-1">💨 {Math.round(weather.wind)}km/h</span>
+            <span className="ml-1"><Wind size={11} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.1em' }} /> {Math.round(weather.wind)}km/h</span>
           )}
           {weather.source === 'climatology' && (
             <span style={{ fontSize: '0.85em', opacity: 0.75 }} className="ml-1">avg</span>
@@ -939,8 +939,8 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               }}
               className="px-3 py-2 flex items-center gap-2 text-xs"
             >
-              <span style={{ color: 'var(--kind-accommodation)' }}>🛏</span>
-              <span style={{ color: 'var(--kind-accommodation)' }} className="font-medium">Check out</span>
+              <span style={{ color: 'var(--kind-accommodation)' }}><BedDouble size={13} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em' }} /></span>
+              <span style={{ color: 'var(--kind-accommodation)' }} className="font-medium whitespace-nowrap shrink-0">Check out</span>
               <span style={{ color: 'var(--text)' }} className="truncate">{checkoutAccom.name}</span>
               <span style={{ color: 'var(--text-faint)' }} className="ml-auto shrink-0">{fmtDayTime(checkoutAccom.details.checkout)}</span>
             </div>
@@ -1114,7 +1114,7 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-flight) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-flight) 35%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-flight)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}
@@ -1174,7 +1174,7 @@ function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-rail) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-rail) 35%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-rail)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}
@@ -1241,7 +1241,7 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-accommodation) 8%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-accommodation) 40%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-accommodation)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}
@@ -1333,7 +1333,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
       <div
         style={{
           background: 'color-mix(in srgb, var(--kind-walk) 6%, var(--surface-2))',
-          border: '1px solid color-mix(in srgb, var(--kind-walk) 35%, transparent)',
+          border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-walk)`, boxShadow: 'var(--card-shadow)',
           borderRadius: '0.5rem',
           overflow: 'hidden',
         }}
@@ -1454,7 +1454,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-tour) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-tour) 35%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-tour)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}
@@ -1518,7 +1518,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
       <div
         style={{
           background: 'color-mix(in srgb, var(--kind-transfer) 6%, var(--surface-2))',
-          border: '1px solid color-mix(in srgb, var(--kind-transfer) 35%, transparent)',
+          border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-transfer)`, boxShadow: 'var(--card-shadow)',
           borderRadius: '0.5rem',
           overflow: 'hidden',
         }}
@@ -1649,7 +1649,7 @@ function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
       <div
         style={{
           background: 'color-mix(in srgb, var(--kind-river_transfer) 6%, var(--surface-2))',
-          border: '1px solid color-mix(in srgb, var(--kind-river_transfer) 35%, transparent)',
+          border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-river_transfer)`, boxShadow: 'var(--card-shadow)',
           borderRadius: '0.5rem',
           overflow: 'hidden',
         }}
@@ -1782,7 +1782,7 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
       <div
         style={{
           background: 'color-mix(in srgb, var(--kind-cycling) 6%, var(--surface-2))',
-          border: '1px solid color-mix(in srgb, var(--kind-cycling) 35%, transparent)',
+          border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-cycling)`, boxShadow: 'var(--card-shadow)',
           borderRadius: '0.5rem',
           overflow: 'hidden',
         }}
@@ -1897,7 +1897,7 @@ function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-hire) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-hire) 35%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-hire)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}
@@ -1949,7 +1949,7 @@ function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
         <div
           style={{
             background: 'color-mix(in srgb, var(--kind-purchase) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-purchase) 35%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-purchase)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}
@@ -2007,7 +2007,7 @@ function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
           className="w-full text-left"
           style={{
             background: 'color-mix(in srgb, var(--kind-food) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-food) 35%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-food)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}
@@ -2066,7 +2066,7 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-activity) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-activity) 35%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-activity)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}
@@ -2133,7 +2133,7 @@ function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-show) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-show) 35%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-show)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}
@@ -2209,7 +2209,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
             className="w-full text-left hover:opacity-80 transition-opacity"
             style={{
               background: 'color-mix(in srgb, var(--warning) 14%, var(--surface-2))',
-              border: '1px solid color-mix(in srgb, var(--warning) 55%, transparent)',
+              border: '1px solid var(--border)', borderLeft: '3px solid var(--warning)', boxShadow: 'var(--card-shadow)',
               borderRadius: '0.5rem',
               padding: '0.6rem 0.75rem',
             }}
@@ -2228,7 +2228,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
             className="w-full text-left hover:opacity-80 transition-opacity"
             style={{
               background: 'color-mix(in srgb, var(--kind-note) 6%, var(--surface-2))',
-              border: '1px solid color-mix(in srgb, var(--kind-note) 35%, transparent)',
+              border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-note)`, boxShadow: 'var(--card-shadow)',
               borderRadius: '0.5rem',
               padding: '0.75rem',
             }}
@@ -2289,7 +2289,7 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-restaurant) 6%, var(--surface-2))',
-            border: '1px solid color-mix(in srgb, var(--kind-restaurant) 35%, transparent)',
+            border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-restaurant)`, boxShadow: 'var(--card-shadow)',
             borderRadius: '0.5rem',
             padding: '0.75rem',
           }}

@@ -16,10 +16,12 @@ describe('DayBanner', () => {
     expect(container.textContent).toContain('21–30°C')  // rounded, with unit
   })
 
-  it('shows rounded wind with the wind emoji and km/h unit when present', () => {
+  it('shows rounded wind with a wind icon and km/h unit when present', () => {
     const wx = { icon: '☀', tmin: 20, tmax: 30, wind: 14.6, desc: 'Clear', source: 'forecast' }
     const { container } = render(<DayBanner dateKey="2026-07-22" weather={wx} />)
-    expect(container.textContent).toContain('💨 15km/h')
+    expect(container.textContent).toContain('15km/h')
+    // Wind glyph is now a lucide SVG (theme-tinted), not the 💨 emoji.
+    expect(container.querySelector('svg.lucide-wind')).toBeTruthy()
   })
 
   it('omits wind when not provided', () => {
