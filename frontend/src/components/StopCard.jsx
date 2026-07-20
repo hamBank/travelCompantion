@@ -843,7 +843,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     >
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full px-4 py-3.5 flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
+        className="w-full px-2.5 py-3.5 flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
       >
         <div className="flex-1 min-w-0 flex items-center gap-1.5">
           <FlagMark country={stop.country} />
@@ -864,8 +864,11 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
         <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem' }}>{contentVisible ? '▲' : '▼'}</span>
       </button>
 
+      {/* Tight horizontal padding on purpose: the item cards' own rounded
+          borders / left strips provide the visual separation from the stop
+          frame, so wide gutters here just waste phone-width. */}
       {contentVisible && (
-        <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-4 space-y-4">
+        <div style={{ borderTop: '1px solid var(--border)' }} className="px-1.5 py-3 space-y-4">
           <CountryFactsRow country={stop.country} />
           <InboundBanner inbound={inbound} onUpdate={onUpdate} />
           {inboundConnection && <LayoverBadge {...inboundConnection} />}
