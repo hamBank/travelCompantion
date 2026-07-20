@@ -790,7 +790,7 @@ function GenericForm({ core, details, setCore, setDetails }) {
 
 const DIFFICULTY = ['easy', 'moderate', 'hard', 'strenuous']
 
-function WalkForm({ itemId, core, details, setCore, setDetails }) {
+function WalkForm({ itemId, core, details, setCore, setDetails, onDeferGpx }) {
   const [mapsUrl, setMapsUrl] = useState('')
   const [mapsMsg, setMapsMsg] = useState(null)
   const [gpxBusy, setGpxBusy] = useState(false)
@@ -801,6 +801,15 @@ function WalkForm({ itemId, core, details, setCore, setDetails }) {
   async function handleGpx(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    // A brand-new card has no item id yet (the upload endpoint is
+    // /items/{id}/gpx) — hold the file and let the modal upload it right
+    // after Save creates the item, instead of failing with a 422.
+    if (!itemId) {
+      onDeferGpx?.(file)
+      setGpxMsg({ text: `✓ ${file.name} — will upload when saved`, color: 'var(--success)' })
+      e.target.value = ''
+      return
+    }
     setGpxBusy(true); setGpxMsg(null)
     try {
       const updated = await uploadGpx(itemId, file)
@@ -1425,7 +1434,7 @@ async function geocodeForRoute(name, routeCoords) {
   return null
 }
 
-function CyclingForm({ itemId, core, details, setCore, setDetails }) {
+function CyclingForm({ itemId, core, details, setCore, setDetails, onDeferGpx }) {
   const [mapsUrl, setMapsUrl]     = useState('')
   const [mapsMsg, setMapsMsg]     = useState(null)
   const [gpxBusy, setGpxBusy]    = useState(false)
@@ -1448,6 +1457,15 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
   async function handleGpx(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    // A brand-new card has no item id yet (the upload endpoint is
+    // /items/{id}/gpx) — hold the file and let the modal upload it right
+    // after Save creates the item, instead of failing with a 422.
+    if (!itemId) {
+      onDeferGpx?.(file)
+      setGpxMsg({ text: `✓ ${file.name} — will upload when saved`, color: 'var(--success)' })
+      e.target.value = ''
+      return
+    }
     setGpxBusy(true); setGpxMsg(null)
     try {
       const updated = await uploadGpx(itemId, file)
@@ -1462,6 +1480,10 @@ function CyclingForm({ itemId, core, details, setCore, setDetails }) {
   }
 
   async function handleGenGpx() {
+    if (!itemId) {
+      setGpxMsg({ text: 'Save the item first, then generate GPX from the route', color: 'var(--error)' })
+      return
+    }
     const points = routePointsOf(details)
     if (points.length < 2) {
       setGpxMsg({ text: 'Add a route first (paste a Google Maps directions URL above)', color: 'var(--error)' })
@@ -1620,6 +1642,9 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
   // here rather than inviting a second, conflicting entry for the same booking.
   const [bookingPrimary, setBookingPrimary] = useState(null)
   const canQueueEdit = useCanQueueEdit()
+  // GPX chosen on a not-yet-saved walk/cycling card (no item id to upload
+  // against yet) — uploaded right after Save creates the item.
+  const pendingGpxRef = useRef(null)
 
   // Snapshot the initial form state once, so any close attempt (backdrop
   // click, ✕, Cancel) can warn before silently discarding real edits.
@@ -1756,6 +1781,18 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
         const stopId = targetStop ?? item.stop_id
         if (!stopId) { setError('Choose a stop first'); setSaving(false); return }
         updated = await createItem(stopId, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
+        if (pendingGpxRef.current) {
+          setSavingMsg('Uploading GPX…')
+          try {
+            updated = await uploadGpx(updated.id, pendingGpxRef.current)
+          } catch (e) {
+            // The card itself saved fine — don't block the save (a retry
+            // here would duplicate the item). Surface the failure and let
+            // the user re-upload from Edit.
+            alert(`Saved, but the GPX upload failed: ${e.message} — re-upload it from Edit.`)
+          }
+          pendingGpxRef.current = null
+        }
       } else {
         updated = await updateItem(item.id, { ...core, scheduled_at: core.scheduled_at || null, details: finalDetails })
         if (targetStop && targetStop !== item.stop_id) {
@@ -1889,7 +1926,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
           ) : core.kind === 'activity' ? (
             <ActivityForm itemId={item.id} stopId={targetStop ?? item.stop_id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'walk' ? (
-            <WalkForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+            <WalkForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} onDeferGpx={f => { pendingGpxRef.current = f }} />
           ) : core.kind === 'transfer' ? (
             <TransferForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'river_transfer' ? (
@@ -1897,7 +1934,7 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
           ) : core.kind === 'tour' ? (
             <TourForm itemId={item.id} stopId={targetStop ?? item.stop_id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'cycling' ? (
-            <CyclingForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} />
+            <CyclingForm itemId={item.id} core={core} details={details} setCore={setCore} setDetails={setDetails} onDeferGpx={f => { pendingGpxRef.current = f }} />
           ) : core.kind === 'rail' ? (
             <RailForm core={core} details={details} setCore={setCore} setDetails={setDetails} />
           ) : core.kind === 'flight' ? (

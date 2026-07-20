@@ -26,7 +26,7 @@ vi.mock('../api.js', () => ({
   updateStop: vi.fn(),
   updatePackItem: vi.fn(),
 }))
-import { enrichPlace, getItemStops, getBookingPrimary } from '../api.js'
+import { enrichPlace, getItemStops, getBookingPrimary, uploadGpx, createItem } from '../api.js'
 import { offlineQueue } from '../offlineQueue.js'
 import ItemEditModal, { diffItemChanges } from '../components/ItemEditModal.jsx'
 
@@ -237,5 +237,62 @@ describe('ItemEditModal offline Save (routes through the offline queue)', () => 
     expect(await screen.findByText(/internet connection/)).toBeInTheDocument()
     expect(offlineQueue.enqueue).not.toHaveBeenCalled()
     expect(onSave).not.toHaveBeenCalled()
+  })
+})
+
+describe('ItemEditModal GPX upload on a not-yet-saved cycling card', () => {
+  function pickGpx() {
+    const file = new File(['<gpx></gpx>'], 'ride.gpx', { type: 'application/gpx+xml' })
+    const input = document.querySelector('input[accept=".gpx,application/gpx+xml"]')
+    fireEvent.change(input, { target: { files: [file] } })
+    return file
+  }
+
+  it('defers the upload instead of calling the endpoint with no item id', async () => {
+    render(
+      <ItemEditModal
+        item={{ stop_id: 7, kind: 'cycling', name: 'Loire loop', details: {} }}
+        isNew
+        onSave={() => {}}
+        onClose={() => {}}
+      />
+    )
+    pickGpx()
+    // The pre-fix behavior: uploadGpx(undefined, file) → 422 "unable to
+    // parse string as an integer". Now it must not be called at all yet.
+    expect(uploadGpx).not.toHaveBeenCalled()
+    expect(await screen.findByText(/will upload when saved/)).toBeInTheDocument()
+  })
+
+  it('uploads the held file right after Save creates the item', async () => {
+    createItem.mockResolvedValue({ id: 91, stop_id: 7, kind: 'cycling', name: 'Loire loop', details: {} })
+    uploadGpx.mockResolvedValue({ id: 91, stop_id: 7, kind: 'cycling', name: 'Loire loop', details: { gpx_filename: 'x.gpx' } })
+    const onSave = vi.fn()
+    render(
+      <ItemEditModal
+        item={{ stop_id: 7, kind: 'cycling', name: 'Loire loop', details: {} }}
+        isNew
+        onSave={onSave}
+        onClose={() => {}}
+      />
+    )
+    const file = pickGpx()
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(uploadGpx).toHaveBeenCalledWith(91, file))
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: 91, details: { gpx_filename: 'x.gpx' } }))
+  })
+
+  it('still uploads immediately for an already-saved card', async () => {
+    getItemStops.mockResolvedValue([])
+    uploadGpx.mockResolvedValue({ id: 42, details: { gpx_filename: 'ride.gpx' } })
+    render(
+      <ItemEditModal
+        item={{ id: 42, stop_id: 7, kind: 'cycling', name: 'Loire loop', details: {} }}
+        onSave={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const file = pickGpx()
+    await waitFor(() => expect(uploadGpx).toHaveBeenCalledWith(42, file))
   })
 })
