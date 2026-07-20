@@ -9,6 +9,7 @@ import ItemHistoryModal from './ItemHistoryModal.jsx'
 import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
 import CopyText from './CopyText.jsx'
+import { Copy } from 'lucide-react'
 import { relevantDayIndices, filterHoursByDays } from '../washHours.js'
 import { registerModal, unregisterModal } from '../modalNav.js'
 import { useSwipeNav } from '../swipeNav.js'
@@ -119,7 +120,7 @@ function AccommodationBody({ item }) {
                       style={{ color: 'var(--accent)' }} className="hover:underline break-all">{d.booking_ref}</a>
                     {/* The ref doubles as a link here, so clicking it navigates —
                         give copy its own affordance instead. */}
-                    <CopyText value={d.booking_ref}><span title="Copy booking ref">⧉</span></CopyText>
+                    <CopyText value={d.booking_ref}><span title="Copy booking ref" aria-label="Copy booking ref"><Copy size={13} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em' }} /></span></CopyText>
                   </span>
                 : <CopyText value={d.booking_ref}>{d.booking_ref}</CopyText>
               }

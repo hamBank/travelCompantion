@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Pencil } from 'lucide-react'
 import { updateItemStatus } from '../api.js'
 import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal from './ItemEditModal.jsx'
@@ -75,8 +76,9 @@ export default function ItemRow({ item, onItemSaved, onItemDeleted }) {
           style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
           className="edit-btn shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity"
           title="Edit"
+          aria-label="Edit"
         >
-          ✎
+          <Pencil size={12} aria-hidden="true" />
         </button>
       </div>
       {showDetail && (

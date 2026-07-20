@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Pencil } from 'lucide-react'
 import {
   getPacking, createPackItem, updatePackItem, deletePackItem,
   createBag, updateBag, deleteBag,
@@ -141,7 +142,7 @@ export default function PackingList({ tripId, userEmail, canEdit, canQueueEdit =
             <span style={{ color: 'var(--text-faint)' }} className="text-xs">{packed}/{total}</span>
           </button>
           {canEdit && (
-            <button onClick={() => setEditBag(bag)} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70 ml-1" title="Edit bag">✎</button>
+            <button onClick={() => setEditBag(bag)} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70 ml-1" title="Edit bag" aria-label="Edit bag"><Pencil size={12} aria-hidden="true" /></button>
           )}
         </div>
         {!isCollapsed && (
@@ -298,7 +299,7 @@ function PackRow({ it, bags, onToggle, onStep, onRemove, onPatch, onEdit, canEdi
       </select>
       {editable && (
         <button onClick={() => onEdit(it)} style={{ color: 'var(--text-faint)' }}
-                className="edit-btn text-xs shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity" title="Edit">✎</button>
+                className="edit-btn text-xs shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity" title="Edit" aria-label="Edit"><Pencil size={12} aria-hidden="true" /></button>
       )}
     </div>
   )
