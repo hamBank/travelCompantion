@@ -8,6 +8,7 @@ import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
 import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
+import CopyText from './CopyText.jsx'
 import { relevantDayIndices, filterHoursByDays } from '../washHours.js'
 import { registerModal, unregisterModal } from '../modalNav.js'
 import { useSwipeNav } from '../swipeNav.js'
@@ -28,7 +29,9 @@ function Row({ label, children }) {
         {label}
       </span>
       <span style={{ color: 'var(--text)' }} className="text-sm break-words min-w-0 flex-1">
-        {typeof children === 'string' ? <RichText>{children}</RichText> : children}
+        {typeof children === 'string'
+          ? <CopyText value={children}><RichText>{children}</RichText></CopyText>
+          : children}
       </span>
     </div>
   )
@@ -111,9 +114,14 @@ function AccommodationBody({ item }) {
             <div className="flex justify-between gap-4 text-sm">
               <span style={{ color: 'var(--text-faint)' }}>Ref</span>
               {item.link
-                ? <a href={item.link} target="_blank" rel="noreferrer"
-                    style={{ color: 'var(--accent)' }} className="hover:underline break-all">{d.booking_ref}</a>
-                : <span>{d.booking_ref}</span>
+                ? <span className="flex items-center gap-1.5 min-w-0">
+                    <a href={item.link} target="_blank" rel="noreferrer"
+                      style={{ color: 'var(--accent)' }} className="hover:underline break-all">{d.booking_ref}</a>
+                    {/* The ref doubles as a link here, so clicking it navigates —
+                        give copy its own affordance instead. */}
+                    <CopyText value={d.booking_ref}><span title="Copy booking ref">⧉</span></CopyText>
+                  </span>
+                : <CopyText value={d.booking_ref}>{d.booking_ref}</CopyText>
               }
             </div>
           )}
@@ -314,7 +322,7 @@ function RestaurantBody({ item }) {
           {d.booking_ref && (
             <div className="flex justify-between gap-4 text-sm">
               <span style={{ color: 'var(--text-faint)' }}>Ref</span>
-              <span>{d.booking_ref}</span>
+              <CopyText value={d.booking_ref}>{d.booking_ref}</CopyText>
             </div>
           )}
           {item.cost && (
