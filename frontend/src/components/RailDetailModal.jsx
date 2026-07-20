@@ -7,6 +7,7 @@ import DetailActions from './DetailActions.jsx'
 import ItemHistoryModal from './ItemHistoryModal.jsx'
 import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
+import CopyText from './CopyText.jsx'
 import { fmtDayTime } from '../dates.js'
 
 const DB_HOSTS = ['https://v6.db.transport.rest', 'https://v5.db.transport.rest']
@@ -196,7 +197,9 @@ function Row({ label, value }) {
         {label}
       </span>
       <span style={{ color: 'var(--text)' }} className="text-sm break-words min-w-0 flex-1">
-        {typeof value === 'string' ? <RichText>{value}</RichText> : value}
+        {typeof value === 'string'
+          ? <CopyText value={value}><RichText>{value}</RichText></CopyText>
+          : value}
       </span>
     </div>
   )
@@ -481,9 +484,14 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
                 <div className="flex justify-between gap-4 text-sm">
                   <span style={{ color: 'var(--text-faint)' }}>Ref</span>
                   {item.link
-                    ? <a href={item.link} target="_blank" rel="noreferrer"
-                        style={{ color: 'var(--accent)' }} className="hover:underline break-all">{d.booking_ref}</a>
-                    : <span>{d.booking_ref}</span>
+                    ? <span className="flex items-center gap-1.5 min-w-0">
+                        <a href={item.link} target="_blank" rel="noreferrer"
+                          style={{ color: 'var(--accent)' }} className="hover:underline break-all">{d.booking_ref}</a>
+                        {/* The ref doubles as a link here, so clicking it navigates —
+                            give copy its own affordance instead. */}
+                        <CopyText value={d.booking_ref}><span title="Copy booking ref">⧉</span></CopyText>
+                      </span>
+                    : <CopyText value={d.booking_ref}>{d.booking_ref}</CopyText>
                   }
                 </div>
               )}
@@ -497,13 +505,13 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
               {d.booking_phone && (
                 <div className="flex justify-between gap-4 text-sm">
                   <span style={{ color: 'var(--text-faint)' }}>Phone</span>
-                  <span>{d.booking_phone}</span>
+                  <CopyText value={d.booking_phone}>{d.booking_phone}</CopyText>
                 </div>
               )}
               {item.cost && (
                 <div className="flex justify-between gap-4 text-sm">
                   <span style={{ color: 'var(--text-faint)' }}>Cost</span>
-                  <span>{item.cost}</span>
+                  <CopyText value={item.cost}>{item.cost}</CopyText>
                 </div>
               )}
             </div>
