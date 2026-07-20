@@ -16,6 +16,7 @@ import DocumentsModal from './components/DocumentsModal.jsx'
 import MenuDropdown from './components/MenuDropdown.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf, getPending, refreshAuthToken, AUTH_EXPIRED_EVENT } from './api.js'
+import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, Plane } from 'lucide-react'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale, KindFilterContext } from './settings.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
@@ -151,7 +152,7 @@ function AppShell({ user, onLogout }) {
           </>
         ) : (
           <h1 style={{ color: 'var(--accent)' }} className="font-semibold text-sm">
-            ✈ Travel Companion
+            <Plane size={16} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Travel Companion
           </h1>
         )}
 
@@ -162,7 +163,7 @@ function AppShell({ user, onLogout }) {
             trigger={
               user.picture
                 ? <img src={user.picture} alt={user.name} className="w-6 h-6 rounded-full" />
-                : <span style={{ color: 'var(--text-faint)', fontSize: '1.1rem' }}>☰</span>
+                : <span style={{ color: 'var(--text-faint)' }} aria-label="Menu"><Menu size={20} aria-hidden="true" /></span>
             }
           >
             {selectedTrip && online && !packing && !today && canEdit(selectedTrip.role) && (
@@ -172,7 +173,7 @@ function AppShell({ user, onLogout }) {
             )}
             {selectedTrip && (
               <MenuItem onClick={() => { setPacking(p => !p); setEditing(false); setToday(false) }}>
-                🎒 {packing ? 'Timeline' : 'Packing'}
+                <Backpack size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />{packing ? 'Timeline' : 'Packing'}
               </MenuItem>
             )}
             {selectedTrip && online && canManage(selectedTrip.role) && (
@@ -184,15 +185,15 @@ function AppShell({ user, onLogout }) {
               </MenuItem>
             )}
             {selectedTrip && online && !packing && (
-              <MenuItem onClick={() => setShowBudget(true)}>💰 Budget</MenuItem>
+              <MenuItem onClick={() => setShowBudget(true)}><Wallet size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Budget</MenuItem>
             )}
             {online && pendingCount > 0 && (
               <MenuItem onClick={() => setShowImports(true)}>
-                <span style={{ color: 'var(--warning)' }}>📥 Imports ({pendingCount})</span>
+                <span style={{ color: 'var(--warning)' }}><Inbox size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Imports ({pendingCount})</span>
               </MenuItem>
             )}
-            <MenuItem onClick={() => setShowDocuments(true)}>📄 Documents</MenuItem>
-            <MenuItem onClick={() => setShowSettings(true)}>⚙ Settings</MenuItem>
+            <MenuItem onClick={() => setShowDocuments(true)}><FileText size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Documents</MenuItem>
+            <MenuItem onClick={() => setShowSettings(true)}><Settings size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Settings</MenuItem>
             <div className="px-4 py-2 flex flex-col gap-1.5 items-start">
               <span style={{ color: 'var(--text-muted)' }} className="text-sm">Theme</span>
               <ThemePicker current={theme} onChange={setTheme} />
@@ -264,7 +265,7 @@ function AppShell({ user, onLogout }) {
               }}
               className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
             >
-              📅 {today ? 'All days' : 'Today'}
+              <CalendarDays size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />{today ? 'All days' : 'Today'}
             </button>
           )}
           {selectedTrip && !editing && !packing && (

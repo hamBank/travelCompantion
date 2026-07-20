@@ -4,6 +4,8 @@ import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
 import { fmtDay, fmtDayTime } from '../dates.js'
 import { useCanEdit, useCanQueueEdit } from '../roles.js'
+import { KindIcon } from '../kindIcons.jsx'
+import { Check, Pencil } from 'lucide-react'
 import { offlineQueue } from '../offlineQueue.js'
 import ItemRow from './ItemRow.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
@@ -981,7 +983,7 @@ function Section({ label, children }) {
 
 // Clickable leading icon — toggles completion (done ↔ pending). Shows ✓ when done.
 // Viewers (no edit rights) see a static icon with no toggle.
-function CardIcon({ item, icon, color, setItem, onItemSaved }) {
+function CardIcon({ item, color, setItem, onItemSaved }) {
   const canEdit = useCanEdit()
   const canQueueEdit = useCanQueueEdit()
   const clickable = canEdit || canQueueEdit
@@ -1009,7 +1011,7 @@ function CardIcon({ item, icon, color, setItem, onItemSaved }) {
       style={{ color: done ? 'var(--success)' : color, fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0, cursor: clickable ? 'pointer' : 'default' }}
       className={clickable ? 'hover:opacity-70 transition-opacity' : ''}
     >
-      {done ? '✓' : icon}
+      {done ? <Check size={15} strokeWidth={2.5} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em' }} /> : <KindIcon kind={item.kind} details={item.details} />}
     </span>
   )
 }
@@ -1027,7 +1029,8 @@ function EditPencil({ onClick, absolute = true }) {
       className={`edit-btn ${absolute ? 'absolute top-2 right-2 ' : ''}opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-70 transition-opacity`}
       style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
       title="Edit"
-    >✎</button>
+      aria-label="Edit"
+    ><Pencil size={12} aria-hidden="true" /></button>
   )
 }
 
@@ -1045,8 +1048,6 @@ function InboundBanner({ inbound, onUpdate }) {
   const isTransfer = kind === 'transfer'
 
   const color = isFlight ? 'var(--kind-flight)' : isRail ? 'var(--kind-rail)' : 'var(--kind-transfer)'
-  const vehicleIcon = { bus: '🚌', minibus: '🚌', shuttle: '🚌', taxi: '🚕' }[d.vehicle_type] ?? '🚗'
-  const icon = isFlight ? '✈' : isRail ? '🚄' : vehicleIcon
   const dest = isFlight ? (d.destination ? airportName(d.destination) : '') : (d.destination || d.end_location || '')
   const arriveTime = d.arrive_time || (isTransfer ? inbound.scheduled_at : null)
   const label = [d.flight_number || d.train_number, d.airline || d.operator || d.provider].filter(Boolean).join(' · ')
@@ -1068,7 +1069,7 @@ function InboundBanner({ inbound, onUpdate }) {
         }}
       >
         <div className="flex items-start gap-2.5">
-          <span style={{ color, fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}>{icon}</span>
+          <span style={{ color, fontSize: '0.9rem', lineHeight: 1.4, flexShrink: 0 }}><KindIcon kind={kind} details={d} /></span>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium" style={{ color }}>
               Arriving{dest ? ` · ${dest}` : ''}
@@ -1119,7 +1120,7 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="✈" color="var(--kind-flight)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-flight)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-sm">{route}</span>
@@ -1179,7 +1180,7 @@ function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="🚄" color="var(--kind-rail)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-rail)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-sm">{route || item.name}</span>
@@ -1246,7 +1247,7 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="🛏" color="var(--kind-accommodation)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-accommodation)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="font-medium text-sm">{item.name}</div>
               {d.location && (
@@ -1345,7 +1346,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
             style={{ padding: '0.75rem' }}
           >
             <div className="flex items-start gap-2.5">
-              <CardIcon item={item} icon="🥾" color="var(--kind-walk)" setItem={setItem} onItemSaved={onItemSaved} />
+              <CardIcon item={item} color="var(--kind-walk)" setItem={setItem} onItemSaved={onItemSaved} />
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-medium text-sm truncate">{item.name}</span>
@@ -1459,7 +1460,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="🎟️" color="var(--kind-tour)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-tour)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-sm truncate">{item.name}</span>
@@ -1507,7 +1508,6 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
   const d = item.details ?? {}
   const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
 
-  const vehicleIcon = { bus: '🚌', minibus: '🚌', shuttle: '🚌', taxi: '🚕' }[d.vehicle_type] ?? '🚗'
 
   const routePts = d.route_points?.length >= 2 ? d.route_points : [d.start_location, d.end_location].filter(Boolean)
   const embedUrl = routePts.length ? buildMapsUrl(routePts, 'd', true) : null
@@ -1530,7 +1530,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
             style={{ padding: '0.75rem' }}
           >
             <div className="flex items-start gap-2.5">
-              <CardIcon item={item} icon={vehicleIcon} color="var(--kind-transfer)" setItem={setItem} onItemSaved={onItemSaved} />
+              <CardIcon item={item} color="var(--kind-transfer)" setItem={setItem} onItemSaved={onItemSaved} />
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-medium text-sm truncate">{item.name}</span>
@@ -1613,7 +1613,6 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-const RIVER_VEHICLE_ICONS = { ferry: '⛴', boat: '🚤', riverboat: '🛶', 'water taxi': '🚤' }
 
 function placeSearchUrl(place) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`
@@ -1627,7 +1626,6 @@ function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [mapUrl, setMapUrl] = useState(null)
   const d = item.details ?? {}
   const route = [d.start_location, d.end_location].filter(Boolean).join(' → ')
-  const vehicleIcon = RIVER_VEHICLE_ICONS[d.vehicle_type] ?? '⛴'
   const hasPath = d.river_path?.length >= 2
 
   useEffect(() => {
@@ -1663,7 +1661,7 @@ function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
             style={{ padding: '0.75rem' }}
           >
             <div className="flex items-start gap-2.5">
-              <CardIcon item={item} icon={vehicleIcon} color="var(--kind-river_transfer)" setItem={setItem} onItemSaved={onItemSaved} />
+              <CardIcon item={item} color="var(--kind-river_transfer)" setItem={setItem} onItemSaved={onItemSaved} />
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-medium text-sm truncate">{item.name}</span>
@@ -1796,7 +1794,7 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
             style={{ padding: '0.75rem' }}
           >
             <div className="flex items-start gap-2.5">
-              <CardIcon item={item} icon="🚴" color="var(--kind-cycling)" setItem={setItem} onItemSaved={onItemSaved} />
+              <CardIcon item={item} color="var(--kind-cycling)" setItem={setItem} onItemSaved={onItemSaved} />
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="font-medium text-sm truncate">{item.name}</div>
                 {(d.start_location || d.end_location) && (
@@ -1883,14 +1881,12 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-const HIRE_ICON = { car: '🚗', bike: '🚲', scooter: '🛵', van: '🚐', motorcycle: '🏍' }
 
 function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
   const [item, setItem] = useState(initial)
   const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
-  const icon = HIRE_ICON[(d.vehicle_type || '').toLowerCase()] ?? '🚗'
   const timeStr = item.scheduled_at ? fmtDayTime(item.scheduled_at) : (d.pickup_time ? fmtDayTime(d.pickup_time) : null)
 
   return (
@@ -1907,7 +1903,7 @@ function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon={icon} color="var(--kind-hire)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-hire)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="font-medium text-sm truncate">{item.name}</div>
               {(d.provider || d.vehicle_type) && (
@@ -1959,7 +1955,7 @@ function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="🛍️" color="var(--kind-purchase)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-purchase)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="font-medium text-sm truncate">{item.name}</div>
               {d.location && (
@@ -2017,7 +2013,7 @@ function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="🍴" color="var(--kind-food)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-food)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-sm truncate">{item.name}</span>
@@ -2076,7 +2072,7 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="⭐" color="var(--kind-activity)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-activity)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="font-medium text-sm">{item.name}</div>
               {d.location && (
@@ -2143,7 +2139,7 @@ function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="🎭" color="var(--kind-show)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-show)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="font-medium text-sm">{item.name}</div>
               {d.location && (
@@ -2219,7 +2215,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
             }}
           >
             <div className="flex items-center gap-2.5">
-              <CardIcon item={item} icon="📌" color="var(--warning)" setItem={setItem} onItemSaved={onItemSaved} />
+              <CardIcon item={item} color="var(--warning)" setItem={setItem} onItemSaved={onItemSaved} />
               <div className="flex-1 min-w-0 text-sm">
                 <span style={{ color: 'var(--text)' }} className="font-semibold">{item.name}</span>
                 {extraNote && <span style={{ color: 'var(--text-muted)' }}>: {extraNote}</span>}
@@ -2238,7 +2234,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
             }}
           >
             <div className="flex items-start gap-2.5">
-              <CardIcon item={item} icon="📝" color="var(--kind-note)" setItem={setItem} onItemSaved={onItemSaved} />
+              <CardIcon item={item} color="var(--kind-note)" setItem={setItem} onItemSaved={onItemSaved} />
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="font-medium text-sm">{item.name}</div>
                 {extraNote && (
@@ -2299,7 +2295,7 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
           }}
         >
           <div className="flex items-start gap-2.5">
-            <CardIcon item={item} icon="🍽" color="var(--kind-restaurant)" setItem={setItem} onItemSaved={onItemSaved} />
+            <CardIcon item={item} color="var(--kind-restaurant)" setItem={setItem} onItemSaved={onItemSaved} />
             <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-sm truncate">{item.name}</span>

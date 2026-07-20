@@ -8,6 +8,7 @@ import ItemHistoryModal from './ItemHistoryModal.jsx'
 import PassengersTable from './PassengersTable.jsx'
 import RichText from './RichText.jsx'
 import CopyText from './CopyText.jsx'
+import { Copy } from 'lucide-react'
 import { fmtDayTime } from '../dates.js'
 
 const DB_HOSTS = ['https://v6.db.transport.rest', 'https://v5.db.transport.rest']
@@ -489,7 +490,7 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
                           style={{ color: 'var(--accent)' }} className="hover:underline break-all">{d.booking_ref}</a>
                         {/* The ref doubles as a link here, so clicking it navigates —
                             give copy its own affordance instead. */}
-                        <CopyText value={d.booking_ref}><span title="Copy booking ref">⧉</span></CopyText>
+                        <CopyText value={d.booking_ref}><span title="Copy booking ref" aria-label="Copy booking ref"><Copy size={13} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em' }} /></span></CopyText>
                       </span>
                     : <CopyText value={d.booking_ref}>{d.booking_ref}</CopyText>
                   }

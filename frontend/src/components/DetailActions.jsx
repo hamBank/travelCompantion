@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { History } from 'lucide-react'
 import { deleteItem } from '../api.js'
 import { useCanEdit, useCanQueueEdit } from '../roles.js'
 
@@ -73,7 +74,7 @@ export default function DetailActions({ item, onEdit, onDeleted, onClose, onHist
               className="text-sm hover:opacity-70 transition-opacity"
               title="Change history"
             >
-              🕐 History
+              <History size={13} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.3em' }} />History
             </button>
           )}
           {error && <span style={{ color: 'var(--error)' }} className="text-xs flex-1">{error}</span>}
