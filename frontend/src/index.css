@@ -1,8 +1,48 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+/* Self-hosted Inter (@fontsource) — bundled woff2, hashed into assets/ and
+   precached by the service worker, so typography is identical offline and
+   there's no flash of fallback text waiting on fonts.googleapis.com. */
+/* latin subset only — the default 400.css pulls every unicode subset
+   (cyrillic, greek, vietnamese…) and the SW would precache all of them. */
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-500.css';
+@import '@fontsource/inter/latin-600.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ─── Motion ────────────────────────────────────────────────────
+   All modals/overlays in this app share the `fixed inset-0 z-50` wrapper
+   pattern, so their enter animation lives here once instead of in every
+   component. Gated on prefers-reduced-motion. (No exit animations —
+   these modals unmount immediately on close, and delaying unmount just to
+   animate out isn't worth threading state through every modal.) */
+@media (prefers-reduced-motion: no-preference) {
+  .fixed.inset-0.z-50 {
+    animation: tc-overlay-in 140ms ease-out;
+  }
+  .fixed.inset-0.z-50 > :first-child {
+    animation: tc-panel-in 190ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  button {
+    transition: background-color 140ms ease, color 140ms ease,
+                border-color 140ms ease, opacity 140ms ease,
+                transform 90ms ease;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+}
+
+@keyframes tc-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes tc-panel-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 /* ─── Catppuccin Mocha (default dark) ─────────────────────────── */
 :root, [data-theme="mocha"] {
