@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { formatStatus, formatPosition } from '../components/FlightDetailModal.jsx'
+import { formatStatus, formatPosition, powerbankSummary } from '../components/FlightDetailModal.jsx'
+import { getPowerbankPolicy } from '../powerbank.js'
 
 describe('formatStatus', () => {
   it('inserts a space between lower-to-upper transitions', () => {
@@ -46,5 +47,27 @@ describe('formatPosition', () => {
 
   it('returns null for a null position', () => {
     expect(formatPosition(null)).toBeNull()
+  })
+})
+
+describe('powerbankSummary', () => {
+  it('summarizes a prohibited-use policy in one line with the max count', () => {
+    expect(powerbankSummary(getPowerbankPolicy('Singapore Airlines')))
+      .toBe('In-flight use prohibited · max 2')
+  })
+
+  it('summarizes the ICAO default the same way', () => {
+    expect(powerbankSummary(getPowerbankPolicy(null)))
+      .toBe('In-flight use prohibited · max 2')
+  })
+
+  it('omits the max-count clause when the policy text has no digit', () => {
+    expect(powerbankSummary({ usage: 'Prohibited', number: 'Not specified' }))
+      .toBe('In-flight use prohibited')
+  })
+
+  it('reflects an allowed-use policy', () => {
+    expect(powerbankSummary({ usage: 'Allowed with restrictions', number: 'Max 3' }))
+      .toBe('In-flight use allowed · max 3')
   })
 })
