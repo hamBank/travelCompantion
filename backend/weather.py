@@ -404,10 +404,78 @@ def parse_hourly(payload: dict, day: date) -> Optional[dict]:
     }
 
 
+def parse_daily_detail(payload: dict, day: date) -> Optional[dict]:
+    """Daily-only detail (no hourly breakdown) for a single day — the
+    fallback used when hourly variables are unavailable for a location that
+    still has a working daily forecast. None if even tmin/tmax are missing."""
+    daily = (payload or {}).get("daily", {}) or {}
+
+    def _d0(key):
+        vals = daily.get(key) or []
+        return vals[0] if vals and vals[0] is not None else None
+
+    tmax, tmin = _d0("temperature_2m_max"), _d0("temperature_2m_min")
+    if tmax is None or tmin is None:
+        return None
+    icon, desc = _icon_for(_d0("weathercode") or 0)
+    sunrise, sunset = _d0("sunrise"), _d0("sunset")
+    feels_min, feels_max = _d0("apparent_temperature_min"), _d0("apparent_temperature_max")
+    wind_max, uv_max = _d0("windspeed_10m_max"), _d0("uv_index_max")
+    precip_sum, precip_prob_max = _d0("precipitation_sum"), _d0("precipitation_probability_max")
+    return {
+        "date": day.isoformat(),
+        "tmin": round(tmin, 1), "tmax": round(tmax, 1),
+        "feels_min": round(feels_min, 1) if feels_min is not None else None,
+        "feels_max": round(feels_max, 1) if feels_max is not None else None,
+        "wind_max": round(wind_max, 1) if wind_max is not None else None,
+        "icon": icon, "desc": desc,
+        "sunrise": sunrise[11:16] if sunrise else None,
+        "sunset": sunset[11:16] if sunset else None,
+        "uv_max": round(uv_max, 1) if uv_max is not None else None,
+        "precip_sum": round(precip_sum, 1) if precip_sum is not None else None,
+        "precip_prob_max": int(precip_prob_max) if precip_prob_max is not None else None,
+    }
+
+
+def get_daily_detail_forecast(lat, lng, day: date, *, fetch_json=_fetch_json, today: date | None = None) -> Optional[dict]:
+    """Daily-only detail for a single day — a lighter request than the
+    hourly one (no &hourly=... params), used as get_hourly_forecast's
+    fallback. Still gated to the forecast horizon; never climatology."""
+    coords = _valid_coords(lat, lng)
+    if not coords or not hourly_available(day, today):
+        return None
+    lat_f, lng_f = coords
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?latitude={lat_f}&longitude={lng_f}"
+        f"&daily=temperature_2m_max,temperature_2m_min,weathercode,windspeed_10m_max,"
+        f"apparent_temperature_max,apparent_temperature_min,sunrise,sunset,"
+        f"uv_index_max,precipitation_sum,precipitation_probability_max"
+        f"&timezone=auto&start_date={day.isoformat()}&end_date={day.isoformat()}"
+    )
+    try:
+        payload = fetch_json(url)
+    except Exception:
+        try:
+            payload = fetch_json(url)
+        except Exception:
+            return None
+    return parse_daily_detail(payload, day)
+
+
 def get_hourly_forecast(lat, lng, day: date, *, fetch_json=_fetch_json, today: date | None = None) -> Optional[dict]:
-    """Hourly forecast + daily extras for a single day. None if `day` is
-    outside the live-forecast horizon (see hourly_available) or the fetch
-    fails/comes back empty — never climatology, unlike get_weather."""
+    """Hourly forecast + daily extras for a single day, with
+    `data["granularity"] = "hourly"`. None if `day` is outside the
+    live-forecast horizon (see hourly_available) — never climatology, unlike
+    get_weather.
+
+    Falls back to a daily-only detail (`granularity: "daily"`) when the
+    hourly request fails outright, or comes back with no usable hourly rows
+    — some locations/grid cells have gaps in Open-Meteo's hourly model data
+    while the daily aggregate is still fine, and the click-through should
+    show *something* useful rather than erroring in that case. Only returns
+    None (full failure) when both the hourly and the daily-only request
+    fail.
+    """
     coords = _valid_coords(lat, lng)
     if not coords or not hourly_available(day, today):
         return None
@@ -419,11 +487,22 @@ def get_hourly_forecast(lat, lng, day: date, *, fetch_json=_fetch_json, today: d
         f"&daily=sunrise,sunset,uv_index_max,precipitation_sum,precipitation_probability_max"
         f"&timezone=auto&start_date={day.isoformat()}&end_date={day.isoformat()}"
     )
+    payload = None
     try:
         payload = fetch_json(url)
     except Exception:
         try:
             payload = fetch_json(url)  # one retry — same transient-blip tolerance as get_weather
         except Exception:
-            return None
-    return parse_hourly(payload, day)
+            payload = None
+
+    if payload is not None:
+        result = parse_hourly(payload, day)
+        if result is not None:
+            result["granularity"] = "hourly"
+            return result
+
+    fallback = get_daily_detail_forecast(lat, lng, day, fetch_json=fetch_json, today=today)
+    if fallback is not None:
+        fallback["granularity"] = "daily"
+    return fallback

@@ -296,7 +296,9 @@ def test_get_hourly_forecast_fetches_within_horizon():
     assert len(out["hourly"]) == 3
 
 
-def test_get_hourly_forecast_retries_once_then_gives_up():
+def test_get_hourly_forecast_retries_once_then_falls_back_then_gives_up():
+    # When every request fails (hourly AND its daily-only fallback), the
+    # overall result is None — but each leg still gets its one retry.
     today = date(2026, 6, 30)
     calls = {"n": 0}
 
@@ -307,10 +309,96 @@ def test_get_hourly_forecast_retries_once_then_gives_up():
     out = weather.get_hourly_forecast(48.85, 2.35, date(2026, 7, 1),
                                       fetch_json=flaky, today=today)
     assert out is None
-    assert calls["n"] == 2
+    assert calls["n"] == 4  # 2 hourly attempts + 2 daily-fallback attempts
 
 
 def test_get_hourly_forecast_bad_coords_returns_none():
     today = date(2026, 6, 30)
     out = weather.get_hourly_forecast("nope", "nope", date(2026, 7, 1), today=today)
     assert out is None
+
+
+# ── Daily-detail fallback (hourly unavailable but daily is fine) ───────────
+
+def _daily_detail_payload(day="2026-07-01"):
+    return {
+        "daily": {
+            "temperature_2m_max": [31.0], "temperature_2m_min": [24.0],
+            "weathercode": [61], "windspeed_10m_max": [18.0],
+            "apparent_temperature_max": [36.0], "apparent_temperature_min": [27.0],
+            "sunrise": [f"{day}T06:50"], "sunset": [f"{day}T19:05"],
+            "uv_index_max": [9.1], "precipitation_sum": [12.4], "precipitation_probability_max": [80],
+        },
+    }
+
+
+def test_parse_daily_detail_builds_full_shape():
+    day = date(2026, 7, 1)
+    out = weather.parse_daily_detail(_daily_detail_payload(), day)
+    assert out == {
+        "date": "2026-07-01", "tmin": 24.0, "tmax": 31.0,
+        "feels_min": 27.0, "feels_max": 36.0, "wind_max": 18.0,
+        "icon": "🌧", "desc": "Light rain",
+        "sunrise": "06:50", "sunset": "19:05",
+        "uv_max": 9.1, "precip_sum": 12.4, "precip_prob_max": 80,
+    }
+
+
+def test_parse_daily_detail_none_when_temps_missing():
+    assert weather.parse_daily_detail({"daily": {}}, date(2026, 7, 1)) is None
+    assert weather.parse_daily_detail({}, date(2026, 7, 1)) is None
+
+
+def test_get_daily_detail_forecast_outside_horizon_returns_none():
+    today = date(2026, 6, 30)
+    out = weather.get_daily_detail_forecast(1.35, 103.82, today + timedelta(days=20),
+                                            fetch_json=lambda u: _daily_detail_payload(), today=today)
+    assert out is None
+
+
+def test_get_hourly_forecast_falls_back_to_daily_detail_when_hourly_fetch_fails():
+    today = date(2026, 6, 30)
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        if "hourly=" in url:
+            raise RuntimeError("no hourly data for this grid cell")
+        return _daily_detail_payload("2026-07-01")
+
+    out = weather.get_hourly_forecast(1.35, 103.82, date(2026, 7, 1), fetch_json=fetch, today=today)
+    assert out["granularity"] == "daily"
+    assert out["tmax"] == 31.0
+    # Two attempts at the hourly URL (initial + retry), then the daily-only fallback.
+    assert sum("hourly=" in u for u in calls) == 2
+    assert sum("hourly=" not in u for u in calls) == 1
+
+
+def test_get_hourly_forecast_falls_back_to_daily_detail_when_hourly_rows_empty():
+    today = date(2026, 6, 30)
+
+    def fetch(url):
+        if "hourly=" in url:
+            return {"hourly": {"time": []}, "daily": _daily_detail_payload("2026-07-01")["daily"]}
+        return _daily_detail_payload("2026-07-01")
+
+    out = weather.get_hourly_forecast(1.35, 103.82, date(2026, 7, 1), fetch_json=fetch, today=today)
+    assert out["granularity"] == "daily"
+    assert out["tmax"] == 31.0
+
+
+def test_get_hourly_forecast_returns_none_when_both_hourly_and_daily_fail():
+    today = date(2026, 6, 30)
+
+    def fetch(url):
+        raise RuntimeError("upstream down")
+
+    out = weather.get_hourly_forecast(1.35, 103.82, date(2026, 7, 1), fetch_json=fetch, today=today)
+    assert out is None
+
+
+def test_get_hourly_forecast_marks_granularity_hourly_on_success():
+    today = date(2026, 6, 30)
+    out = weather.get_hourly_forecast(48.85, 2.35, date(2026, 7, 1),
+                                      fetch_json=lambda u: _hourly_payload(), today=today)
+    assert out["granularity"] == "hourly"

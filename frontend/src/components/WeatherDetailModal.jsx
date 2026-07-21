@@ -6,7 +6,13 @@ import { Sunrise, Sunset, Droplets, Wind } from 'lucide-react'
 /** Hourly click-through behind a day banner. Only ever opened for a day
  * whose summary weather.source === 'forecast' (see DayBanner) — climatology
  * days have no meaningful hourly shape to show, so this component doesn't
- * need to handle that case; the backend 404s it defensively anyway. */
+ * need to handle that case; the backend 404s it defensively anyway.
+ *
+ * Some locations have gaps in Open-Meteo's hourly model data even though
+ * the daily aggregate is fine (seen for Singapore, among others) — the
+ * backend falls back to a daily-only detail in that case
+ * (`data.granularity === 'daily'`), rendered here as a single summary card
+ * instead of an hourly list, with a note explaining why. */
 export default function WeatherDetailModal({ dateKey, source, onClose }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
@@ -92,45 +98,75 @@ export default function WeatherDetailModal({ dateKey, source, onClose }) {
                 </div>
               )}
 
-              <div className="space-y-0.5">
-                {data.hourly.map(h => (
+              {data.granularity === 'daily' ? (
+                <>
                   <div
-                    key={h.time}
-                    className="flex items-center gap-2.5 py-1.5 text-sm"
-                    style={{ borderBottom: '1px solid var(--border)' }}
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
+                    className="p-4 flex items-center gap-3"
                   >
-                    <span style={{ color: 'var(--text-faint)', width: '2.75rem' }} className="shrink-0 text-xs">
-                      {h.time}
-                    </span>
-                    <span className="shrink-0" title={h.desc}>{h.icon}</span>
-                    <span className="shrink-0 font-medium" style={{ width: '3rem' }}>
-                      {Math.round(h.temp)}°C
-                    </span>
-                    {h.feels_like != null && h.feels_like !== h.temp && (
-                      <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0">
-                        feels {Math.round(h.feels_like)}°
-                      </span>
-                    )}
-                    <span className="flex-1" />
-                    {h.precip_prob != null && h.precip_prob > 0 && (
-                      <span
-                        className="flex items-center gap-0.5 text-xs shrink-0"
-                        style={{ color: 'var(--kind-river_transfer)' }}
-                      >
-                        <Droplets size={11} aria-hidden="true" /> {h.precip_prob}%
-                      </span>
-                    )}
-                    {h.wind != null && (
-                      <span
-                        className="flex items-center gap-0.5 text-xs shrink-0"
-                        style={{ color: 'var(--text-faint)' }}
-                      >
-                        <Wind size={11} aria-hidden="true" /> {Math.round(h.wind)}
-                      </span>
-                    )}
+                    <span style={{ fontSize: '1.75rem' }}>{data.icon}</span>
+                    <div>
+                      <div className="font-medium text-sm">{data.desc}</div>
+                      <div style={{ color: 'var(--text-muted)' }} className="text-sm">
+                        {Math.round(data.tmin)}–{Math.round(data.tmax)}°C
+                        {data.feels_min != null && data.feels_max != null && (
+                          <span style={{ color: 'var(--text-faint)' }} className="text-xs ml-1.5">
+                            feels {Math.round(data.feels_min)}–{Math.round(data.feels_max)}°
+                          </span>
+                        )}
+                      </div>
+                      {data.wind_max != null && (
+                        <div style={{ color: 'var(--text-faint)' }} className="text-xs mt-0.5 flex items-center gap-1">
+                          <Wind size={11} aria-hidden="true" /> up to {Math.round(data.wind_max)}km/h
+                        </div>
+                      )}
+                    </div>
                   </div>
-                ))}
-              </div>
+                  <p style={{ color: 'var(--text-faint)' }} className="text-xs mt-3">
+                    Hourly detail isn't available for this location — showing the daily forecast instead.
+                  </p>
+                </>
+              ) : (
+                <div className="space-y-0.5">
+                  {data.hourly.map(h => (
+                    <div
+                      key={h.time}
+                      className="flex items-center gap-2.5 py-1.5 text-sm"
+                      style={{ borderBottom: '1px solid var(--border)' }}
+                    >
+                      <span style={{ color: 'var(--text-faint)', width: '2.75rem' }} className="shrink-0 text-xs">
+                        {h.time}
+                      </span>
+                      <span className="shrink-0" title={h.desc}>{h.icon}</span>
+                      <span className="shrink-0 font-medium" style={{ width: '3rem' }}>
+                        {Math.round(h.temp)}°C
+                      </span>
+                      {h.feels_like != null && h.feels_like !== h.temp && (
+                        <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0">
+                          feels {Math.round(h.feels_like)}°
+                        </span>
+                      )}
+                      <span className="flex-1" />
+                      {h.precip_prob != null && h.precip_prob > 0 && (
+                        <span
+                          className="flex items-center gap-0.5 text-xs shrink-0"
+                          style={{ color: 'var(--kind-river_transfer)' }}
+                        >
+                          <Droplets size={11} aria-hidden="true" /> {h.precip_prob}%
+                        </span>
+                      )}
+                      {h.wind != null && (
+                        <span
+                          className="flex items-center gap-0.5 text-xs shrink-0"
+                          style={{ color: 'var(--text-faint)' }}
+                        >
+                          <Wind size={11} aria-hidden="true" /> {Math.round(h.wind)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
