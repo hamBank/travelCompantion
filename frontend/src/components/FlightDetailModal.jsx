@@ -301,11 +301,12 @@ function PowerbankPanel({ airline }) {
         tabIndex={0}
         onClick={open}
         onKeyDown={onKeyDown}
+        aria-label={`Power bank policy: ${powerbankSummary(p)}`}
         style={{ background: 'var(--surface)', border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)', borderRadius: '0.5rem', cursor: 'pointer' }}
         className="px-3 py-2 mt-4 flex items-center justify-between gap-3 hover:opacity-90"
       >
         <span className="text-sm truncate">
-          <span aria-hidden="true">🔋</span> Power bank: {powerbankSummary(p)}
+          <span aria-hidden="true">🔋</span> {powerbankSummary(p)}
         </span>
         <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0">Details ›</span>
       </div>
