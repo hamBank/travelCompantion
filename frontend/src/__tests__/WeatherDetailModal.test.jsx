@@ -55,6 +55,28 @@ describe('WeatherDetailModal', () => {
     expect(onClose).toHaveBeenCalledTimes(2)
   })
 
+  it('renders a daily-detail card (not an hourly list) when the backend falls back', async () => {
+    const DAILY = {
+      date: '2026-07-22', granularity: 'daily',
+      tmin: 24.0, tmax: 31.0, feels_min: 27.0, feels_max: 36.0, wind_max: 18.0,
+      icon: '🌧', desc: 'Light rain',
+      sunrise: '06:50', sunset: '19:05', uv_max: 9.1, precip_sum: 12.4, precip_prob_max: 80,
+    }
+    getHourlyWeather.mockResolvedValue({ hourly: DAILY })
+    render(<WeatherDetailModal dateKey="2026-07-22" source={{ lat: 1.35, lng: 103.82, query: '' }} onClose={() => {}} />)
+
+    expect(await screen.findByText('Light rain')).toBeInTheDocument()
+    expect(screen.getByText('24–31°C')).toBeInTheDocument()
+    expect(screen.getByText('feels 27–36°')).toBeInTheDocument()
+    expect(screen.getByText(/up to 18km\/h/)).toBeInTheDocument()
+    expect(screen.getByText(/isn't available for this location/)).toBeInTheDocument()
+    // The hourly per-time-slot rows must not render for a daily fallback.
+    expect(screen.queryByText('00:00')).not.toBeInTheDocument()
+    // The shared sunrise/sunset/UV summary strip still renders.
+    expect(screen.getByText('06:50')).toBeInTheDocument()
+    expect(screen.getByText('UV max 9.1')).toBeInTheDocument()
+  })
+
   it('closes on Escape', () => {
     getHourlyWeather.mockResolvedValue({ hourly: HOURLY })
     const onClose = vi.fn()
