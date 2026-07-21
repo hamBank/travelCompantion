@@ -1,8 +1,20 @@
-import { describe, it, expect } from 'vitest'
-import { render } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+
+vi.mock('../api.js', () => ({
+  updateStopStatus: vi.fn(), updateItemStatus: vi.fn(), getWeather: vi.fn(),
+  fetchRiverMapBlob: vi.fn(), fetchGpxMapBlob: vi.fn(), fetchDayMapBlob: vi.fn(),
+  getHourlyWeather: vi.fn(),
+  // Unused by these tests — stubbed only because StopCard.jsx (via
+  // offlineQueue.js) imports these named exports at module load time.
+  updateItem: vi.fn(), updateStop: vi.fn(), updatePackItem: vi.fn(),
+}))
+import { getHourlyWeather } from '../api.js'
 import { DayBanner } from '../components/StopCard.jsx'
 
 describe('DayBanner', () => {
+  beforeEach(() => vi.clearAllMocks())
+
   it('renders the formatted date', () => {
     const { container } = render(<DayBanner dateKey="2026-07-22" />)
     expect(container.textContent).toContain('Jul')
@@ -43,5 +55,30 @@ describe('DayBanner', () => {
   it('shows no weather span when weather is absent', () => {
     const { container } = render(<DayBanner dateKey="2026-07-22" />)
     expect(container.textContent).not.toContain('°')
+  })
+
+  it('is clickable (and opens the hourly detail modal) only for a live forecast', async () => {
+    getHourlyWeather.mockResolvedValue({ hourly: { date: '2026-07-22', hourly: [] } })
+    const live = { icon: '☀', tmin: 20, tmax: 30, desc: 'Clear', source: 'forecast' }
+    const { container } = render(
+      <DayBanner dateKey="2026-07-22" weather={live} weatherSource={{ lat: 1, lng: 2, query: '' }} />
+    )
+    const banner = container.firstChild
+    expect(banner).toHaveAttribute('role', 'button')
+    fireEvent.click(banner)
+    await waitFor(() => expect(getHourlyWeather).toHaveBeenCalledWith(1, 2, '2026-07-22', ''))
+  })
+
+  it('is not clickable for a climatology day', () => {
+    const climo = { icon: '⛅', tmin: 19, tmax: 32, desc: 'Partly cloudy', source: 'climatology' }
+    const { container } = render(<DayBanner dateKey="2026-07-22" weather={climo} />)
+    expect(container.firstChild).not.toHaveAttribute('role', 'button')
+    fireEvent.click(container.firstChild)
+    expect(getHourlyWeather).not.toHaveBeenCalled()
+  })
+
+  it('is not clickable when there is no weather at all', () => {
+    const { container } = render(<DayBanner dateKey="2026-07-22" />)
+    expect(container.firstChild).not.toHaveAttribute('role', 'button')
   })
 })

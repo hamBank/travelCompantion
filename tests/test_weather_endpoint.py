@@ -277,3 +277,90 @@ def test_weather_endpoint_normal_mixed_payload_is_cached(client, session, monkey
 
     r2 = client.get("/weather", params=params)
     assert r2.json()["cached"] is True
+
+
+# ── /weather/hourly ──────────────────────────────────────────────────────────
+
+def _hourly_data(day="2026-07-01"):
+    return {
+        "date": day,
+        "hourly": [{"time": "00:00", "temp": 20.0, "feels_like": 19.0, "precip_prob": 10,
+                    "humidity": 55, "wind": 12.0, "uv": 0.0, "icon": "☀", "desc": "Clear"}],
+        "sunrise": "06:12", "sunset": "20:45", "uv_max": 6.2, "precip_sum": 0.4, "precip_prob_max": 30,
+    }
+
+
+def test_weather_hourly_returns_data_and_caches(client, monkeypatch):
+    calls = {"n": 0}
+
+    def fake_get_hourly(lat, lng, day, today=None):
+        calls["n"] += 1
+        return _hourly_data()
+
+    monkeypatch.setattr(wr, "get_hourly_forecast", fake_get_hourly)
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 6, 25))
+
+    r1 = client.get("/weather/hourly", params={"lat": "48.85", "lng": "2.35", "day": "2026-07-01"})
+    assert r1.status_code == 200
+    body = r1.json()
+    assert body["cached"] is False
+    assert body["hourly"]["date"] == "2026-07-01"
+
+    r2 = client.get("/weather/hourly", params={"lat": "48.85", "lng": "2.35", "day": "2026-07-01"})
+    assert r2.json()["cached"] is True
+    assert calls["n"] == 1
+
+
+def test_weather_hourly_geocodes_when_coords_missing(client, monkeypatch):
+    def fake_geocode(q):
+        assert "Duffy" in q
+        return (-35.34, 149.03)
+
+    def fake_get_hourly(lat, lng, day, today=None):
+        assert (lat, lng) == (-35.34, 149.03)
+        return _hourly_data("2026-07-05")
+
+    monkeypatch.setattr(wr, "geocode", fake_geocode)
+    monkeypatch.setattr(wr, "get_hourly_forecast", fake_get_hourly)
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 6, 25))
+
+    r = client.get("/weather/hourly", params={"q": "Duffy, Australia", "day": "2026-07-05"})
+    assert r.status_code == 200
+    assert r.json()["hourly"]["date"] == "2026-07-05"
+
+
+def test_weather_hourly_404s_beyond_the_forecast_horizon(client, monkeypatch):
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 6, 25))
+    r = client.get("/weather/hourly", params={"lat": "48.85", "lng": "2.35", "day": "2026-08-01"})
+    assert r.status_code == 404
+
+
+def test_weather_hourly_requires_coords_or_q(client, monkeypatch):
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 6, 25))
+    r = client.get("/weather/hourly", params={"day": "2026-07-01"})
+    assert r.status_code == 400
+
+
+def test_weather_hourly_503s_on_fetch_failure_with_nothing_cached(client, monkeypatch):
+    monkeypatch.setattr(wr, "get_hourly_forecast", lambda lat, lng, day, today=None: None)
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 6, 25))
+    r = client.get("/weather/hourly", params={"lat": "48.85", "lng": "2.35", "day": "2026-07-01"})
+    assert r.status_code == 503
+
+
+def test_weather_hourly_serves_stale_cache_on_fetch_failure(client, session, monkeypatch):
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 6, 25))
+    # Prime the cache with a real (now-expired) entry.
+    monkeypatch.setattr(wr, "get_hourly_forecast", lambda lat, lng, day, today=None: _hourly_data())
+    client.get("/weather/hourly", params={"lat": "48.85", "lng": "2.35", "day": "2026-07-01"})
+    key = f"{wr.HOURLY_CACHE_VERSION},48.85,2.35,2026-07-01"
+    row = session.get(WeatherCache, key)
+    row.fetched_at = row.fetched_at - timedelta(hours=999)
+    session.add(row); session.commit()
+
+    # Now the upstream fetch fails — must fall back to the stale cached row
+    # rather than 503ing and losing previously-good data.
+    monkeypatch.setattr(wr, "get_hourly_forecast", lambda lat, lng, day, today=None: None)
+    r = client.get("/weather/hourly", params={"lat": "48.85", "lng": "2.35", "day": "2026-07-01"})
+    assert r.status_code == 200
+    assert r.json()["stale"] is True

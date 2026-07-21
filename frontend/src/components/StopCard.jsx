@@ -2,7 +2,8 @@ import { useState, useEffect, createContext, useContext } from 'react'
 import { updateStopStatus, updateItemStatus, getWeather, fetchRiverMapBlob, fetchGpxMapBlob, fetchDayMapBlob } from '../api.js'
 import { useHideCompleted, useShowInbound, useKindFilter } from '../settings.js'
 import { parseCheckinWindow, calcCheckinTime } from '../checkin.js'
-import { fmtDay, fmtDayTime } from '../dates.js'
+import { fmtDay, fmtDayTime, fmtDayHeader } from '../dates.js'
+import WeatherDetailModal from './WeatherDetailModal.jsx'
 import { useCanEdit, useCanQueueEdit } from '../roles.js'
 import { KindIcon } from '../kindIcons.jsx'
 import { Check, Pencil, Wind, BedDouble } from 'lucide-react'
@@ -157,41 +158,59 @@ function itemTz(item) {
   return ''
 }
 
-function fmtDayHeader(dateKey) {
-  const d = new Date(dateKey + 'T12:00:00')
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-}
+// weatherSource: {lat, lng, query} for whichever location resolved this
+// day's weather (the stop's own, or a per-night segment override — see
+// weatherSourceFor) — needed so a click-through can re-fetch hourly detail
+// for the exact place the summary itself came from.
+export function DayBanner({ dateKey, weather, weatherSource }) {
+  // Hourly detail only exists for real forecasts (see backend/weather.py's
+  // hourly_available) — a climatology day has no meaningful "hourly" shape,
+  // so it isn't clickable rather than opening a modal that 404s.
+  const clickable = weather?.source === 'forecast'
+  const [showDetail, setShowDetail] = useState(false)
 
-export function DayBanner({ dateKey, weather }) {
   return (
-    <div
-      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '0.375rem' }}
-      className="px-3 py-1.5 text-xs font-semibold flex items-center"
-    >
-      <span>{fmtDayHeader(dateKey)}</span>
-      {weather && (
-        <span
-          style={{ color: 'var(--text-faint)' }}
-          className="ml-2 font-normal"
-          title={[
-            weather.desc,
-            weather.wind != null ? `wind ${Math.round(weather.wind)} km/h` : null,
-            weather.source === 'climatology' ? 'seasonal average (live forecast nearer the date)' : 'live forecast',
-          ].filter(Boolean).join(' · ')}
-        >
-          {weather.icon} {Math.round(weather.tmin)}–{Math.round(weather.tmax)}°C
-          {weather.wind != null && (
-            <span className="ml-1"><Wind size={11} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.1em' }} /> {Math.round(weather.wind)}km/h</span>
-          )}
-          {weather.source === 'climatology' && (
-            <span style={{ fontSize: '0.85em', opacity: 0.75 }} className="ml-1">avg</span>
-          )}
-          {weather.source === 'forecast' && (
-            <span style={{ fontSize: '0.85em', opacity: 0.75 }} className="ml-1">📡</span>
-          )}
-        </span>
+    <>
+      <div
+        onClick={clickable ? () => setShowDetail(true) : undefined}
+        role={clickable ? 'button' : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        onKeyDown={clickable ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowDetail(true) } } : undefined}
+        style={{
+          background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '0.375rem',
+          cursor: clickable ? 'pointer' : 'default',
+        }}
+        className={`px-3 py-1.5 text-xs font-semibold flex items-center ${clickable ? 'hover:opacity-80 transition-opacity' : ''}`}
+        title={clickable ? 'Click for hourly forecast' : undefined}
+      >
+        <span>{fmtDayHeader(dateKey)}</span>
+        {weather && (
+          <span
+            style={{ color: 'var(--text-faint)' }}
+            className="ml-2 font-normal"
+            title={[
+              weather.desc,
+              weather.wind != null ? `wind ${Math.round(weather.wind)} km/h` : null,
+              weather.source === 'climatology' ? 'seasonal average (live forecast nearer the date)' : 'live forecast — click for hourly detail',
+            ].filter(Boolean).join(' · ')}
+          >
+            {weather.icon} {Math.round(weather.tmin)}–{Math.round(weather.tmax)}°C
+            {weather.wind != null && (
+              <span className="ml-1"><Wind size={11} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.1em' }} /> {Math.round(weather.wind)}km/h</span>
+            )}
+            {weather.source === 'climatology' && (
+              <span style={{ fontSize: '0.85em', opacity: 0.75 }} className="ml-1">avg</span>
+            )}
+            {weather.source === 'forecast' && (
+              <span style={{ fontSize: '0.85em', opacity: 0.75 }} className="ml-1">📡</span>
+            )}
+          </span>
+        )}
+      </div>
+      {showDetail && (
+        <WeatherDetailModal dateKey={dateKey} source={weatherSource} onClose={() => setShowDetail(false)} />
       )}
-    </div>
+    </>
   )
 }
 
@@ -686,6 +705,14 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   // day (e.g. a multi-port cruise) — see weatherSegments().
   const segments = weatherSegments(stop, items)
   const segmentsKey = JSON.stringify(segments)
+  // Mirrors the merge in the effect below (segment overrides win on their
+  // dates) so a day's click-through hourly fetch queries the exact same
+  // place its summary weather came from.
+  function weatherSourceFor(dateKey) {
+    const seg = segments.find(s => s.start <= dateKey && dateKey <= s.end)
+    if (seg) return { lat: null, lng: null, query: seg.query }
+    return { lat: stop.lat, lng: stop.lng, query: wxQuery }
+  }
   // In headerless (frameless) mode every stop's content is always shown, so we
   // must fetch regardless of `open`; in framed mode fetch when expanded, or
   // when forced open (e.g. Today view — a collapsed stop there would hide the
@@ -810,7 +837,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
                 const showBanner = !skipDays?.has(dk)
                 return (
                   <div key={dk} className="space-y-1">
-                    {showBanner && <DayBanner dateKey={dk} weather={weather[dk]} />}
+                    {showBanner && <DayBanner dateKey={dk} weather={weather[dk]} weatherSource={weatherSourceFor(dk)} />}
                     {byDate[dk].flatMap(item => [
                       <TimeRow key={item.id} item={item}>{renderCard(item)}</TimeRow>,
                       layovers[item.id] && <OffsetRow key={`lay-${item.id}`}><LayoverBadge {...layovers[item.id]} /></OffsetRow>,
@@ -904,7 +931,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               <div className="space-y-2">
                 {sortedDates.map(dk => (
                   <div key={dk} className="space-y-1">
-                    <DayBanner dateKey={dk} weather={weather[dk]} />
+                    <DayBanner dateKey={dk} weather={weather[dk]} weatherSource={weatherSourceFor(dk)} />
                     {byDate[dk].flatMap(item => [
                       renderCard(item),
                       layovers[item.id] && <LayoverBadge key={`lay-${item.id}`} {...layovers[item.id]} />,
