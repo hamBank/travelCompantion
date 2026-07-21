@@ -34,10 +34,15 @@ function safeReload() {
   // immediately instead of waiting out the 60s interval, so a new build
   // sneaks in the moment the site recovers rather than up to a minute later.
   window.addEventListener(SERVER_UP_EVENT, check)
-  //window.addEventListener('focus', check)
-  //document.addEventListener('visibilitychange', () => {
-  //  if (document.visibilityState === 'visible') check()
-  //})
+  // Mobile OSes throttle/suspend setInterval while a PWA is backgrounded, so
+  // the 60s timer can sit dormant far longer than 60s of real time — a phone
+  // reopened after a deploy could stay on a stale build well past when the
+  // next tick "should" have fired. Re-checking on foreground (mirroring the
+  // SW update check just below, which already does this) closes that gap.
+  window.addEventListener('focus', check)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') check()
+  })
 })()
 
 // ── Service worker: secondary reload path via controllerchange ─────────────────
