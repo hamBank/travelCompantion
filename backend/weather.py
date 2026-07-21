@@ -152,18 +152,31 @@ def _fetch_geocode(q: str):
 
 
 def geocode(q: str, *, fetch=_fetch_geocode):
-    """Resolve a place name to (lat, lng) via Nominatim, or None."""
+    """Resolve a place name to (lat, lng) via Nominatim, or None.
+
+    A full free-text address (e.g. a hotel's street address with a unit
+    number: "75 Airport Boulevard 01-01, Singapore, 819664 Singapore") often
+    can't be parsed by Nominatim's structured-address matcher and returns no
+    results, even though the place is real and every other geocoder would
+    find it — confirmed against production (2026-07-21). Weather doesn't
+    need building-level precision, so on a miss we retry with progressively
+    less specific candidates, dropping the leading (most specific) comma-
+    separated segment each time, down to just "819664 Singapore" if needed.
+    """
     if not q or not q.strip():
         return None
     q = strip_invisible_chars(q).strip()
     if not q:
         return None
-    try:
-        results = fetch(q)
-        if results:
-            return float(results[0]["lat"]), float(results[0]["lon"])
-    except Exception:
-        pass
+    parts = [p.strip() for p in q.split(",") if p.strip()]
+    candidates = [q] + [", ".join(parts[i:]) for i in range(1, len(parts))]
+    for candidate in candidates:
+        try:
+            results = fetch(candidate)
+            if results:
+                return float(results[0]["lat"]), float(results[0]["lon"])
+        except Exception:
+            continue
     return None
 
 

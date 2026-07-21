@@ -88,6 +88,34 @@ def test_strip_invisible_chars_removes_zero_width_unicode():
     assert weather.strip_invisible_chars(dirty) == "75 Airport Boulevard Singapore 819664"
 
 
+def test_geocode_falls_back_to_less_specific_candidates_on_miss():
+    # Regression: a hotel's full street address (unit number included) 404s
+    # against Nominatim in production even though the place is real —
+    # confirmed live for "75 Airport Boulevard 01-01, Singapore, 819664
+    # Singapore" (2026-07-21). Dropping the leading, most-specific segment
+    # until something resolves should recover a usable (if coarser) point.
+    calls = []
+    def fake_fetch(q):
+        calls.append(q)
+        if q == "819664 Singapore":
+            return [{"lat": "1.3586862", "lon": "103.9879579"}]
+        return []
+
+    result = weather.geocode(
+        "75 Airport Boulevard 01-01, Singapore, 819664 Singapore", fetch=fake_fetch
+    )
+    assert result == (1.3586862, 103.9879579)
+    assert calls == [
+        "75 Airport Boulevard 01-01, Singapore, 819664 Singapore",
+        "Singapore, 819664 Singapore",
+        "819664 Singapore",
+    ]
+
+
+def test_geocode_returns_none_when_all_candidates_miss():
+    assert weather.geocode("a, b, c", fetch=lambda q: []) is None
+
+
 def test_geocode_strips_invisible_chars_before_fetching():
     dirty = "75 Airport Boulevard‌ ​Singapore 819664"
 
