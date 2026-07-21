@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import { SERVER_UP_EVENT } from './online.js'
 import './index.css'
 
 // ── Reload guard — never reload while the user is actively typing ──────────────
@@ -29,6 +30,10 @@ function safeReload() {
     } catch { /* offline — ignore */ }
   }
   setInterval(check, 60_000)
+  // The server just came back from a deploy/restart (see online.js) — check
+  // immediately instead of waiting out the 60s interval, so a new build
+  // sneaks in the moment the site recovers rather than up to a minute later.
+  window.addEventListener(SERVER_UP_EVENT, check)
   //window.addEventListener('focus', check)
   //document.addEventListener('visibilitychange', () => {
   //  if (document.visibilityState === 'visible') check()

@@ -1,4 +1,24 @@
+import { markServerDown } from './online.js'
+
 function getToken() { return localStorage.getItem('tc-token') }
+
+// Statuses a reverse proxy / restarting backend emits mid-deploy. Seeing one
+// flips the app into offline mode (markServerDown starts a /health poll that
+// flips it back), and GETs fall back to the service worker's cached copy so
+// browsing keeps working with zero visible errors while the deploy lands.
+const DEPLOY_STATUSES = new Set([502, 503, 504])
+
+async function cachedFallback(path) {
+  if (typeof caches === 'undefined') return null
+  try {
+    const hit = await caches.match(path)
+    if (!hit) return null
+    const text = await hit.text()
+    return text ? JSON.parse(text) : null
+  } catch {
+    return null
+  }
+}
 
 // Fired when a request that carried a token comes back 401 — the stored JWT
 // has expired (JWT_EXPIRE_DAYS) or been invalidated. AuthenticatedApp
@@ -22,6 +42,19 @@ async function req(path, opts = {}) {
   // a failed login attempt on the login page) is not an expired session.
   if (r.status === 401 && token && typeof window !== 'undefined') {
     window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  }
+  // Deploy in progress: flip into offline mode (background /health poll
+  // flips back). Reads quietly serve the service worker's cached copy —
+  // browsing during a deploy shouldn't surface errors; only an actual write
+  // is allowed to (and once the app registers as offline, even those go to
+  // the offline queue rather than erroring).
+  if (DEPLOY_STATUSES.has(r.status)) {
+    markServerDown()
+    const method = (opts.method || 'GET').toUpperCase()
+    if (method === 'GET') {
+      const cached = await cachedFallback(path)
+      if (cached !== null) return cached
+    }
   }
   if (r.status === 204) return null
   const text = await r.text()
