@@ -13,6 +13,7 @@ import RichText from './RichText.jsx'
 import CopyText from './CopyText.jsx'
 import { Copy } from 'lucide-react'
 import { getPowerbankPolicy } from '../powerbank.js'
+import PowerbankDetailModal from './PowerbankDetailModal.jsx'
 import { fmtDayTime, fmtDay } from '../dates.js'
 
 const fmtDateTime = fmtDayTime
@@ -275,33 +276,41 @@ function FlightCheckResults({ check }) {
   )
 }
 
+// One-line summary derived from the policy's free-text fields, so the card
+// stays a single scannable line — the full sentences (all four rows) only
+// show in PowerbankDetailModal behind a click.
+export function powerbankSummary(p) {
+  const prohibited = /prohibit/i.test(p.usage)
+  const maxCount = (p.number.match(/\d+/) || [])[0]
+  return `${prohibited ? 'In-flight use prohibited' : 'In-flight use allowed'}${maxCount ? ` · max ${maxCount}` : ''}`
+}
+
 function PowerbankPanel({ airline }) {
+  const [expanded, setExpanded] = useState(false)
   const p = getPowerbankPolicy(airline)
-  const rows = [
-    ['Max capacity', p.maxWh],
-    ['Permitted',    p.number],
-    ['Storage',      p.storage],
-    ['In-flight use', p.usage],
-  ]
+
+  function open() { setExpanded(true) }
+  function onKeyDown(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() }
+  }
+
   return (
-    <div
-      style={{ background: 'var(--surface)', border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)', borderRadius: '0.5rem' }}
-      className="p-3 mt-4 space-y-1.5"
-    >
-      <div className="flex items-center justify-between mb-2">
-        <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide font-medium">🔋 Power bank policy</p>
-        <span style={{ color: 'var(--text-faint)' }} className="text-xs">{p.source}</span>
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={open}
+        onKeyDown={onKeyDown}
+        style={{ background: 'var(--surface)', border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)', borderRadius: '0.5rem', cursor: 'pointer' }}
+        className="px-3 py-2 mt-4 flex items-center justify-between gap-3 hover:opacity-90"
+      >
+        <span className="text-sm truncate">
+          <span aria-hidden="true">🔋</span> Power bank: {powerbankSummary(p)}
+        </span>
+        <span style={{ color: 'var(--text-faint)' }} className="text-xs shrink-0">Details ›</span>
       </div>
-      {rows.map(([label, value]) => (
-        <div key={label} className="flex gap-3 text-sm">
-          <span style={{ color: 'var(--text-faint)', minWidth: '6.5rem' }} className="shrink-0">{label}</span>
-          <span style={{ color: 'var(--text)' }} className="flex-1">{value}</span>
-        </div>
-      ))}
-      <p style={{ color: 'var(--text-faint)' }} className="text-xs pt-1 italic">
-        Rules change frequently — confirm with the airline before travel.
-      </p>
-    </div>
+      {expanded && <PowerbankDetailModal airline={airline} onClose={() => setExpanded(false)} />}
+    </>
   )
 }
 
