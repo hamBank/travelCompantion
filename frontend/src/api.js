@@ -6,7 +6,26 @@ function getToken() { return localStorage.getItem('tc-token') }
 // flips the app into offline mode (markServerDown starts a /health poll that
 // flips it back), and GETs fall back to the service worker's cached copy so
 // browsing keeps working with zero visible errors while the deploy lands.
+//
+// 502/504 only ever come from the reverse proxy in front of a dead/restarting
+// process — FastAPI itself never returns them — so those are trusted as-is.
+// 503 is ambiguous: several routes intentionally return an app-level 503 for
+// one failed feature (e.g. weather/hourly's transient-upstream error) while
+// the rest of the app is perfectly healthy, and that shape is indistinguishable
+// from a real deploy-window 503 by status/body alone. See isRealDeployDown.
 const DEPLOY_STATUSES = new Set([502, 503, 504])
+
+// Disambiguates a 503 by asking the one endpoint that can't lie about it:
+// if /health itself is unreachable, the whole app is down; if /health is
+// fine, this 503 was the app intentionally failing just this one request.
+async function isRealDeployDown() {
+  try {
+    const r = await fetch('/health', { cache: 'no-store' })
+    return !r.ok
+  } catch {
+    return true
+  }
+}
 
 async function cachedFallback(path) {
   if (typeof caches === 'undefined') return null
@@ -49,11 +68,14 @@ async function req(path, opts = {}) {
   // is allowed to (and once the app registers as offline, even those go to
   // the offline queue rather than erroring).
   if (DEPLOY_STATUSES.has(r.status)) {
-    markServerDown()
-    const method = (opts.method || 'GET').toUpperCase()
-    if (method === 'GET') {
-      const cached = await cachedFallback(path)
-      if (cached !== null) return cached
+    const confirmedDown = r.status !== 503 || path === '/health' || await isRealDeployDown()
+    if (confirmedDown) {
+      markServerDown()
+      const method = (opts.method || 'GET').toUpperCase()
+      if (method === 'GET') {
+        const cached = await cachedFallback(path)
+        if (cached !== null) return cached
+      }
     }
   }
   if (r.status === 204) return null
