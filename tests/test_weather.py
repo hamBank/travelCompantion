@@ -1,5 +1,5 @@
 """Tests for backend/weather.py — forecast + climatology with mocked network."""
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from backend import weather
 
@@ -210,3 +210,107 @@ def test_get_weather_forecast_falls_back_to_climatology_after_two_failures():
                               fetch_json=fetch, today=today)
     assert fc_calls["n"] == 2  # initial attempt + one retry, no more
     assert out["2026-07-01"]["source"] == "climatology"
+
+
+# ── Hourly detail (click-through) ───────────────────────────────────────────
+
+def _hourly_payload(day="2026-07-01", n_hours=3):
+    times = [f"{day}T{h:02d}:00" for h in range(n_hours)]
+    return {
+        "hourly": {
+            "time": times,
+            "temperature_2m": [20.0, 19.5, 19.0][:n_hours],
+            "apparent_temperature": [19.0, 18.5, 18.0][:n_hours],
+            "precipitation_probability": [10, 20, 30][:n_hours],
+            "weathercode": [0, 1, 61][:n_hours],
+            "relativehumidity_2m": [55, 60, 65][:n_hours],
+            "windspeed_10m": [12.0, 14.0, 9.0][:n_hours],
+            "uv_index": [0.0, 0.5, 1.0][:n_hours],
+        },
+        "daily": {
+            "sunrise": [f"{day}T06:12"],
+            "sunset": [f"{day}T20:45"],
+            "uv_index_max": [6.2],
+            "precipitation_sum": [0.4],
+            "precipitation_probability_max": [30],
+        },
+    }
+
+
+def test_hourly_available_within_horizon_only():
+    today = date(2026, 6, 30)
+    assert weather.hourly_available(today, today) is True
+    assert weather.hourly_available(today + timedelta(days=15), today) is True
+    assert weather.hourly_available(today + timedelta(days=16), today) is False
+    assert weather.hourly_available(today - timedelta(days=1), today) is False
+
+
+def test_parse_hourly_builds_hours_and_daily_extras():
+    day = date(2026, 7, 1)
+    out = weather.parse_hourly(_hourly_payload(), day)
+    assert out["date"] == "2026-07-01"
+    assert len(out["hourly"]) == 3
+    assert out["hourly"][0] == {
+        "time": "00:00", "temp": 20.0, "feels_like": 19.0, "precip_prob": 10,
+        "humidity": 55, "wind": 12.0, "uv": 0.0, "icon": "☀", "desc": "Clear",
+    }
+    assert out["hourly"][2]["icon"] == "🌧"  # code 61 = light rain
+    assert out["sunrise"] == "06:12"
+    assert out["sunset"] == "20:45"
+    assert out["uv_max"] == 6.2
+    assert out["precip_sum"] == 0.4
+    assert out["precip_prob_max"] == 30
+
+
+def test_parse_hourly_returns_none_when_time_series_empty():
+    assert weather.parse_hourly({"hourly": {"time": []}}, date(2026, 7, 1)) is None
+    assert weather.parse_hourly({}, date(2026, 7, 1)) is None
+
+
+def test_get_hourly_forecast_outside_horizon_returns_none_without_fetching():
+    today = date(2026, 6, 30)
+    calls = {"n": 0}
+
+    def fetch(url):
+        calls["n"] += 1
+        return _hourly_payload()
+
+    out = weather.get_hourly_forecast(48.85, 2.35, today + timedelta(days=20),
+                                      fetch_json=fetch, today=today)
+    assert out is None
+    assert calls["n"] == 0
+
+
+def test_get_hourly_forecast_fetches_within_horizon():
+    today = date(2026, 6, 30)
+
+    def fetch(url):
+        assert "api.open-meteo.com/v1/forecast" in url
+        assert "hourly=" in url
+        assert "start_date=2026-07-01&end_date=2026-07-01" in url
+        return _hourly_payload()
+
+    out = weather.get_hourly_forecast(48.85, 2.35, date(2026, 7, 1),
+                                      fetch_json=fetch, today=today)
+    assert out["date"] == "2026-07-01"
+    assert len(out["hourly"]) == 3
+
+
+def test_get_hourly_forecast_retries_once_then_gives_up():
+    today = date(2026, 6, 30)
+    calls = {"n": 0}
+
+    def flaky(url):
+        calls["n"] += 1
+        raise RuntimeError("blip")
+
+    out = weather.get_hourly_forecast(48.85, 2.35, date(2026, 7, 1),
+                                      fetch_json=flaky, today=today)
+    assert out is None
+    assert calls["n"] == 2
+
+
+def test_get_hourly_forecast_bad_coords_returns_none():
+    today = date(2026, 6, 30)
+    out = weather.get_hourly_forecast("nope", "nope", date(2026, 7, 1), today=today)
+    assert out is None

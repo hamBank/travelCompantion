@@ -17,6 +17,7 @@ import urllib.request
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from statistics import mean
+from typing import Optional
 
 from .metrics import record_external_call
 
@@ -331,3 +332,98 @@ def get_weather(lat, lng, start: str, end: str, *, fetch_json=_fetch_json, today
                 out[d.isoformat()] = _decorate(rec, "climatology")
 
     return out
+
+
+# ── Hourly detail (click-through, forecast-horizon days only) ─────────────────
+# Climatology (an average of past years) has no meaningful "hourly" shape —
+# showing one would look like a real forecast while being fabricated. So this
+# is deliberately only ever called for a day inside [today, horizon]; callers
+# (the /weather/hourly endpoint, and the frontend's click gating) must check
+# that before fetching. hourly_available() is the single source of truth for
+# that check, shared by both.
+
+def hourly_available(day: date, today: date | None = None) -> bool:
+    today = today or utc_today()
+    horizon = today + timedelta(days=FORECAST_HORIZON_DAYS - 1)
+    return today <= day <= horizon
+
+
+def parse_hourly(payload: dict, day: date) -> Optional[dict]:
+    """Open-Meteo hourly+daily payload for a single day → the shape the
+    frontend's detail modal renders. None if the hourly time series is empty
+    (a malformed/empty upstream response) — treated as a failed fetch, not a
+    zero-data day."""
+    hourly = (payload or {}).get("hourly", {}) or {}
+    times = hourly.get("time", []) or []
+    if not times:
+        return None
+    temps  = hourly.get("temperature_2m", []) or []
+    feels  = hourly.get("apparent_temperature", []) or []
+    precip = hourly.get("precipitation_probability", []) or []
+    codes  = hourly.get("weathercode", []) or []
+    humid  = hourly.get("relativehumidity_2m", []) or []
+    winds  = hourly.get("windspeed_10m", []) or []
+    uv     = hourly.get("uv_index", []) or []
+
+    hours = []
+    for i, t in enumerate(times):
+        temp = temps[i] if i < len(temps) else None
+        if temp is None:
+            continue
+        code = codes[i] if i < len(codes) and codes[i] is not None else 0
+        icon, desc = _icon_for(code)
+        hours.append({
+            "time": t[11:16],  # "HH:MM"
+            "temp": round(temp, 1),
+            "feels_like": round(feels[i], 1) if i < len(feels) and feels[i] is not None else None,
+            "precip_prob": int(precip[i]) if i < len(precip) and precip[i] is not None else None,
+            "humidity": int(humid[i]) if i < len(humid) and humid[i] is not None else None,
+            "wind": round(winds[i], 1) if i < len(winds) and winds[i] is not None else None,
+            "uv": round(uv[i], 1) if i < len(uv) and uv[i] is not None else None,
+            "icon": icon,
+            "desc": desc,
+        })
+    if not hours:
+        return None
+
+    daily = (payload or {}).get("daily", {}) or {}
+    def _d0(key):
+        vals = daily.get(key) or []
+        return vals[0] if vals and vals[0] is not None else None
+
+    sunrise = _d0("sunrise")
+    sunset = _d0("sunset")
+    return {
+        "date": day.isoformat(),
+        "hourly": hours,
+        "sunrise": sunrise[11:16] if sunrise else None,
+        "sunset": sunset[11:16] if sunset else None,
+        "uv_max": round(_d0("uv_index_max"), 1) if _d0("uv_index_max") is not None else None,
+        "precip_sum": round(_d0("precipitation_sum"), 1) if _d0("precipitation_sum") is not None else None,
+        "precip_prob_max": int(_d0("precipitation_probability_max")) if _d0("precipitation_probability_max") is not None else None,
+    }
+
+
+def get_hourly_forecast(lat, lng, day: date, *, fetch_json=_fetch_json, today: date | None = None) -> Optional[dict]:
+    """Hourly forecast + daily extras for a single day. None if `day` is
+    outside the live-forecast horizon (see hourly_available) or the fetch
+    fails/comes back empty — never climatology, unlike get_weather."""
+    coords = _valid_coords(lat, lng)
+    if not coords or not hourly_available(day, today):
+        return None
+    lat_f, lng_f = coords
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?latitude={lat_f}&longitude={lng_f}"
+        f"&hourly=temperature_2m,apparent_temperature,precipitation_probability,weathercode,"
+        f"relativehumidity_2m,windspeed_10m,uv_index"
+        f"&daily=sunrise,sunset,uv_index_max,precipitation_sum,precipitation_probability_max"
+        f"&timezone=auto&start_date={day.isoformat()}&end_date={day.isoformat()}"
+    )
+    try:
+        payload = fetch_json(url)
+    except Exception:
+        try:
+            payload = fetch_json(url)  # one retry — same transient-blip tolerance as get_weather
+        except Exception:
+            return None
+    return parse_hourly(payload, day)

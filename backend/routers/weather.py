@@ -20,9 +20,17 @@ from sqlmodel import Session
 
 from ..database import get_session
 from ..models import WeatherCache
-from ..weather import get_weather, geocode, cache_key, CACHE_VERSION, FORECAST_HORIZON_DAYS, is_degraded, strip_invisible_chars, utc_today
+from ..weather import (
+    get_weather, geocode, cache_key, CACHE_VERSION, FORECAST_HORIZON_DAYS, is_degraded,
+    strip_invisible_chars, utc_today, get_hourly_forecast, hourly_available,
+)
 
 router = APIRouter()
+
+# Separate cache-key namespace from the daily payloads above ("hourly:v1," vs
+# "v2,") — different shape, and it would be wrong for one to ever collide
+# with or overwrite the other.
+HOURLY_CACHE_VERSION = "hourly:v1"
 
 TTL_IMMEDIATE = timedelta(hours=1)   # today or tomorrow — forecasts still get revised
 TTL_NEAR      = timedelta(hours=3)   # 2 days out
@@ -110,3 +118,60 @@ def weather_lookup(
             session.add(WeatherCache(cache_key=key, payload=data))
         session.commit()
     return {"weather": data, "cached": False}
+
+
+@router.get("/weather/hourly")
+def weather_hourly(
+    day: str,
+    lat: Optional[str] = None, lng: Optional[str] = None, q: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    """Hourly breakdown + sunrise/sunset/UV/precip for one day — the
+    click-through detail behind a day banner. Only ever available for a day
+    within the live forecast horizon; climatology days 404 rather than
+    returning a fabricated hourly shape (see get_hourly_forecast's docstring).
+    """
+    have_coords = _coords(lat, lng) is not None
+    if not have_coords and not (q and q.strip()):
+        raise HTTPException(status_code=400, detail="Provide lat/lng or q")
+
+    today = utc_today()
+    day_d = date.fromisoformat(day)
+    if not hourly_available(day_d, today):
+        raise HTTPException(status_code=404, detail="Hourly detail is only available within the live forecast window")
+
+    if have_coords:
+        lat_r = round(float(str(lat).split(",")[0]), 2)
+        lng_r = round(float(str(lng).split(",")[0]), 2)
+        key = f"{HOURLY_CACHE_VERSION},{lat_r},{lng_r},{day}"
+    else:
+        qn = strip_invisible_chars(q).strip().lower().replace(",", " ").replace("  ", " ").strip()
+        key = f"{HOURLY_CACHE_VERSION},q:{qn},{day}"
+
+    ttl = _cache_ttl(day_d, day_d, today)
+    cached = session.get(WeatherCache, key)
+    if cached and (datetime.now(timezone.utc).replace(tzinfo=None) - cached.fetched_at) < ttl:
+        return {"hourly": cached.payload, "cached": True}
+
+    if have_coords:
+        data = get_hourly_forecast(lat, lng, day_d, today=today)
+    else:
+        resolved = geocode(q)
+        data = get_hourly_forecast(resolved[0], resolved[1], day_d, today=today) if resolved else None
+
+    if data is None:
+        # Don't cache a failed fetch — leave any existing (expired but valid)
+        # entry in place so the next request retries rather than 503ing again
+        # off a poisoned write.
+        if cached:
+            return {"hourly": cached.payload, "cached": True, "stale": True}
+        raise HTTPException(status_code=503, detail="Hourly forecast unavailable")
+
+    if cached:
+        cached.payload = data
+        cached.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        session.add(cached)
+    else:
+        session.add(WeatherCache(cache_key=key, payload=data))
+    session.commit()
+    return {"hourly": data, "cached": False}

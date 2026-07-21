@@ -20,3 +20,10 @@ export function fmtDayTime(val) {
   const t = timePart?.slice(0, 5)
   return t && t !== '00:00' ? `${day} ${t}` : day
 }
+
+/** "Fri, Jul 24" from a bare 'YYYY-MM-DD' date key — the day-banner/weather-
+ * detail header format (distinct from fmtDay's "Fri 24 Jul" list format). */
+export function fmtDayHeader(dateKey) {
+  const d = new Date(dateKey + 'T12:00:00')
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}

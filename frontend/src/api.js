@@ -123,6 +123,18 @@ export const getWeather = (lat, lng, start, end, q) => {
   return req(`/weather?${p.toString()}`)
 }
 
+// Hourly click-through detail for one day — only ever available within the
+// live forecast horizon (backend 404s otherwise; DayBanner only offers the
+// click for weather.source === 'forecast', so that should be the only case
+// this is called for in practice).
+export const getHourlyWeather = (lat, lng, day, q) => {
+  const p = new URLSearchParams({ day })
+  if (lat) p.set('lat', lat)
+  if (lng) p.set('lng', lng)
+  if (q) p.set('q', q)
+  return req(`/weather/hourly?${p.toString()}`)
+}
+
 export const getTripTimeline = (id, opts = {}) => {
   const params = new URLSearchParams(opts)
   const qs = params.toString() ? '?' + params.toString() : ''
