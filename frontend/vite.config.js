@@ -139,6 +139,22 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          {
+            // OpenStreetMap raster tiles — used by the cycling item detail
+            // view's GPX mini-map (GpxMapCanvas in ItemDetailModal.jsx), which
+            // draws its own map from these tiles instead of the backend-proxied
+            // Static Maps image the walk/river/day-map cards use. Without this
+            // rule these tiles had no caching at all, so the cycling mini-map
+            // was blank offline even after being viewed online. CacheFirst
+            // since a given z/x/y tile's imagery is effectively static.
+            urlPattern: ({ url }) => url.hostname === 'tile.openstreetmap.org',
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'osm-tiles',
+              expiration: { maxEntries: 1000, maxAgeSeconds: 30 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
       },
     }),
