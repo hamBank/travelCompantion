@@ -5,6 +5,8 @@
  * Legacy format: plain string   (rendered as-is, no structure)
  */
 
+import { Armchair } from 'lucide-react'
+
 const PASSENGER_DETAIL_FIELDS = [
   { key: 'ticket',  label: 'Ticket'  },
   { key: 'loyalty', label: 'Loyalty' },
@@ -27,12 +29,17 @@ function PassengerRow({ p, border, seatmapUrl }) {
       {details.length > 0 && (
         <div className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>
           {details.map(f => (
-            <span key={f.key} className="mr-3">
+            // whitespace-nowrap keeps the label glued to its value — on a
+            // narrow screen this field group wraps as one unit instead of
+            // splitting the label onto its own line with a bare value (e.g.
+            // "SEAT" alone) trailing on the next with no context.
+            <span key={f.key} className="mr-3 whitespace-nowrap">
               <span className="uppercase tracking-wide" style={{ fontSize: '0.65rem' }}>{f.label}</span>
               {' '}
               {f.key === 'seat' && seatmapUrl
                 ? <a href={seatmapUrl} target="_blank" rel="noreferrer"
-                     style={{ color: 'var(--accent)' }} className="hover:underline">
+                     style={{ color: 'var(--accent)' }} className="hover:underline inline-flex items-center gap-0.5">
+                    <Armchair size={11} aria-hidden="true" />
                     {p[f.key]}
                   </a>
                 : <span style={{ color: 'var(--text)' }}>{p[f.key]}</span>}
