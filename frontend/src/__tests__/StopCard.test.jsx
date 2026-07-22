@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, dayMapPoints, DayBanner, closedOnDay } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, dayMapPoints, DayBanner, closedOnDay, isPastPending, PastPendingFrame, PAST_PENDING_GRACE_HOURS } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -90,6 +90,59 @@ describe('itemEndMs', () => {
   it('returns null when there is no time information at all', () => {
     const item = { kind: 'note', details: {}, scheduled_at: null }
     expect(itemEndMs(item)).toBeNull()
+  })
+})
+
+// ── isPastPending / PastPendingFrame ────────────────────────────────────────
+// Flags an item still marked "pending" well after it should be over — the
+// catch-up banner (TripTimeline.jsx) says how many, this is what marks
+// *which* one(s) so they're findable in a long itinerary.
+
+describe('isPastPending', () => {
+  it('is true for a pending item well past its grace period', () => {
+    const longAgo = new Date(Date.now() - (PAST_PENDING_GRACE_HOURS + 1) * 3600_000).toISOString().slice(0, 19)
+    const item = { kind: 'activity', status: 'pending', details: {}, scheduled_at: longAgo }
+    expect(isPastPending(item)).toBe(true)
+  })
+
+  it('is false within the grace period, even if technically already over', () => {
+    const justNow = new Date(Date.now() - (PAST_PENDING_GRACE_HOURS - 1) * 3600_000).toISOString().slice(0, 19)
+    const item = { kind: 'activity', status: 'pending', details: {}, scheduled_at: justNow }
+    expect(isPastPending(item)).toBe(false)
+  })
+
+  it('is false once the item is marked done', () => {
+    const longAgo = new Date(Date.now() - (PAST_PENDING_GRACE_HOURS + 1) * 3600_000).toISOString().slice(0, 19)
+    const item = { kind: 'activity', status: 'done', details: {}, scheduled_at: longAgo }
+    expect(isPastPending(item)).toBe(false)
+  })
+
+  it('is false for a future item', () => {
+    const future = new Date(Date.now() + 3600_000).toISOString().slice(0, 19)
+    const item = { kind: 'activity', status: 'pending', details: {}, scheduled_at: future }
+    expect(isPastPending(item)).toBe(false)
+  })
+
+  it('is false when the item has no resolvable end time', () => {
+    const item = { kind: 'note', status: 'pending', details: {}, scheduled_at: null }
+    expect(isPastPending(item)).toBe(false)
+  })
+})
+
+describe('PastPendingFrame', () => {
+  it('wraps children in a highlighted frame when the item is past-pending', () => {
+    const longAgo = new Date(Date.now() - (PAST_PENDING_GRACE_HOURS + 1) * 3600_000).toISOString().slice(0, 19)
+    const item = { kind: 'activity', status: 'pending', details: {}, scheduled_at: longAgo }
+    render(<PastPendingFrame item={item}><div>Card content</div></PastPendingFrame>)
+    expect(screen.getByText('Past pending')).toBeInTheDocument()
+    expect(screen.getByText('Card content')).toBeInTheDocument()
+  })
+
+  it('renders children unwrapped (no highlight) when the item is not past-pending', () => {
+    const item = { kind: 'activity', status: 'done', details: {}, scheduled_at: null }
+    render(<PastPendingFrame item={item}><div>Card content</div></PastPendingFrame>)
+    expect(screen.queryByText('Past pending')).not.toBeInTheDocument()
+    expect(screen.getByText('Card content')).toBeInTheDocument()
   })
 })
 

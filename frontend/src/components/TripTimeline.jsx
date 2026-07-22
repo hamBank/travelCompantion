@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending, updateItemStatus, updateStop } from '../api.js'
-import StopCard, { computeCrossStopLayover, itemDateKey, itemEndMs, itemOccursOn, DayMap, dayMapPoints } from './StopCard.jsx'
+import StopCard, { computeCrossStopLayover, itemDateKey, itemOccursOn, isPastPending, DayMap, dayMapPoints } from './StopCard.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
 import RailDetailModal from './RailDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
@@ -74,11 +74,6 @@ export function clampedShiftDay(dateStr, direction, timeline) {
   if (end && next > end) return dateStr
   return next
 }
-
-// A "past pending" item must have ended this many hours ago before the
-// catch-up banner nags about it — absorbs timezone slop and avoids flagging
-// something that only just finished.
-const GRACE_HOURS = 6
 
 export default function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday, importing = false, setImporting = () => {} }) {
   const [timeline, setTimeline] = useState(null)
@@ -316,11 +311,11 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
 
   // Items still "pending" well after they should be over — surfaced as a
   // one-tap catch-up banner rather than silently auto-marked done (multi-user
-  // trips and mismatched device clocks make auto-writing unsafe).
-  const pastPending = allItems.filter(i =>
-    i.status === 'pending' &&
-    itemEndMs(i) != null &&
-    itemEndMs(i) < Date.now() - GRACE_HOURS * 3600_000)
+  // trips and mismatched device clocks make auto-writing unsafe). Each such
+  // item also gets its own highlighted frame in StopCard so there's a way to
+  // find *which* one(s) — isPastPending is shared with StopCard.jsx so the
+  // banner's count and the per-card highlight can't drift out of sync.
+  const pastPending = allItems.filter(isPastPending)
 
   async function markPastPendingDone() {
     if (markingDone) return
