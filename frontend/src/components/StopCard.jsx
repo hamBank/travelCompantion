@@ -114,6 +114,17 @@ export function itemEndMs(item) {
   return dateOnly ? ms + 24 * 3600_000 : ms
 }
 
+// An item must have ended this many hours ago before it's flagged as
+// "past pending" — absorbs timezone slop and avoids flagging something
+// that only just finished. Shared by the catch-up banner (TripTimeline.jsx)
+// and the per-card highlight below, so the two can't drift out of sync.
+export const PAST_PENDING_GRACE_HOURS = 6
+
+export function isPastPending(item) {
+  const end = itemEndMs(item)
+  return item.status === 'pending' && end != null && end < Date.now() - PAST_PENDING_GRACE_HOURS * 3600_000
+}
+
 // Does this item occur on the given local date ("YYYY-MM-DD")? Used by the
 // Today view (App.jsx / TripTimeline.jsx) to show only what's relevant right
 // now, across every stop.
@@ -524,6 +535,28 @@ export function dayMapPoints(items, activeDay) {
   return [...arrivals, ...rest]
 }
 
+// Wraps a rendered item card with a distinct warning-tinted frame when the
+// item is past-pending — the catch-up banner (TripTimeline.jsx) says how
+// many, but gave no way to spot *which* one(s) among a long itinerary.
+export function PastPendingFrame({ item, children }) {
+  if (!isPastPending(item)) return children
+  return (
+    <div
+      style={{
+        background: 'color-mix(in srgb, var(--warning) 12%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--warning) 45%, transparent)',
+        borderRadius: '0.625rem',
+        padding: '0.375rem',
+      }}
+    >
+      <p style={{ color: 'var(--warning)' }} className="text-xs font-medium px-0.5 pb-1 flex items-center gap-1">
+        <span aria-hidden="true">⚠</span> Past pending
+      </p>
+      {children}
+    </div>
+  )
+}
+
 // A stop's weather is normally fetched once for its own location/date span.
 // That breaks down for a multi-port cruise matched to a single stop: each
 // night's accommodation item has its own town, which can differ from (or
@@ -815,21 +848,23 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
           const sortedDates = Object.keys(byDate).sort()
           const layovers = computeLayovers(timeline)
           function renderCard(item) {
-            const props = { key: item.id, item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
-            if (item.kind === 'accommodation') return <AccomCard {...props} />
-            if (item.kind === 'flight')        return <FlightCard {...props} />
-            if (item.kind === 'rail')          return <RailCard {...props} />
-            if (item.kind === 'restaurant')    return <RestaurantCard {...props} />
-            if (item.kind === 'cycling')       return <CyclingCard {...props} />
-            if (item.kind === 'walk')          return <WalkCard {...props} />
-            if (item.kind === 'transfer')      return <TransferCard {...props} />
-            if (item.kind === 'river_transfer') return <RiverTransferCard {...props} />
-            if (item.kind === 'tour')          return <TourCard {...props} />
-            if (item.kind === 'note')          return <NoteCard {...props} />
-            if (item.kind === 'activity')      return <ActivityCard {...props} />
-            if (item.kind === 'show')          return <ShowCard {...props} />
-            if (item.kind === 'hire')          return <HireCard {...props} />
-            return <ItemRow {...props} />
+            const props = { item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
+            let card
+            if (item.kind === 'accommodation') card = <AccomCard {...props} />
+            else if (item.kind === 'flight')        card = <FlightCard {...props} />
+            else if (item.kind === 'rail')          card = <RailCard {...props} />
+            else if (item.kind === 'restaurant')    card = <RestaurantCard {...props} />
+            else if (item.kind === 'cycling')       card = <CyclingCard {...props} />
+            else if (item.kind === 'walk')          card = <WalkCard {...props} />
+            else if (item.kind === 'transfer')      card = <TransferCard {...props} />
+            else if (item.kind === 'river_transfer') card = <RiverTransferCard {...props} />
+            else if (item.kind === 'tour')          card = <TourCard {...props} />
+            else if (item.kind === 'note')          card = <NoteCard {...props} />
+            else if (item.kind === 'activity')      card = <ActivityCard {...props} />
+            else if (item.kind === 'show')          card = <ShowCard {...props} />
+            else if (item.kind === 'hire')          card = <HireCard {...props} />
+            else card = <ItemRow {...props} />
+            return <PastPendingFrame key={item.id} item={item}>{card}</PastPendingFrame>
           }
           return (
             <>
@@ -911,21 +946,23 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             const sortedDates = Object.keys(byDate).sort()
             const layovers = computeLayovers(timeline)
             function renderCard(item) {
-              const props = { key: item.id, item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
-              if (item.kind === 'accommodation') return <AccomCard {...props} />
-              if (item.kind === 'flight')        return <FlightCard {...props} />
-              if (item.kind === 'rail')          return <RailCard {...props} />
-              if (item.kind === 'restaurant')    return <RestaurantCard {...props} />
-              if (item.kind === 'cycling')       return <CyclingCard {...props} />
-              if (item.kind === 'walk')          return <WalkCard {...props} />
-              if (item.kind === 'transfer')      return <TransferCard {...props} />
-              if (item.kind === 'river_transfer') return <RiverTransferCard {...props} />
-              if (item.kind === 'tour')          return <TourCard {...props} />
-              if (item.kind === 'note')          return <NoteCard {...props} />
-              if (item.kind === 'activity')      return <ActivityCard {...props} />
-              if (item.kind === 'show')          return <ShowCard {...props} />
-              if (item.kind === 'hire')          return <HireCard {...props} />
-              return <ItemRow {...props} />
+              const props = { item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
+              let card
+              if (item.kind === 'accommodation') card = <AccomCard {...props} />
+              else if (item.kind === 'flight')        card = <FlightCard {...props} />
+              else if (item.kind === 'rail')          card = <RailCard {...props} />
+              else if (item.kind === 'restaurant')    card = <RestaurantCard {...props} />
+              else if (item.kind === 'cycling')       card = <CyclingCard {...props} />
+              else if (item.kind === 'walk')          card = <WalkCard {...props} />
+              else if (item.kind === 'transfer')      card = <TransferCard {...props} />
+              else if (item.kind === 'river_transfer') card = <RiverTransferCard {...props} />
+              else if (item.kind === 'tour')          card = <TourCard {...props} />
+              else if (item.kind === 'note')          card = <NoteCard {...props} />
+              else if (item.kind === 'activity')      card = <ActivityCard {...props} />
+              else if (item.kind === 'show')          card = <ShowCard {...props} />
+              else if (item.kind === 'hire')          card = <HireCard {...props} />
+              else card = <ItemRow {...props} />
+              return <PastPendingFrame key={item.id} item={item}>{card}</PastPendingFrame>
             }
             return (
               <div className="space-y-2">
