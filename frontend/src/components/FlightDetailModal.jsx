@@ -537,22 +537,25 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
                   <CopyText value={item.cost}>{item.cost}</CopyText>
                 </div>
               )}
-              {/* Seatmap link when no seats assigned */}
-              {(() => {
-                const pax = d.passengers
-                const hasSeats = Array.isArray(pax) && pax.some(p => p.seat)
-                const smUrl = seatguruUrl(d.flight_number, d.depart_time)
-                if (hasSeats || !smUrl) return null
-                return (
-                  <a href={smUrl} target="_blank" rel="noreferrer"
-                     style={{ color: 'var(--accent)', fontSize: '0.8rem' }}
-                     className="block text-center pt-1 hover:underline">
-                    🪑 View seatmap on AeroLOPA
-                  </a>
-                )
-              })()}
             </div>
           )}
+
+          {/* Seatmap link when no seats assigned — independent of whether any
+              booking info (ref/cost/link/etc.) has been entered, since a bare
+              flight number is enough to look up the aircraft's seat map. */}
+          {(() => {
+            const pax = d.passengers
+            const hasSeats = Array.isArray(pax) && pax.some(p => p.seat)
+            const smUrl = seatguruUrl(d.flight_number, d.depart_time)
+            if (hasSeats || !smUrl) return null
+            return (
+              <a href={smUrl} target="_blank" rel="noreferrer"
+                 style={{ color: 'var(--accent)', fontSize: '0.8rem' }}
+                 className="block text-center mt-3 hover:underline">
+                🪑 View seatmap on AeroLOPA
+              </a>
+            )
+          })()}
 
           <PowerbankPanel airline={d.airline} />
         </div>
