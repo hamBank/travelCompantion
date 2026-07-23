@@ -1336,7 +1336,7 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1491,7 +1491,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
         )}
       </div>
 
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1553,7 +1553,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1667,7 +1667,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
         )}
       </div>
 
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1803,7 +1803,7 @@ function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
         )}
       </div>
 
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1935,7 +1935,7 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
           />
         )}
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1992,7 +1992,7 @@ function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -2170,6 +2170,7 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
           onClose={() => setShowDetail(false)}
           onEdit={() => { setShowDetail(false); setShowEdit(true) }}
           onDeleted={onItemDeleted}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated) }}
         />
       )}
       {showEdit && (
@@ -2243,6 +2244,7 @@ function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
           onClose={() => setShowDetail(false)}
           onEdit={() => { setShowDetail(false); setShowEdit(true) }}
           onDeleted={onItemDeleted}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated) }}
         />
       )}
       {showEdit && (
@@ -2325,6 +2327,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
           onClose={() => setShowDetail(false)}
           onEdit={() => { setShowDetail(false); setShowEdit(true) }}
           onDeleted={onItemDeleted}
+          onSave={updated => { setItem(updated); onItemSaved?.(updated) }}
         />
       )}
       {showEdit && (
@@ -2393,7 +2396,7 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}

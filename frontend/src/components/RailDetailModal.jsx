@@ -520,7 +520,7 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
         </div>
 
         <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose}
-                       onHistory={() => setShowHistory(true)} />
+                       onHistory={() => setShowHistory(true)} onStatusChange={onItemUpdate} />
       </div>
     </div>
     {showHistory && <ItemHistoryModal item={item} onClose={() => setShowHistory(false)} />}

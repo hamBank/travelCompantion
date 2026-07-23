@@ -1,12 +1,18 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('../api.js', () => ({
   checkFlight: vi.fn(),
   updateItem: vi.fn(),
+  updateItemStatus: vi.fn(),
   deleteItem: vi.fn(),
+  // Unused by these tests — stubbed only because offlineQueue.js (imported
+  // by DetailActions.jsx) reads these named exports at module load time.
+  updateStop: vi.fn(),
+  updatePackItem: vi.fn(),
 }))
 
+import { updateItemStatus } from '../api.js'
 import FlightDetailModal, { formatStatus, formatPosition, powerbankSummary } from '../components/FlightDetailModal.jsx'
 import { getPowerbankPolicy } from '../powerbank.js'
 
@@ -161,5 +167,25 @@ describe('FlightDetailModal — independent sections', () => {
     // summary (a sibling, deliberately unrelated section) still shows.
     expect(screen.queryByText('Booking')).not.toBeInTheDocument()
     expect(screen.getByText(/In-flight use/)).toBeInTheDocument()
+  })
+})
+
+// "Flight cards don't seem to have a way of changing the pending status" —
+// the collapsed card's leading icon does toggle pending/done, but the user
+// was looking in the detail view, which had no such control at all. Confirms
+// the shared DetailActions status toggle actually reaches the flight modal.
+describe('FlightDetailModal — status toggle', () => {
+  it('shows a Mark done control wired to the item', async () => {
+    updateItemStatus.mockResolvedValue({})
+    render(
+      <FlightDetailModal
+        item={{ id: 1, kind: 'flight', name: 'Flight', details: { flight_number: 'QF37', airline: 'Qantas' }, status: 'pending' }}
+        onClose={() => {}}
+      />
+    )
+    const btn = screen.getByRole('button', { name: /Mark done/ })
+    fireEvent.click(btn)
+    await waitFor(() => expect(updateItemStatus).toHaveBeenCalledWith(1, 'done'))
+    expect(await screen.findByRole('button', { name: /Mark pending/ })).toBeInTheDocument()
   })
 })
