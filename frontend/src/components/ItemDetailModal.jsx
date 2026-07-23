@@ -829,8 +829,14 @@ const KIND_COLOR = {
   river_transfer:'var(--kind-river_transfer)',
 }
 
-export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNavModal = false }) {
+export default function ItemDetailModal({ item: initialItem, onClose, onEdit, onDeleted, onSave, isNavModal = false }) {
+  const [item, setItem] = useState(initialItem)
   const [showHistory, setShowHistory] = useState(false)
+
+  function onStatusChange(updated) {
+    setItem(updated)
+    onSave?.(updated)
+  }
 
   useEffect(() => {
     registerModal(item.id, onClose)
@@ -916,7 +922,7 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted, isNa
         </div>
 
         <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose}
-                       onHistory={() => setShowHistory(true)} />
+                       onHistory={() => setShowHistory(true)} onStatusChange={onStatusChange} />
       </div>
     </div>
     {showHistory && <ItemHistoryModal item={item} onClose={() => setShowHistory(false)} />}
