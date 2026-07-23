@@ -125,6 +125,21 @@ export function isPastPending(item) {
   return item.status === 'pending' && end != null && end < Date.now() - PAST_PENDING_GRACE_HOURS * 3600_000
 }
 
+// Should a "done" item be hidden by the "hide completed items" display
+// preference? A hotel stay is a special case: marking it done (e.g. right
+// after checking in, to clear it off a checklist) shouldn't hide it from the
+// itinerary while the stay is still ongoing — there's nothing to gain by
+// hiding a hotel you're currently staying at, and every other kind of item
+// really is over once it's marked done, so they hide immediately.
+export function isHiddenWhenCompleted(item, hideCompleted) {
+  if (item.status !== 'done' || !hideCompleted) return false
+  if (item.kind === 'accommodation') {
+    const end = itemEndMs(item)
+    return end != null && end <= Date.now()
+  }
+  return true
+}
+
 // Does this item occur on the given local date ("YYYY-MM-DD")? Used by the
 // Today view (App.jsx / TripTimeline.jsx) to show only what's relevant right
 // now, across every stop.
@@ -793,7 +808,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const hideCompleted = useHideCompleted()
   const kindFilter    = useKindFilter()
   const visibleItems = items
-    .filter(i => i.status !== 'done' || !hideCompleted)
+    .filter(i => !isHiddenWhenCompleted(i, hideCompleted))
     .filter(i => !kindFilter || i.kind === kindFilter)
 
   // Important notes are pinned to the very top of the stop; everything else flows
