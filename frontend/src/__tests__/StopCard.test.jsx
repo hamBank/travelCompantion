@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
-import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, dayMapPoints, DayBanner, closedOnDay, isPastPending, PastPendingFrame, PAST_PENDING_GRACE_HOURS } from '../components/StopCard.jsx'
+import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, dayMapPoints, DayBanner, closedOnDay, isPastPending, PastPendingFrame, PAST_PENDING_GRACE_HOURS, isHiddenWhenCompleted } from '../components/StopCard.jsx'
 
 // ── itemTimeStr ──────────────────────────────────────────────────────────────
 
@@ -143,6 +143,45 @@ describe('PastPendingFrame', () => {
     render(<PastPendingFrame item={item}><div>Card content</div></PastPendingFrame>)
     expect(screen.queryByText('Past pending')).not.toBeInTheDocument()
     expect(screen.getByText('Card content')).toBeInTheDocument()
+  })
+})
+
+// ── isHiddenWhenCompleted ────────────────────────────────────────────────────
+// "Hide completed items" must not hide a hotel stay that's marked done early
+// (e.g. right after checking in) while the stay is still ongoing — there's
+// nothing to gain by hiding a hotel you're currently staying at.
+
+describe('isHiddenWhenCompleted', () => {
+  it('never hides anything when the preference is off', () => {
+    const item = { kind: 'activity', status: 'done' }
+    expect(isHiddenWhenCompleted(item, false)).toBe(false)
+  })
+
+  it('does not hide a not-done item', () => {
+    const item = { kind: 'activity', status: 'pending' }
+    expect(isHiddenWhenCompleted(item, true)).toBe(false)
+  })
+
+  it('hides a done non-accommodation item immediately', () => {
+    const item = { kind: 'activity', status: 'done', scheduled_at: '2026-08-21T10:00' }
+    expect(isHiddenWhenCompleted(item, true)).toBe(true)
+  })
+
+  it('does not hide a done accommodation whose checkout is still in the future', () => {
+    const checkout = new Date(Date.now() + 24 * 3600_000).toISOString().slice(0, 19)
+    const item = { kind: 'accommodation', status: 'done', details: { checkin: '2026-08-19T15:00', checkout } }
+    expect(isHiddenWhenCompleted(item, true)).toBe(false)
+  })
+
+  it('hides a done accommodation once checkout has passed', () => {
+    const checkout = new Date(Date.now() - 24 * 3600_000).toISOString().slice(0, 19)
+    const item = { kind: 'accommodation', status: 'done', details: { checkin: '2026-08-19T15:00', checkout } }
+    expect(isHiddenWhenCompleted(item, true)).toBe(true)
+  })
+
+  it('does not hide a done accommodation when there is no resolvable checkout/checkin time (uncertain, so err visible)', () => {
+    const item = { kind: 'accommodation', status: 'done', details: {} }
+    expect(isHiddenWhenCompleted(item, true)).toBe(false)
   })
 })
 
