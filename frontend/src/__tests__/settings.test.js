@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getHideCompleted, setHideCompleted,
   getShowInbound, setShowInbound,
+  getDefaultToToday, setDefaultToToday,
 } from '../settings.js'
 
 beforeEach(() => localStorage.clear())
@@ -23,5 +24,15 @@ describe('show-inbound preference', () => {
     expect(getShowInbound()).toBe(false)
     setShowInbound(true)
     expect(getShowInbound()).toBe(true)
+  })
+})
+
+describe('default-to-today preference', () => {
+  it('defaults to false and toggles', () => {
+    expect(getDefaultToToday()).toBe(false)
+    setDefaultToToday(true)
+    expect(getDefaultToToday()).toBe(true)
+    setDefaultToToday(false)
+    expect(getDefaultToToday()).toBe(false)
   })
 })

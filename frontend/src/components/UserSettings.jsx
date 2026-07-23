@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { HOME_CURRENCY_KEY } from '../currency.js'
 import { useState as useReactState, useEffect } from 'react'
-import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound, getHideStopFrames, setHideStopFrames, getFontScale, setFontScale, FONT_SCALE_OPTIONS } from '../settings.js'
+import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound, getHideStopFrames, setHideStopFrames, getDefaultToToday, setDefaultToToday, getFontScale, setFontScale, FONT_SCALE_OPTIONS } from '../settings.js'
 import { getImportAddress, regenerateImportAddress } from '../api.js'
 import { isPushSupported, getPushEnabled, enablePush, disablePush, showLocalTestNotification } from '../push.js'
 import Toggle from './Toggle.jsx'
@@ -147,6 +147,7 @@ export default function UserSettings({ onClose }) {
   const [hideCompleted, setHideCompletedState] = useState(getHideCompleted)
   const [showInbound, setShowInboundState] = useState(getShowInbound)
   const [hideStopFrames, setHideStopFramesState] = useState(getHideStopFrames)
+  const [defaultToToday, setDefaultToTodayState] = useState(getDefaultToToday)
   const [fontScale, setFontScaleState] = useState(getFontScale)
 
   function save() {
@@ -155,6 +156,7 @@ export default function UserSettings({ onClose }) {
     setHideCompleted(hideCompleted)
     setShowInbound(showInbound)
     setHideStopFrames(hideStopFrames)
+    setDefaultToToday(defaultToToday)
     setFontScale(fontScale)
     onClose()
   }
@@ -184,6 +186,7 @@ export default function UserSettings({ onClose }) {
             <Toggle label="Hide completed items" on={hideCompleted} onToggle={() => setHideCompletedState(v => !v)} />
             <Toggle label="Show inbound flight/train on destination stop" on={showInbound} onToggle={() => setShowInboundState(v => !v)} />
             <Toggle label="Hide stop headers and frames" on={hideStopFrames} onToggle={() => setHideStopFramesState(v => !v)} />
+            <Toggle label="Open trips in Today view by default" on={defaultToToday} onToggle={() => setDefaultToTodayState(v => !v)} />
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--text-muted)' }} className="text-sm">Text size</span>
               <div className="flex gap-1">

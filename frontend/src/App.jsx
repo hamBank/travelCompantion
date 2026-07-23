@@ -18,7 +18,7 @@ import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf, getPending, refreshAuthToken, AUTH_EXPIRED_EVENT } from './api.js'
 import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, Plane } from 'lucide-react'
 import { canEdit, canManage } from './roles.js'
-import { applyFontScale, KindFilterContext } from './settings.js'
+import { applyFontScale, KindFilterContext, getDefaultToToday } from './settings.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
 import { useOnline } from './online.js'
 import ItemEditModal from './components/ItemEditModal.jsx'
@@ -97,7 +97,7 @@ function AppShell({ user, onLogout }) {
 
   const [userChoseList, setUserChoseList] = useState(false)
 
-  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(false); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
+  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(getDefaultToToday()); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
   function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false) }
 
   return (

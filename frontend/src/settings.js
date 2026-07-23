@@ -56,6 +56,22 @@ export function useHideStopFrames() {
   return useSyncExternalStore(subscribe, getHideStopFrames)
 }
 
+// ── Default to Today view when opening a trip ─────────────────────────────────
+const DEFAULT_TO_TODAY_KEY = 'tc-default-to-today'
+
+export function getDefaultToToday() {
+  return localStorage.getItem(DEFAULT_TO_TODAY_KEY) === '1'
+}
+
+export function setDefaultToToday(value) {
+  localStorage.setItem(DEFAULT_TO_TODAY_KEY, value ? '1' : '0')
+  listeners.forEach(l => l())
+}
+
+export function useDefaultToToday() {
+  return useSyncExternalStore(subscribe, getDefaultToToday)
+}
+
 // ── Font scale (applied as root font-size; all rem values scale with it) ─────
 const FONT_SCALE_KEY = 'tc-font-scale'
 export const FONT_SCALE_OPTIONS = [
