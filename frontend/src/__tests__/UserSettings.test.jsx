@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import UserSettings from '../components/UserSettings.jsx'
 import * as api from '../api.js'
+import { getDefaultToToday } from '../settings.js'
 
 vi.mock('../api.js')
 
@@ -18,6 +19,19 @@ describe('UserSettings', () => {
     expect(await screen.findByText('Notifications')).toBeTruthy()
     // jsdom has no PushManager/serviceWorker → reported unsupported, not crashed
     expect(screen.getByText(/Not supported/i)).toBeTruthy()
+  })
+})
+
+describe('Default-to-Today toggle', () => {
+  it('persists the preference on Save', async () => {
+    render(<UserSettings onClose={() => {}} />)
+    await screen.findByText('import+x@example.com')
+    expect(getDefaultToToday()).toBe(false)
+
+    fireEvent.click(screen.getByText('Open trips in Today view by default'))
+    fireEvent.click(screen.getByText('Save'))
+
+    expect(getDefaultToToday()).toBe(true)
   })
 })
 
