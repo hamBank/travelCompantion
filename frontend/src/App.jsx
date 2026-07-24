@@ -19,6 +19,7 @@ import { getAuthConfig, exportTripPdf, getPending, refreshAuthToken, AUTH_EXPIRE
 import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, Plane } from 'lucide-react'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale, KindFilterContext, getDefaultToToday } from './settings.js'
+import { getSavedNav, saveNav, clearNav } from './navState.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
 import { useOnline } from './online.js'
 import ItemEditModal from './components/ItemEditModal.jsx'
@@ -97,8 +98,18 @@ function AppShell({ user, onLogout }) {
 
   const [userChoseList, setUserChoseList] = useState(false)
 
-  function openTrip(trip) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(getDefaultToToday()); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
-  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false) }
+  // Read once, at boot — whatever was open just before the app was last
+  // reloaded (see main.jsx's update banner and navState.js).
+  const savedNavRef = useRef(getSavedNav())
+
+  function openTrip(trip, todayOverride) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(todayOverride ?? getDefaultToToday()); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
+  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false); clearNav() }
+
+  // Keep the last-open trip/view-mode saved so a forced reload can restore
+  // it instead of dumping the user back at the trip list.
+  useEffect(() => {
+    if (selectedTrip) saveNav({ tripId: selectedTrip.id, today })
+  }, [selectedTrip, today])
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
@@ -247,7 +258,9 @@ function AppShell({ user, onLogout }) {
                   onExitToday={() => setToday(false)}
                   importing={showImportDoc} setImporting={setShowImportDoc}
                 />
-          : <TripList onOpen={openTrip} skipAutoOpen={userChoseList} />
+          : <TripList onOpen={openTrip} skipAutoOpen={userChoseList}
+              restoreTripId={savedNavRef.current?.tripId ?? null}
+              restoreToday={savedNavRef.current?.today ?? false} />
         }
       </main>
       </KindFilterContext.Provider>
