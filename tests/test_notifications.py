@@ -553,7 +553,7 @@ def test_flight_alert_window_uses_stop_offset_fallback(session):
 
     fetched = []
 
-    def fake_fetch(flight_iata, day):
+    def fake_fetch(flight_iata, day, stored_depart=None):
         fetched.append(flight_iata)
         return None  # no live data — we only care that the window opened
 

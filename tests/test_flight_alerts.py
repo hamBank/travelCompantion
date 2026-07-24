@@ -54,7 +54,7 @@ def _fake_sender(calls):
 
 
 def _fake_fetch(live, calls=None):
-    def fetch(flight_iata, dep_date):
+    def fetch(flight_iata, dep_date, stored_depart=None):
         if calls is not None:
             calls.append((flight_iata, dep_date))
         return live
@@ -176,7 +176,7 @@ def test_one_flights_fetch_error_does_not_stop_the_run(session):
     _flight(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"), flight_number="AA1")
     _flight(session, stop, (now + timedelta(hours=2)).isoformat(timespec="minutes"), flight_number="AA2")
 
-    def fetch(flight_iata, dep_date):
+    def fetch(flight_iata, dep_date, stored_depart=None):
         if flight_iata == "AA1":
             raise FlightLiveError("boom")
         return _live(status="Canceled")

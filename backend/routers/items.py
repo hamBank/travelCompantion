@@ -265,7 +265,7 @@ def check_flight(item_id: int, session: Session = Depends(get_session), user: di
         raise HTTPException(status_code=400, detail="No departure date stored")
 
     try:
-        live = flight_live.fetch_flight(flight_iata, dep_date)
+        live = flight_live.fetch_flight(flight_iata, dep_date, d.get("depart_time"))
     except flight_live.FlightLiveError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
