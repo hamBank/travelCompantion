@@ -118,7 +118,7 @@ export default function DetailActions({ item, onEdit, onDeleted, onClose, onHist
               title={done ? 'Mark as not done' : 'Mark as done'}
             >
               <Check size={13} aria-hidden="true" />
-              {statusBusy ? '…' : (done ? 'Mark pending' : 'Mark done')}
+              {statusBusy ? '…' : (done ? 'Pending' : 'Done')}
             </button>
           )}
           {canEdit && onDeleted && (

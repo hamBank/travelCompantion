@@ -175,7 +175,7 @@ describe('FlightDetailModal — independent sections', () => {
 // was looking in the detail view, which had no such control at all. Confirms
 // the shared DetailActions status toggle actually reaches the flight modal.
 describe('FlightDetailModal — status toggle', () => {
-  it('shows a Mark done control wired to the item', async () => {
+  it('shows a Done control wired to the item', async () => {
     updateItemStatus.mockResolvedValue({})
     render(
       <FlightDetailModal
@@ -183,9 +183,9 @@ describe('FlightDetailModal — status toggle', () => {
         onClose={() => {}}
       />
     )
-    const btn = screen.getByRole('button', { name: /Mark done/ })
+    const btn = screen.getByRole('button', { name: 'Done' })
     fireEvent.click(btn)
     await waitFor(() => expect(updateItemStatus).toHaveBeenCalledWith(1, 'done'))
-    expect(await screen.findByRole('button', { name: /Mark pending/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Pending' })).toBeInTheDocument()
   })
 })
