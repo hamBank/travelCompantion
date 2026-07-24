@@ -30,33 +30,33 @@ describe('DetailActions — status toggle', () => {
     Object.defineProperty(navigator, 'onLine', { value: true, configurable: true })
   })
 
-  it('shows "Mark done" for a pending item and calls updateItemStatus + onStatusChange on click', async () => {
+  it('shows "Done" for a pending item and calls updateItemStatus + onStatusChange on click', async () => {
     updateItemStatus.mockResolvedValue({})
     const onStatusChange = vi.fn()
     render(
       <DetailActions item={{ id: 1, status: 'pending' }} onStatusChange={onStatusChange} />
     )
-    const btn = screen.getByRole('button', { name: /Mark done/ })
+    const btn = screen.getByRole('button', { name: 'Done' })
     fireEvent.click(btn)
     await waitFor(() => expect(updateItemStatus).toHaveBeenCalledWith(1, 'done'))
     expect(onStatusChange).toHaveBeenCalledWith({ id: 1, status: 'done' })
     expect(offlineQueue.enqueue).not.toHaveBeenCalled()
   })
 
-  it('shows "Mark pending" for a done item and toggles back to pending', async () => {
+  it('shows "Pending" for a done item and toggles back to pending', async () => {
     updateItemStatus.mockResolvedValue({})
     const onStatusChange = vi.fn()
     render(
       <DetailActions item={{ id: 2, status: 'done' }} onStatusChange={onStatusChange} />
     )
-    fireEvent.click(screen.getByRole('button', { name: /Mark pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pending' }))
     await waitFor(() => expect(updateItemStatus).toHaveBeenCalledWith(2, 'pending'))
     expect(onStatusChange).toHaveBeenCalledWith({ id: 2, status: 'pending' })
   })
 
   it('does not render the toggle when onStatusChange is not provided', () => {
     render(<DetailActions item={{ id: 3, status: 'pending' }} />)
-    expect(screen.queryByRole('button', { name: /Mark done/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument()
   })
 
   it('does not render the toggle for a viewer (no edit rights)', () => {
@@ -65,7 +65,7 @@ describe('DetailActions — status toggle', () => {
         <DetailActions item={{ id: 4, status: 'pending' }} onStatusChange={vi.fn()} onHistory={vi.fn()} />
       </RoleContext.Provider>
     )
-    expect(screen.queryByRole('button', { name: /Mark done/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument()
   })
 
   it('routes through the offline queue (not a direct PATCH) while offline for a real editor', async () => {
@@ -81,7 +81,7 @@ describe('DetailActions — status toggle', () => {
         </RealRoleContext.Provider>
       </RoleContext.Provider>
     )
-    const btn = screen.getByRole('button', { name: /Mark done/ })
+    const btn = screen.getByRole('button', { name: 'Done' })
     fireEvent.click(btn)
     await waitFor(() => expect(offlineQueue.enqueue).toHaveBeenCalledWith({
       entity: 'item', entityId: 5, changes: { status: 'done' }, base: { status: 'pending' },
