@@ -877,11 +877,18 @@ def _static_map_png(path: list, start: Optional[str], end: Optional[str], color:
         "path": f"color:{color}|weight:4|enc:{encoded}",
         "key": _STATIC_MAPS_KEY,
     }
-    query_parts = [urllib.parse.urlencode(params)]
-    if start:
-        query_parts.append(urllib.parse.urlencode({"markers": f"color:green|label:A|{start}"}))
-    if end:
-        query_parts.append(urllib.parse.urlencode({"markers": f"color:red|label:B|{end}"}))
+    # A GPX-only track (no manually-typed start/end location text — the ride's
+    # end points are just wherever the recording started/stopped, not a named
+    # place) previously got no A/B markers at all. The literal first/last
+    # coordinate of the track itself is right here, so fall back to that
+    # instead of silently drawing an unmarked line.
+    start_marker = start or f"{path[0][0]},{path[0][1]}"
+    end_marker = end or f"{path[-1][0]},{path[-1][1]}"
+    query_parts = [
+        urllib.parse.urlencode(params),
+        urllib.parse.urlencode({"markers": f"color:green|label:A|{start_marker}"}),
+        urllib.parse.urlencode({"markers": f"color:red|label:B|{end_marker}"}),
+    ]
     url = f"{_STATIC_MAPS_API}?{'&'.join(query_parts)}"
 
     try:
