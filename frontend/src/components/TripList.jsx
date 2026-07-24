@@ -22,7 +22,7 @@ function findNextUpcoming(trips) {
   return trips[0]
 }
 
-export default function TripList({ onOpen, skipAutoOpen }) {
+export default function TripList({ onOpen, skipAutoOpen, restoreTripId = null, restoreToday = false }) {
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -36,7 +36,10 @@ export default function TripList({ onOpen, skipAutoOpen }) {
       const data = await getTrips()
       setTrips(data)
       if (initial && !skipAutoOpen && data.length > 0) {
-        onOpen(findNextUpcoming(data))
+        // Restore whatever trip was open before a forced reload, in
+        // preference to the usual "next upcoming trip" auto-pick.
+        const restored = restoreTripId != null && data.find(t => t.id === restoreTripId)
+        onOpen(restored || findNextUpcoming(data), restored ? restoreToday : undefined)
       }
     }
     catch (e) { setError(e.message) }
