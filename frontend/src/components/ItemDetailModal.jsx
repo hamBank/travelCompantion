@@ -487,15 +487,21 @@ function GpxMapCanvas({ pts }) {
       px.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))
       ctx.stroke()
 
-      // start dot (green)
+      // start dot (green) — color alone reads as "go", kept as a plain dot
       ctx.beginPath(); ctx.fillStyle = '#4ade80'
       ctx.arc(px[0].x, px[0].y, 5, 0, Math.PI * 2); ctx.fill()
       ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5; ctx.stroke()
 
-      // end dot (red)
-      ctx.beginPath(); ctx.fillStyle = '#f87171'
-      ctx.arc(px[px.length-1].x, px[px.length-1].y, 5, 0, Math.PI * 2); ctx.fill()
-      ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5; ctx.stroke()
+      // finish — a checkered-flag glyph reads unambiguously as "the end" even
+      // at this map's small on-screen size, unlike a plain red dot (which on a
+      // narrow phone screen was easy to mistake for just another track point,
+      // or for the start dot in a different color).
+      const endPt = px[px.length - 1]
+      ctx.beginPath(); ctx.fillStyle = 'white'
+      ctx.arc(endPt.x, endPt.y, 8, 0, Math.PI * 2); ctx.fill()
+      ctx.font = '13px "Apple Color Emoji", "Noto Color Emoji", sans-serif'
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText('🏁', endPt.x, endPt.y + 1)
 
       // attribution
       ctx.fillStyle = 'rgba(255,255,255,0.7)'
