@@ -597,10 +597,12 @@ export function weatherSegments(stop, items) {
 
 // A stop can hold more than one accommodation item (e.g. a multi-port cruise
 // matched to a single stop) — pick the one with the LAST checkout, not just
-// the first accommodation item encountered in array order.
+// the first accommodation item encountered in array order. Already-checked-
+// out stays (status done, via the pill's own "Mark checked out" action) drop
+// out — once you've checked out there's nothing left to remind about.
 export function latestCheckoutAccommodation(items) {
   return (items || [])
-    .filter(i => i.kind === 'accommodation' && i.details?.checkout)
+    .filter(i => i.kind === 'accommodation' && i.details?.checkout && i.status !== 'done')
     .reduce((latest, i) => (!latest || i.details.checkout > latest.details.checkout) ? i : latest, null)
 }
 
@@ -825,6 +827,20 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const purchaseItems = visibleItems.filter(i => i.kind === 'purchase')
 
   const checkoutAccom = latestCheckoutAccommodation(items)
+  const [checkoutBusy, setCheckoutBusy] = useState(false)
+  async function markCheckedOut() {
+    if (checkoutBusy || !checkoutAccom || (!canEdit && !canQueueEdit)) return
+    setCheckoutBusy(true)
+    try {
+      if (canQueueEdit) {
+        await offlineQueue.enqueue({ entity: 'item', entityId: checkoutAccom.id, changes: { status: 'done' }, base: { status: checkoutAccom.status } })
+      } else {
+        await updateItemStatus(checkoutAccom.id, 'done')
+      }
+      onUpdate?.()
+    } catch { /* pill just stays put — user can retry */ }
+    finally { setCheckoutBusy(false) }
+  }
 
   async function cycleStatus(e) {
     e.stopPropagation()
@@ -1025,6 +1041,17 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               <span style={{ color: 'var(--kind-accommodation)' }} className="font-medium whitespace-nowrap shrink-0">Check out</span>
               <span style={{ color: 'var(--text)' }} className="truncate">{checkoutAccom.name}</span>
               <span style={{ color: 'var(--text-faint)' }} className="ml-auto shrink-0">{fmtDayTime(checkoutAccom.details.checkout)}</span>
+              {(canEdit || canQueueEdit) && (
+                <button
+                  onClick={markCheckedOut}
+                  disabled={checkoutBusy}
+                  title="Mark checked out"
+                  style={{ color: 'var(--kind-accommodation)', border: '1px solid color-mix(in srgb, var(--kind-accommodation) 40%, transparent)' }}
+                  className="shrink-0 rounded-full p-1 hover:opacity-70 transition-opacity disabled:opacity-50"
+                >
+                  <Check size={11} aria-hidden="true" style={{ display: 'block' }} />
+                </button>
+              )}
             </div>
           )}
 

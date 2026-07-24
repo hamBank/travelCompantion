@@ -598,6 +598,20 @@ describe('latestCheckoutAccommodation', () => {
     const withCheckout = accom(2, '2026-08-07T18:00')
     expect(latestCheckoutAccommodation([noCheckout, withCheckout])).toBe(withCheckout)
   })
+
+  it('drops an already-checked-out (status done) stay, even if its checkout is the latest', () => {
+    // Marked checked out via the pill's own "Mark checked out" action — once
+    // done there's nothing left to remind about, so an earlier still-pending
+    // stay's checkout should surface instead.
+    const doneLater = { ...accom(1, '2026-08-13T09:00'), status: 'done' }
+    const pendingEarlier = accom(2, '2026-08-07T18:00')
+    expect(latestCheckoutAccommodation([doneLater, pendingEarlier])).toBe(pendingEarlier)
+  })
+
+  it('returns null when the only accommodation with a checkout is already done', () => {
+    const done = { ...accom(1, '2026-08-07T18:00'), status: 'done' }
+    expect(latestCheckoutAccommodation([done])).toBeNull()
+  })
 })
 
 // ── weatherSegments ──────────────────────────────────────────────────────────
