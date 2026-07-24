@@ -21,12 +21,54 @@ class FlightLiveError(Exception):
     non-JSON response. str(e) is a caller-facing detail message."""
 
 
-def fetch_flight(flight_iata: str, dep_date: str) -> Optional[dict]:
+def _parse_local_scheduled(local_str: Optional[str]) -> Optional[datetime]:
+    """AeroDataBox local time '2026-07-24 21:35+08:00' -> naive
+    datetime(2026,7,24,21,35) — the offset is dropped since it's meant to
+    represent the same local wall-clock value we store ourselves."""
+    if not local_str:
+        return None
+    try:
+        return datetime.strptime(local_str[:16], "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+
+
+def _best_match(flights: list, stored_depart: Optional[str]) -> Optional[dict]:
+    """AeroDataBox's number+date endpoint isn't guaranteed to return exactly
+    one flight for a given number/date — a reused flight number, or their
+    date bucketing landing on a different UTC/local day than expected, can
+    both surface more than one candidate. Blindly taking the first one risks
+    handing back an already-departed (or already-landed) instance of the same
+    flight number while the one actually stored on this item hasn't left yet
+    — confirmed live for AY132, which showed "EnRoute" 12 hours before its
+    real departure. Pick whichever candidate's own scheduled departure is
+    closest to our stored depart_time instead."""
+    if not flights:
+        return None
+    if len(flights) == 1 or not stored_depart:
+        return flights[0]
+    try:
+        stored_dt = datetime.strptime(str(stored_depart)[:16], "%Y-%m-%dT%H:%M")
+    except ValueError:
+        return flights[0]
+
+    def _diff(f):
+        local = (f.get("departure") or {}).get("scheduledTime", {}).get("local")
+        cand = _parse_local_scheduled(local)
+        return abs((cand - stored_dt).total_seconds()) if cand else float("inf")
+
+    return min(flights, key=_diff)
+
+
+def fetch_flight(flight_iata: str, dep_date: str, stored_depart: Optional[str] = None) -> Optional[dict]:
     """Look up a flight by IATA flight number + departure date (YYYY-MM-DD).
 
-    Returns the first matching flight dict, or None when AeroDataBox has no
-    data for that flight/date. Raises FlightLiveError on network failure, a
-    non-2xx response, or a non-JSON body.
+    When AeroDataBox returns more than one candidate for that number/date,
+    `stored_depart` (the item's own full depart_time, "YYYY-MM-DDTHH:MM")
+    disambiguates by picking whichever is scheduled closest to it — see
+    _best_match. Returns None when AeroDataBox has no data for that
+    flight/date. Raises FlightLiveError on network failure, a non-2xx
+    response, or a non-JSON body.
     """
     # Shares RapidAPI's per-second cap with flight_alert_subscriptions.py's
     # webhook calls — same key, same limit (see backend/rate_limit.py).
@@ -65,7 +107,7 @@ def fetch_flight(flight_iata: str, dep_date: str) -> Optional[dict]:
     record_external_call("aerodatabox", ok=True)
 
     flights = body if isinstance(body, list) else body.get("data", [])
-    return flights[0] if flights else None
+    return _best_match(flights, stored_depart)
 
 
 def delay_min(movement: dict) -> Optional[int]:

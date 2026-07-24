@@ -289,7 +289,7 @@ def test_send_flight_alerts_skips_webhook_subscribed_flights(session):
             details_extra={"alert_subscription_id": "sub-1"})
 
     fetch_calls = []
-    def fetch(iata, date):
+    def fetch(iata, date, stored_depart=None):
         fetch_calls.append(iata)
         return None
 
@@ -302,7 +302,7 @@ def test_send_flight_alerts_still_polls_unsubscribed_flights(session):
     _flight(session, stop, (NOW + timedelta(hours=5)).isoformat())
 
     fetch_calls = []
-    def fetch(iata, date):
+    def fetch(iata, date, stored_depart=None):
         fetch_calls.append(iata)
         return None
 

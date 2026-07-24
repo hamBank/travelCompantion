@@ -576,7 +576,7 @@ def send_flight_alerts(session: Session, *, now: Optional[datetime] = None,
         session.commit()
 
         try:
-            live = fetch(flight_iata, str(depart_local)[:10])
+            live = fetch(flight_iata, str(depart_local)[:10], depart_local)
         except flight_live.FlightLiveError:
             continue  # one flight's failure shouldn't stop the run
         if live is None:

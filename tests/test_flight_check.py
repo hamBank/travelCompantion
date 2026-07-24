@@ -297,3 +297,82 @@ def test_fetch_flight_requests_with_location(client, session, flight_item, monke
 
     client.get(f"/items/{flight_item['id']}/flight-check")
     assert captured["params"] == {"withLocation": "true"}
+
+
+# ── Multi-result disambiguation ──────────────────────────────────────────────
+# Regression: AeroDataBox's number+date lookup isn't guaranteed to return
+# exactly one flight — a reused flight number, or their date bucketing
+# landing on a different UTC/local day, can surface more than one candidate.
+# Blindly taking flights[0] risks handing back an already-departed instance
+# of the same number — confirmed live for AY132, reported as showing
+# "EnRoute" 12 hours before its actual departure.
+
+def test_picks_the_candidate_closest_to_the_stored_depart_time_not_flights_zero(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
+    # flight_item's stored depart_time is "2026-07-24T21:35". flights[0] here
+    # is a stale, already-airborne instance from the day before; the second
+    # entry is the one that actually matches what's stored.
+    wrong_day = _live_flight(status="EnRoute", **{
+        "departure": {"airport": {"iata": "SIN"}, "scheduledTime": {"local": "2026-07-23 21:35+08:00", "utc": "2026-07-23 13:35"}},
+    })
+    correct_day = _live_flight(status="Expected")  # 2026-07-24 21:35+08:00, matches flight_item exactly
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None, headers=None):
+            return FakeResponse({"data": [wrong_day, correct_day]})
+    monkeypatch.setattr(flight_live.httpx, "Client", FakeClient)
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    assert body["flight_status"] == "Expected"
+
+
+def test_picks_the_closest_candidate_even_when_neither_is_a_close_match(client, session, flight_item, monkeypatch):
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
+    # Neither candidate is genuinely close to the stored depart_time
+    # (2026-07-24) — there's no arbitrary "good enough" cutoff, it always
+    # picks whichever is nearest, so Feb 2 (closer to Jul 24 than Jan 1) wins.
+    farther = _live_flight(status="Landed", **{
+        "departure": {"airport": {"iata": "SIN"}, "scheduledTime": {"local": "2026-01-01 21:35+08:00", "utc": "2026-01-01 13:35"}},
+    })
+    closer = _live_flight(status="Canceled", **{
+        "departure": {"airport": {"iata": "SIN"}, "scheduledTime": {"local": "2026-02-02 21:35+08:00", "utc": "2026-02-02 13:35"}},
+    })
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None, headers=None):
+            return FakeResponse({"data": [farther, closer]})
+    monkeypatch.setattr(flight_live.httpx, "Client", FakeClient)
+
+    body = client.get(f"/items/{flight_item['id']}/flight-check").json()
+    assert body["flight_status"] == "Canceled"
+
+
+def test_best_match_unit_prefers_closest_scheduled_departure():
+    stored = "2026-07-24T21:35"
+    candidates = [
+        {"departure": {"scheduledTime": {"local": "2026-07-23 21:35+08:00"}}},
+        {"departure": {"scheduledTime": {"local": "2026-07-24 21:40+08:00"}}},
+        {"departure": {"scheduledTime": {"local": "2026-07-25 21:35+08:00"}}},
+    ]
+    assert flight_live._best_match(candidates, stored) is candidates[1]
+
+
+def test_best_match_unit_returns_none_for_empty_list():
+    assert flight_live._best_match([], "2026-07-24T21:35") is None
+
+
+def test_best_match_unit_returns_first_when_only_one_candidate():
+    only = [{"departure": {"scheduledTime": {"local": "2026-01-01 00:00+00:00"}}}]
+    assert flight_live._best_match(only, "2026-07-24T21:35") is only[0]
+
+
+def test_best_match_unit_returns_first_when_stored_depart_is_missing_or_unparseable():
+    candidates = [{"a": 1}, {"b": 2}]
+    assert flight_live._best_match(candidates, None) is candidates[0]
+    assert flight_live._best_match(candidates, "not-a-date") is candidates[0]
