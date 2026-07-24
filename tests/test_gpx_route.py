@@ -139,3 +139,32 @@ def test_gpx_map_happy_path_traces_the_actual_recorded_points(client, session, w
     # Start/end markers still included, same convention as river-map.
     assert "label%3AA" in FakeStaticMapsClient.last_url
     assert "label%3AB" in FakeStaticMapsClient.last_url
+
+
+def test_gpx_map_falls_back_to_track_endpoints_when_no_named_locations(client, session, monkeypatch):
+    # A GPX-only item (uploaded straight from a device, no manually-typed
+    # start/end location text) previously got no A/B markers at all — the
+    # track drew fine, but the map gave no visual cue for which end was
+    # which. Reported directly against a real cycling item.
+    monkeypatch.setattr(items_mod, "_STATIC_MAPS_KEY", "test-key")
+    monkeypatch.setattr(items_mod.httpx, "Client", FakeStaticMapsClient)
+
+    trip = client.post("/trips/", json={"name": "Test Trip"}).json()
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned"
+    }).json()
+    item = client.post(f"/stops/{stop['id']}/items", json={
+        "kind": "cycling", "name": "Morning ride", "status": "pending",
+        "details": {},  # no start_location/end_location at all
+    }).json()
+    client.post(
+        f"/items/{item['id']}/gpx",
+        files={"file": ("ride.gpx", io.BytesIO(_GPX_WITH_ELEVATION), "application/gpx+xml")},
+    )
+
+    r = client.get(f"/items/{item['id']}/gpx-map")
+    assert r.status_code == 200
+    url = FakeStaticMapsClient.last_url
+    # Falls back to the track's own first/last coordinates as the markers.
+    assert "markers=color%3Agreen%7Clabel%3AA%7C41.9%2C12.5" in url
+    assert "markers=color%3Ared%7Clabel%3AB%7C41.902%2C12.502" in url
