@@ -15,12 +15,42 @@ AERODATABOX_WEBHOOK_SECRET=<long random string, e.g. openssl rand -hex 24>
 PUBLIC_BASE_URL=https://tripplan.hups.club
 ```
 
-Without those two vars everything behaves exactly as before (pure polling).
-With them, the notification cron reconciles subscriptions each tick, polling
-skips subscribed flights (and remains the per-flight fallback for failed
-creates), and the credit balance auto-refills below a floor of
-`FLIGHT_ALERT_CREDIT_FLOOR` (default 20) by `FLIGHT_ALERT_CREDIT_REFILL`
-(default 50) API units.
+**Retune: reconcile cadence blew the monthly quota (2026-07-25).** The
+account hit 100% of the 600-unit/month free tier within days of activation.
+Root cause: `reconcile_subscriptions` was wired into the 15-minute
+notification cron and makes at least 2 AeroDataBox calls *every tick
+regardless of activity* (`get_balance` + `list_subscriptions`, both
+unconditional) — 96 ticks/day × 2 calls = ~192/day, ~5,760+/month from that
+guaranteed baseline overhead alone, before counting any actual
+subscribe/refill/coverage-check calls or the still-active fallback polling
+for unsubscribable flights. The "each tick" line above was the bug, not a
+description of the intended design.
+
+Fixed by decoupling reconciliation onto its own cron, 4x coarser:
+`scripts/reconcile_flight_alerts.py` on a dedicated systemd timer
+(`OnCalendar=00/4:00:00`, ~360 calls/month baseline) instead of piggybacking
+on `send_notifications.py`'s 15-minute one. `scripts/send_notifications.py`
+no longer imports or calls `flight_alert_subscriptions` at all. Also added an
+emergency spend-control lever: `FLIGHT_ALERT_CREDIT_REFILL=0` now skips the
+refill API call entirely (previously it still fired the call requesting 0
+credits, which itself costs a quota unit) — lets an operator stop new spend
+for the rest of an exhausted month without fully disabling webhook mode
+(which would fall back to full per-flight polling, itself not free).
+
+**Deploying this fix to an already-provisioned server needs one manual
+step** — `deploy.sh`'s systemd unit `enable --now` calls only run on a fresh
+install, not `--update`, so the new timer must be enabled once by hand:
+```
+sudo systemctl daemon-reload
+sudo systemctl enable --now travelcomp-flight-reconcile.timer
+```
+
+With webhook mode active, this reconcile timer subscribes/unsubscribes
+flights and tops up credits on its own 4-hourly cadence; polling (still on
+the 15-minute notification cron) skips subscribed flights (and remains the
+per-flight fallback for failed creates), and the credit balance auto-refills
+below a floor of `FLIGHT_ALERT_CREDIT_FLOOR` (default 20) by
+`FLIGHT_ALERT_CREDIT_REFILL` (default 50) API units.
 
 **Rate limiting (found immediately in production, 2026-07-18):** the first
 live reconcile run 429'd — RapidAPI's BASIC plan rejects two AeroDataBox

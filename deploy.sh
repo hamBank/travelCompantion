@@ -434,6 +434,39 @@ RandomizedDelaySec=60
 [Install]
 WantedBy=timers.target" || true
 
+# scripts/reconcile_flight_alerts.py (plan-14) deliberately runs on its OWN,
+# much coarser timer, not the 15-minute notifications one above — every
+# reconcile makes at least 2 AeroDataBox calls (get_balance + list
+# subscriptions) regardless of whether anything changed, and *:0/15 (96
+# ticks/day) blew through the 600-unit/month free-tier budget on that
+# guaranteed overhead alone within days (confirmed live 2026-07 — the account
+# hit 100% for the month). Every 4 hours = 6 ticks/day = ~360 calls/month
+# baseline, leaving real headroom for actual subscribes/refills/coverage
+# checks. A newly-added flight being subscribed up to ~4h later than instantly
+# is a fine trade — polling remains that flight's fallback in the meantime.
+write_unit "/etc/systemd/system/${SERVICE_NAME}-flight-reconcile.service" "[Unit]
+Description=Travel Companion AeroDataBox flight-alert subscription reconcile
+
+[Service]
+Type=oneshot
+User=$APP_USER
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$ENV_FILE
+ExecStart=$VENV/bin/python $APP_DIR/scripts/reconcile_flight_alerts.py
+StandardOutput=append:/var/log/travelcomp/flight-reconcile.log
+StandardError=append:/var/log/travelcomp/flight-reconcile.log" || true
+
+write_unit "/etc/systemd/system/${SERVICE_NAME}-flight-reconcile.timer" "[Unit]
+Description=Run Travel Companion AeroDataBox flight-alert reconcile every 4 hours
+
+[Timer]
+OnCalendar=00/4:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target" || true
+
 # scripts/pg_backup.sh has the same gap too, but it's Postgres-only (reads
 # $APP_DIR/.pg-bootstrap for the DB password) — most installs stay on SQLite
 # (CLAUDE.md's default), where that file never exists. Guard the ExecStart so
@@ -498,6 +531,7 @@ if ! $UPDATE_ONLY; then
   systemctl enable --now "${SERVICE_NAME}-update.path"
   systemctl enable --now "${SERVICE_NAME}-weather.timer"
   systemctl enable --now "${SERVICE_NAME}-notifications.timer"
+  systemctl enable --now "${SERVICE_NAME}-flight-reconcile.timer"
   systemctl enable --now "${SERVICE_NAME}-backup.timer"
   systemctl enable --now "${SERVICE_NAME}-loctz.timer"
   ok "Systemd units created and enabled: ${SERVICE_FILE}"
