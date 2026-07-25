@@ -47,9 +47,32 @@ async function cachedFallback(path) {
 // touched by logout), so queued edits still sync after signing back in.
 export const AUTH_EXPIRED_EVENT = 'tc-auth-expired'
 
+// A GET whose response the service worker's StaleWhileRevalidate strategy
+// can't answer from cache (nothing cached yet for this URL — e.g. the very
+// first network-controlled load of a session, since a page's own first load
+// is never SW-intercepted) falls through to a real network fetch with no
+// bound on how long that can take while genuinely offline: unlike a clean
+// "no network" rejection, a flaky/borderline connection can leave the fetch
+// neither resolving nor rejecting for a long time. Racing it against this
+// timeout — and falling back to reading Cache Storage directly, same as the
+// deploy-down path below — means a cold cache reads as "no data yet" within
+// a few seconds instead of leaving the UI stuck on a loading spinner.
+const READ_TIMEOUT_MS = 5000
+
+function withReadTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error('Request timed out')), ms)
+    promise.then(
+      v => { clearTimeout(id); resolve(v) },
+      e => { clearTimeout(id); reject(e) },
+    )
+  })
+}
+
 async function req(path, opts = {}) {
   const token = getToken()
-  const r = await fetch(path, {
+  const method = (opts.method || 'GET').toUpperCase()
+  const doFetch = () => fetch(path, {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -57,6 +80,19 @@ async function req(path, opts = {}) {
     cache: 'no-store',
     ...opts,
   })
+
+  let r
+  if (method === 'GET') {
+    try {
+      r = await withReadTimeout(doFetch(), READ_TIMEOUT_MS)
+    } catch (e) {
+      const cached = await cachedFallback(path)
+      if (cached !== null) return cached
+      throw e
+    }
+  } else {
+    r = await doFetch()
+  }
   // Only when a token was actually sent: a 401 on a token-less request (e.g.
   // a failed login attempt on the login page) is not an expired session.
   if (r.status === 401 && token && typeof window !== 'undefined') {
@@ -71,7 +107,6 @@ async function req(path, opts = {}) {
     const confirmedDown = r.status !== 503 || path === '/health' || await isRealDeployDown()
     if (confirmedDown) {
       markServerDown()
-      const method = (opts.method || 'GET').toUpperCase()
       if (method === 'GET') {
         const cached = await cachedFallback(path)
         if (cached !== null) return cached
