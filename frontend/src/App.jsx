@@ -102,7 +102,13 @@ function AppShell({ user, onLogout }) {
   // reloaded (see main.jsx's update banner and navState.js).
   const savedNavRef = useRef(getSavedNav())
 
-  function openTrip(trip, todayOverride) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(todayOverride ?? getDefaultToToday()); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
+  // The "open in Today view by default" setting is an explicit, persistent
+  // user preference — it must win over restoreToday (navState.js's "resume
+  // exactly where a forced reload/process-eviction interrupted you", which
+  // is otherwise saved on every trip open and would silently pin the app to
+  // whatever view mode happened to be active last time, defeating the
+  // setting on nearly every subsequent open).
+  function openTrip(trip, todayOverride) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(getDefaultToToday() || (todayOverride ?? false)); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
   function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false); clearNav() }
 
   // Keep the last-open trip/view-mode saved so a forced reload can restore
