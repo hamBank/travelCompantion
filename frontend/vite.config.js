@@ -80,9 +80,17 @@ export default defineConfig({
             },
           },
           {
-            // NetworkFirst for all GET API reads: fresh data when online,
-            // cached copy when offline. Times out after 4s to surface cached
-            // data quickly on slow connections.
+            // StaleWhileRevalidate for all GET API reads: a cached copy (when
+            // present) resolves immediately so first paint never blocks on the
+            // network, while a background fetch silently refreshes the cache
+            // for next time. This used to be NetworkFirst with a 4s timeout,
+            // which meant every cold boot — online or off — waited up to 4s
+            // per request (auth config, then trips, sequentially) before any
+            // cached content could render. Real-time freshness is still
+            // covered by TripTimeline's separate data_version poller, so
+            // trading "always network-fresh on first paint" for "instant paint,
+            // refreshed shortly after" doesn't lose update-detection — it just
+            // stops the first paint from waiting on it.
             //
             // /auth/config, /pending, and /health are included alongside the
             // itinerary paths so a cold start while offline (app killed,
@@ -99,10 +107,9 @@ export default defineConfig({
               request.method === 'GET' &&
               !url.searchParams.has('sync') &&
               ['/trips', '/stops', '/items', '/import', '/auth', '/pending', '/health'].some(p => url.pathname.startsWith(p)),
-            handler: 'NetworkFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'api-reads',
-              networkTimeoutSeconds: 4,
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 30 * 24 * 60 * 60,
