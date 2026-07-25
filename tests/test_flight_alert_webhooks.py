@@ -171,6 +171,20 @@ def test_reconcile_refills_when_below_floor(session):
     assert summary["credits"] == fas.CREDIT_REFILL
 
 
+def test_reconcile_skips_refill_when_credit_refill_is_zero(session, monkeypatch):
+    # Emergency spend-control lever: setting FLIGHT_ALERT_CREDIT_REFILL=0 must
+    # skip the refill call entirely (not just request 0 credits) — refilling
+    # spends real API quota 1:1, and the whole point of the escape hatch is to
+    # stop that spend for the rest of an already-exhausted month.
+    monkeypatch.setattr(fas, "CREDIT_REFILL", 0)
+    _, stop = _seed_trip(session)
+    api = FakeApi(balance=0)
+    summary = fas.reconcile_subscriptions(session, now=NOW, request=api)
+    assert summary["refilled"] == 0
+    assert summary["credits"] == 0
+    assert not any(c[0] == "POST" and c[1] == "/subscriptions/balance/refill" for c in api.calls)
+
+
 def test_reconcile_failed_create_leaves_no_id_so_polling_covers_it(session, monkeypatch):
     _, stop = _seed_trip(session)
     item = _flight(session, stop, (NOW + timedelta(hours=10)).isoformat())

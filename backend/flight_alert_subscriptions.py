@@ -237,10 +237,15 @@ def reconcile_subscriptions(session: Session, *, now: Optional[datetime] = None,
             session.add(item)
 
     # Balance first: a create against a zero balance yields a paused
-    # subscription, so top up before subscribing anything new.
+    # subscription, so top up before subscribing anything new. Refilling
+    # spends real API quota (1:1) — CREDIT_REFILL=0 is a deliberate escape
+    # hatch (no code change/restart needed beyond an env edit) to stop that
+    # spend for the rest of a month whose quota is already exhausted, without
+    # having to fully disable webhook mode (which would fall back to full
+    # per-flight polling instead — itself not free of quota either).
     try:
         credits = get_balance(request=request)
-        if credits < CREDIT_FLOOR:
+        if credits < CREDIT_FLOOR and CREDIT_REFILL > 0:
             credits = refill_balance(CREDIT_REFILL, request=request)
             summary["refilled"] = CREDIT_REFILL
         summary["credits"] = credits

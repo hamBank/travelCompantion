@@ -123,6 +123,28 @@ degraded-payload rule, or add a third writer of `WeatherCache`, update/wire up
 `is_degraded()` there too — each writer forgetting it is the same production
 incident via a different code path.
 
+## Metered external APIs — budget against the cron, not just the feature
+AeroDataBox's free tier is 600 units/month, and it got fully consumed within
+days of shipping plan-14's webhook reconciler (2026-07-25) — not from flight
+volume, but from `reconcile_subscriptions` being wired into the 15-minute
+notification cron. It makes 2+ calls **every tick regardless of whether
+anything changed** (`get_balance` + `list_subscriptions`), and 96 ticks/day
+is ~5,760+ calls/month from that guaranteed overhead alone, on a 600/month
+budget. The bug wasn't "too many flights" — it was "a fixed per-call cost
+multiplied by a cron cadence nobody checked against the actual budget."
+
+Before wiring **any** metered external API into a cron job that runs more
+than a few times a day: compute `(calls made per tick, including anything
+unconditional) × (ticks per month)` and compare it to the provider's actual
+quota — not to what "feels reasonable." If the result doesn't comfortably
+fit with headroom for real usage on top, either give that job its own
+coarser timer (see `scripts/reconcile_flight_alerts.py`'s dedicated 4-hourly
+one, split out from the 15-minute `scripts/send_notifications.py`) or make
+the unconditional part of the call actually conditional. `backend/metrics.py`'s
+`travelcomp_external_requests_total{service=...}` counter (and, for
+AeroDataBox specifically, the `travelcomp_flight_alert_credits` gauge) makes
+this observable — check it, don't just estimate from reading the code.
+
 ## Timezone handling — which clock, and why it's not obvious
 Multiple pieces of this app each need "what time/day is it" for a different
 purpose, and each needs a **different** clock. Getting this backwards has
