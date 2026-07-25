@@ -385,10 +385,17 @@ export default function App() {
 }
 
 function AuthenticatedApp() {
-  const [authReady, setAuthReady] = useState(false)
+  // A stored token means we already know the answer to "let this device in?"
+  // regardless of what /auth/config says — so authReady/user start truthy
+  // immediately instead of waiting on that network round-trip to settle.
+  // Without this, every cold boot (online or off) blocked first paint behind
+  // getAuthConfig()'s full request lifecycle before showing anything but a
+  // blank screen, even for a returning user who was clearly already signed in.
+  const hasStoredToken = !!localStorage.getItem('tc-token')
+  const [authReady, setAuthReady] = useState(hasStoredToken)
   const [authEnabled, setAuthEnabled] = useState(false)
   const [googleClientId, setGoogleClientId] = useState('')
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState(hasStoredToken ? { fromToken: true } : null)
 
   useEffect(() => {
     getAuthConfig()
@@ -398,7 +405,7 @@ function AuthenticatedApp() {
         if (!cfg.enabled) {
           // No auth configured — go straight in
           setUser({ email: 'dev@local', name: 'Dev', picture: '' })
-        } else {
+        } else if (!hasStoredToken) {
           // Check for existing token
           const token = localStorage.getItem('tc-token')
           if (token) setUser({ fromToken: true })
@@ -406,8 +413,10 @@ function AuthenticatedApp() {
       })
       .catch(() => {
         // Backend unreachable — allow offline access if a token exists
-        const token = localStorage.getItem('tc-token')
-        if (token) setUser({ fromToken: true })
+        if (!hasStoredToken) {
+          const token = localStorage.getItem('tc-token')
+          if (token) setUser({ fromToken: true })
+        }
       })
       .finally(() => setAuthReady(true))
   }, [])
