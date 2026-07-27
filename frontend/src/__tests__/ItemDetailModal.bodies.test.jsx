@@ -92,3 +92,38 @@ describe('ItemDetailModal — TourBody', () => {
     expect(screen.getByText('12')).toBeInTheDocument()
   })
 })
+
+// Purchase and food previously had no detail modal at all, so item.notes —
+// entered in the edit form for every kind — rendered nowhere for them.
+describe('ItemDetailModal — PurchaseFoodBody', () => {
+  it('renders location (as a maps link), description, link, cost, and notes for a purchase', () => {
+    const item = {
+      id: 5, kind: 'purchase', name: 'Leather wallet', status: 'pending',
+      notes: 'Ask about the discount for cash',
+      link: 'https://example.com/wallet',
+      cost: '€45',
+      details: { location: 'Florence leather market', description: 'Handmade, tan color' },
+    }
+    render(<ItemDetailModal item={item} onClose={() => {}} />)
+    const link = screen.getByText('Florence leather market')
+    expect(link.closest('a')).toHaveAttribute(
+      'href',
+      expect.stringContaining(encodeURIComponent('Florence leather market'))
+    )
+    expect(screen.getByText('Handmade, tan color')).toBeInTheDocument()
+    expect(screen.getByText('https://example.com/wallet')).toBeInTheDocument()
+    expect(screen.getByText('Ask about the discount for cash')).toBeInTheDocument()
+  })
+
+  it('renders description and notes for a food item (no location row)', () => {
+    const item = {
+      id: 6, kind: 'food', name: 'Gelato stop', status: 'pending',
+      notes: 'Try the pistachio',
+      details: { description: 'Best gelato in the neighborhood' },
+    }
+    render(<ItemDetailModal item={item} onClose={() => {}} />)
+    expect(screen.getByText('Best gelato in the neighborhood')).toBeInTheDocument()
+    expect(screen.getByText('Try the pistachio')).toBeInTheDocument()
+    expect(screen.queryByText('Where')).not.toBeInTheDocument()
+  })
+})

@@ -245,6 +245,30 @@ function ActivityBody({ item }) {
   )
 }
 
+// Shared by purchase and food — the two differ only in whether a location
+// row applies (FoodForm doesn't store one).
+function PurchaseFoodBody({ item }) {
+  const d = item.details ?? {}
+  return (
+    <div className="space-y-0">
+      {d.location && (
+        <Row label="Where">
+          <a href={mapsUrl(d.location)} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="hover:underline">{d.location}</a>
+        </Row>
+      )}
+      {d.description && <Row label="Description">{d.description}</Row>}
+      {item.link && (
+        <Row label="Link">
+          <a href={item.link} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="hover:underline break-all">{item.link}</a>
+        </Row>
+      )}
+      {item.cost && <Row label="Cost"><CostDisplay item={item} /></Row>}
+    </div>
+  )
+}
+
 function ShowBody({ item }) {
   const d = item.details ?? {}
   return (
@@ -967,6 +991,8 @@ const KIND_COLOR = {
   transfer:      'var(--kind-transfer)',
   tour:          'var(--kind-tour)',
   show:          'var(--kind-show)',
+  purchase:      'var(--kind-purchase)',
+  food:          'var(--kind-food)',
 }
 
 export default function ItemDetailModal({ item: initialItem, onClose, onEdit, onDeleted, onSave, isNavModal = false }) {
@@ -1059,6 +1085,7 @@ export default function ItemDetailModal({ item: initialItem, onClose, onEdit, on
           {item.kind === 'walk'          && <WalkBody item={item} />}
           {item.kind === 'transfer'      && <TransferBody item={item} />}
           {item.kind === 'tour'          && <TourBody item={item} />}
+          {(item.kind === 'purchase' || item.kind === 'food') && <PurchaseFoodBody item={item} />}
           {/* Notes apply to every kind — shown only when filled (note items show it as their body). */}
           {item.kind !== 'note' && item.notes && <Row label="Notes">{item.notes}</Row>}
           <AttachmentsSection itemId={item.id} />
