@@ -15,6 +15,7 @@ import { Copy } from 'lucide-react'
 import { getPowerbankPolicy } from '../powerbank.js'
 import PowerbankDetailModal from './PowerbankDetailModal.jsx'
 import { fmtDayTime, fmtDay } from '../dates.js'
+import { AttachmentsSection, NeedsBookingChip } from './ItemDetailModal.jsx'
 
 const fmtDateTime = fmtDayTime
 const hhmm = v => { const m = String(v ?? '').match(/T(\d{2}:\d{2})/); return m ? m[1] : '' }
@@ -393,6 +394,9 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
             {flightLabel && (
               <div style={{ color: 'var(--accent-alt)' }} className="text-xs mt-0.5">{flightLabel}</div>
             )}
+            <div className="flex items-center gap-2 flex-wrap mt-0.5">
+              <NeedsBookingChip details={d} />
+            </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {d.flight_number && <FlightCheckTrigger check={check} />}
@@ -558,6 +562,8 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
           })()}
 
           <PowerbankPanel airline={d.airline} />
+
+          <AttachmentsSection itemId={item.id} />
         </div>
 
         <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose}

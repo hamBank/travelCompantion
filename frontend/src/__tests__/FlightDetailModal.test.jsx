@@ -6,13 +6,17 @@ vi.mock('../api.js', () => ({
   updateItem: vi.fn(),
   updateItemStatus: vi.fn(),
   deleteItem: vi.fn(),
+  // AttachmentsSection (mounted via ItemDetailModal.jsx, now shared with
+  // FlightDetailModal) fetches its own list on mount.
+  listAttachments: vi.fn().mockResolvedValue([]),
+  uploadAttachment: vi.fn(), deleteAttachment: vi.fn(), fetchAttachmentBlob: vi.fn(),
   // Unused by these tests — stubbed only because offlineQueue.js (imported
   // by DetailActions.jsx) reads these named exports at module load time.
   updateStop: vi.fn(),
   updatePackItem: vi.fn(),
 }))
 
-import { updateItemStatus } from '../api.js'
+import { updateItemStatus, listAttachments } from '../api.js'
 import FlightDetailModal, { formatStatus, formatPosition, powerbankSummary } from '../components/FlightDetailModal.jsx'
 import { getPowerbankPolicy } from '../powerbank.js'
 
@@ -167,6 +171,39 @@ describe('FlightDetailModal — independent sections', () => {
     // summary (a sibling, deliberately unrelated section) still shows.
     expect(screen.queryByText('Booking')).not.toBeInTheDocument()
     expect(screen.getByText(/In-flight use/)).toBeInTheDocument()
+  })
+})
+
+// Flight/rail have their own dedicated modals instead of the shared
+// ItemDetailModal, so they'd previously missed shared chrome added there —
+// the attachments section (boarding passes/e-tickets are the most natural
+// attachment in the whole app) and the needs-booking chip (a detail any
+// kind can carry, set in ItemEditModal's shared chrome).
+describe('FlightDetailModal — attachments + needs-booking chip', () => {
+  function baseItem(details) {
+    return { id: 1, kind: 'flight', name: 'Flight', details }
+  }
+
+  it('renders an existing attachment', async () => {
+    listAttachments.mockResolvedValue([{ id: 1, filename: 'boarding-pass.pdf', size: 2048 }])
+    render(<FlightDetailModal item={baseItem({ flight_number: 'QF37' })} onClose={() => {}} />)
+    expect(await screen.findByText(/boarding-pass\.pdf/)).toBeInTheDocument()
+  })
+
+  it('shows the needs-booking chip with a book-by date', () => {
+    render(
+      <FlightDetailModal
+        item={baseItem({ flight_number: 'QF37', needs_booking: true, book_by: '2026-08-01' })}
+        onClose={() => {}}
+      />
+    )
+    expect(screen.getByText(/Needs booking/)).toBeInTheDocument()
+    expect(screen.getByText(/book by/)).toBeInTheDocument()
+  })
+
+  it('does not show the needs-booking chip when unset', () => {
+    render(<FlightDetailModal item={baseItem({ flight_number: 'QF37' })} onClose={() => {}} />)
+    expect(screen.queryByText(/Needs booking/)).not.toBeInTheDocument()
   })
 })
 

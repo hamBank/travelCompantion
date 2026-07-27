@@ -10,6 +10,7 @@ import RichText from './RichText.jsx'
 import CopyText from './CopyText.jsx'
 import { Copy } from 'lucide-react'
 import { fmtDayTime } from '../dates.js'
+import { AttachmentsSection, NeedsBookingChip } from './ItemDetailModal.jsx'
 
 const DB_HOSTS = ['https://v6.db.transport.rest', 'https://v5.db.transport.rest']
 const SWISS    = 'https://transport.opendata.ch/v1'
@@ -403,6 +404,9 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
             {trainLabel && (
               <div style={{ color: 'var(--kind-rail)' }} className="text-xs mt-0.5">{trainLabel}</div>
             )}
+            <div className="flex items-center gap-2 flex-wrap mt-0.5">
+              <NeedsBookingChip details={d} />
+            </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {!/mobigo/i.test(d.operator || '') && (
@@ -517,6 +521,8 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
               )}
             </div>
           )}
+
+          <AttachmentsSection itemId={item.id} />
         </div>
 
         <DetailActions item={item} onEdit={onEdit} onDeleted={onDeleted} onClose={onClose}
