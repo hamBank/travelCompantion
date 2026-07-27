@@ -59,6 +59,44 @@ function Row({ label, children }) {
   )
 }
 
+// Stored opening_hours (a 7-element Monday-first array of Google weekday_text
+// strings, see closedOnDay in StopCard.jsx for the same contract) is only
+// ever *consumed* elsewhere (ClosedChip's closed-venue warning) — this is
+// the one place it's actually shown to the user. forDate is the item's own
+// day (item.scheduled_at), used to highlight that day's line; without a
+// date the row still offers "All hours" with no line highlighted.
+function HoursRow({ hours, forDate }) {
+  const [expanded, setExpanded] = useState(false)
+  if (hours == null) return null
+  // Legacy string form — show as-is on one row.
+  if (!Array.isArray(hours)) return <Row label="Hours">{String(hours)}</Row>
+  // Never render a false line: a malformed length renders nothing, same
+  // conservatism as closedOnDay.
+  if (hours.length !== 7) return null
+  let todayLine = null
+  const m = typeof forDate === 'string' && forDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) {
+    const d = new Date(`${forDate.slice(0, 10)}T12:00:00`)
+    if (!isNaN(d)) todayLine = hours[(d.getDay() + 6) % 7]
+  }
+  return (
+    <Row label="Hours">
+      <span>
+        {todayLine ?? 'See all'}
+        <button onClick={() => setExpanded(e => !e)}
+          style={{ color: 'var(--accent)' }} className="ml-2 text-xs hover:underline">
+          {expanded ? 'Hide' : 'All hours'}
+        </button>
+        {expanded && (
+          <span className="block mt-1 space-y-0.5" style={{ color: 'var(--text-muted)' }}>
+            {hours.map((line, i) => <span key={i} className="block text-xs">{line}</span>)}
+          </span>
+        )}
+      </span>
+    </Row>
+  )
+}
+
 function AccommodationBody({ item }) {
   const d = item.details ?? {}
   return (
@@ -248,6 +286,7 @@ function ActivityBody({ item }) {
              style={{ color: 'var(--accent)' }} className="hover:underline">{d.location}</a>
         </Row>
       )}
+      <HoursRow hours={d.opening_hours} forDate={item.scheduled_at} />
       {d.contact_phone && (
         <Row label="Phone">
           <a href={`tel:${d.contact_phone}`} style={{ color: 'var(--accent)' }} className="hover:underline">
@@ -302,6 +341,7 @@ function ShowBody({ item }) {
              style={{ color: 'var(--accent)' }} className="hover:underline">{d.location}</a>
         </Row>
       )}
+      <HoursRow hours={d.opening_hours} forDate={item.scheduled_at} />
       {d.booking_ref && <Row label="Booking ref">{d.booking_ref}</Row>}
       {d.description && <Row label="Description">{d.description}</Row>}
       {d.contact_phone && (
@@ -339,6 +379,7 @@ function RestaurantBody({ item }) {
             </a>
           </Row>
         )}
+        <HoursRow hours={d.opening_hours} forDate={item.scheduled_at} />
         {d.contact_phone && (
           <Row label="Phone">
             <a href={`tel:${d.contact_phone}`} style={{ color: 'var(--accent)' }} className="hover:underline">
@@ -387,6 +428,18 @@ function NoteBody({ item }) {
   return (
     <div className="space-y-0">
       {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
+      {item.details?.important && (
+        <span
+          style={{
+            color: 'var(--warning)',
+            border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
+            fontSize: '0.6rem',
+          }}
+          className="inline-block px-1.5 py-0.5 rounded uppercase tracking-wide font-medium mt-1"
+        >
+          ⚠ Important
+        </span>
+      )}
       {item.notes && (
         <div style={{ color: 'var(--text)' }} className="text-sm py-1">
           <RichText>{item.notes}</RichText>
@@ -825,6 +878,7 @@ function TourBody({ item }) {
                style={{ color: 'var(--accent)' }} className="hover:underline">{d.meeting_point}</a>
           </Row>
         )}
+        <HoursRow hours={d.opening_hours} forDate={item.scheduled_at} />
         {d.operator && <Row label="Operator">{d.operator}</Row>}
         {d.tour_type && <Row label="Type"><span className="capitalize">{d.tour_type}</span></Row>}
         {d.duration && <Row label="Duration">{d.duration}</Row>}

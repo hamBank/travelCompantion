@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 
 vi.mock('../api.js', () => ({
   fetchGpxText: vi.fn().mockResolvedValue(null),
@@ -125,5 +125,65 @@ describe('ItemDetailModal — PurchaseFoodBody', () => {
     expect(screen.getByText('Best gelato in the neighborhood')).toBeInTheDocument()
     expect(screen.getByText('Try the pistachio')).toBeInTheDocument()
     expect(screen.queryByText('Where')).not.toBeInTheDocument()
+  })
+})
+
+// opening_hours is stored on activity/show/restaurant/tour items but was
+// only ever *consumed* (ClosedChip's closed-venue warning), never shown.
+describe('ItemDetailModal — HoursRow', () => {
+  const HOURS = [
+    'Monday: 9:00 AM – 5:00 PM',
+    'Tuesday: 9:00 AM – 5:00 PM',
+    'Wednesday: 9:00 AM – 5:00 PM',
+    'Thursday: 9:00 AM – 5:00 PM',
+    'Friday: 9:00 AM – 5:00 PM',
+    'Saturday: 10:00 AM – 2:00 PM',
+    'Sunday: Closed',
+  ]
+
+  it('highlights the item day and expands to show all lines on click', () => {
+    // 2026-08-05 is a Wednesday -> Monday-first index 2.
+    const item = {
+      id: 7, kind: 'activity', name: 'Museum visit', status: 'pending', notes: '',
+      scheduled_at: '2026-08-05T10:00:00',
+      details: { opening_hours: HOURS },
+    }
+    render(<ItemDetailModal item={item} onClose={() => {}} />)
+    expect(screen.getByText(/Wednesday: 9:00 AM/)).toBeInTheDocument()
+    expect(screen.queryByText(/Sunday: Closed/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('All hours'))
+    expect(screen.getByText(/Sunday: Closed/)).toBeInTheDocument()
+  })
+
+  it('renders legacy string hours as-is', () => {
+    const item = {
+      id: 8, kind: 'restaurant', name: 'Trattoria', status: 'pending', notes: '',
+      details: { opening_hours: 'Daily 12pm-11pm' },
+    }
+    render(<ItemDetailModal item={item} onClose={() => {}} />)
+    expect(screen.getByText('Daily 12pm-11pm')).toBeInTheDocument()
+  })
+
+  it('renders no Hours label for a malformed array', () => {
+    const item = {
+      id: 9, kind: 'show', name: 'Opera', status: 'pending', notes: '',
+      details: { opening_hours: ['Mon: 9-5', 'Tue: 9-5'] },
+    }
+    render(<ItemDetailModal item={item} onClose={() => {}} />)
+    expect(screen.queryByText('Hours')).not.toBeInTheDocument()
+  })
+})
+
+describe('ItemDetailModal — NoteBody important badge', () => {
+  it('renders the Important badge when set', () => {
+    const item = { id: 10, kind: 'note', name: 'Reminder', status: 'pending', notes: 'Bring passport', details: { important: true } }
+    render(<ItemDetailModal item={item} onClose={() => {}} />)
+    expect(screen.getByText('⚠ Important')).toBeInTheDocument()
+  })
+
+  it('does not render the badge when unset', () => {
+    const item = { id: 11, kind: 'note', name: 'Reminder', status: 'pending', notes: 'Bring passport', details: {} }
+    render(<ItemDetailModal item={item} onClose={() => {}} />)
+    expect(screen.queryByText('⚠ Important')).not.toBeInTheDocument()
   })
 })
