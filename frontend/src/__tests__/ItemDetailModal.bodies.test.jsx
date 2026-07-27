@@ -187,3 +187,34 @@ describe('ItemDetailModal — NoteBody important badge', () => {
     expect(screen.queryByText('⚠ Important')).not.toBeInTheDocument()
   })
 })
+
+// The laundry entry's name links out to Google Maps (using its address) so
+// the address is actually actionable, not just inert text — the address
+// itself stays shown as before.
+describe('ItemDetailModal — AccommodationBody laundry entries', () => {
+  it('shows the address and links the name to a Google Maps search for it', () => {
+    const item = {
+      id: 12, kind: 'accommodation', name: 'Hotel Roma', status: 'pending', notes: '',
+      details: {
+        washing: [{ name: 'Wash & Go', address: '12 Via Roma, Rome', rating: 4.5 }],
+      },
+    }
+    render(<ItemDetailModal item={item} onClose={() => {}} />)
+    expect(screen.getByText('12 Via Roma, Rome')).toBeInTheDocument()
+    const link = screen.getByText('Wash & Go')
+    expect(link.closest('a')).toHaveAttribute(
+      'href',
+      expect.stringContaining(encodeURIComponent('12 Via Roma, Rome'))
+    )
+  })
+
+  it('renders the name as plain text (no link) when the entry has no address', () => {
+    const item = {
+      id: 13, kind: 'accommodation', name: 'Hotel Roma', status: 'pending', notes: '',
+      details: { washing: [{ name: 'Wash & Go' }] },
+    }
+    render(<ItemDetailModal item={item} onClose={() => {}} />)
+    const name = screen.getByText('Wash & Go')
+    expect(name.closest('a')).toBeNull()
+  })
+})

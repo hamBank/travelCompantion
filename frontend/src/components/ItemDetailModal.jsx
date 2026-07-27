@@ -236,7 +236,12 @@ function WashingEntry({ e, relevantDays }) {
             Top pick
           </span>
         )}
-        <span className="font-medium text-sm">{e.name}</span>
+        {e.address ? (
+          <a href={mapsUrl(e.address)} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="font-medium text-sm hover:underline">{e.name}</a>
+        ) : (
+          <span className="font-medium text-sm">{e.name}</span>
+        )}
         {e.rating != null && (
           <span style={{ color: 'var(--warning)' }} className="text-xs">★ {e.rating.toFixed(1)}
             {e.review_count != null && <span style={{ color: 'var(--text-faint)' }}> ({e.review_count})</span>}
