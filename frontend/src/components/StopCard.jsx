@@ -2050,12 +2050,15 @@ function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
 function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
   const d = item.details ?? {}
 
   return (
     <>
       <div className="relative group">
-        <div
+        <button
+          onClick={() => setShowDetail(true)}
+          className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-purchase) 6%, var(--surface-2))',
             border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-purchase)`, boxShadow: 'var(--card-shadow)',
@@ -2081,6 +2084,7 @@ function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
                   href={item.link}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={e => e.stopPropagation()}
                   style={{ color: 'var(--kind-purchase)' }}
                   className="text-xs opacity-80 hover:opacity-60 transition-opacity"
                 >
@@ -2089,9 +2093,10 @@ function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
               )}
             </div>
           </div>
-        </div>
+        </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -2107,13 +2112,15 @@ function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
 function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
   const d = item.details ?? {}
 
   return (
     <>
       <div className="relative group">
-        <div
-          className="w-full text-left"
+        <button
+          onClick={() => setShowDetail(true)}
+          className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-food) 6%, var(--surface-2))',
             border: '1px solid var(--border)', borderLeft: `3px solid var(--kind-food)`, boxShadow: 'var(--card-shadow)',
@@ -2144,9 +2151,10 @@ function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
               )}
             </div>
           </div>
-        </div>
+        </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
+      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
