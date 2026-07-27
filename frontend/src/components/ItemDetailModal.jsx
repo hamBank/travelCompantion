@@ -201,8 +201,8 @@ function WashingEntry({ e, relevantDays }) {
       {chips.length > 0 && (
         <div className="flex gap-1 flex-wrap mt-1">
           {chips.map((c, i) => (
-            <span key={i} style={{ background: 'var(--surface)', border: '1px solid var(--border)', fontSize: '0.65rem' }}
-                  className="px-1.5 py-0.5 rounded" style={{ color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: '0.65rem' }}>
+            <span key={i} style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)', fontSize: '0.65rem' }}
+                  className="px-1.5 py-0.5 rounded">
               {c}
             </span>
           ))}
@@ -606,6 +606,46 @@ function CyclingBody({ item }) {
   )
 }
 
+function WalkBody({ item }) {
+  const d = item.details ?? {}
+  return (
+    <>
+      {d.gpx_filename && <GpxMiniMap itemId={item.id} />}
+      <div className="space-y-0">
+        {(d.start_location || d.end_location) && (
+          <Row label="Route">{[d.start_location, d.end_location].filter(Boolean).join(' → ')}</Row>
+        )}
+        {d.difficulty && <Row label="Difficulty"><span className="capitalize">{d.difficulty}</span></Row>}
+        {(d.distance || d.elevation_gain || d.elevation_loss) && (
+          <Row label="Stats">
+            {[d.distance,
+              d.elevation_gain && `↑ ${d.elevation_gain}`,
+              d.elevation_loss && `↓ ${d.elevation_loss}`].filter(Boolean).join('  ·  ')}
+          </Row>
+        )}
+        {d.duration && <Row label="Duration">{d.duration}</Row>}
+        {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
+        {d.description && <Row label="Description">{d.description}</Row>}
+        {d.maps_url && (
+          <Row label="Map">
+            <a href={d.maps_url} target="_blank" rel="noreferrer"
+               style={{ color: 'var(--accent)' }} className="hover:underline break-all">Open in Google Maps ↗</a>
+          </Row>
+        )}
+        {item.cost && <Row label="Cost"><CostDisplay item={item} showIcon={false} /></Row>}
+        {d.gpx_filename && (
+          <Row label="GPX">
+            <button onClick={() => downloadGpx(item.id, d.original_gpx_name)}
+              style={{ color: 'var(--accent)' }} className="hover:underline text-sm text-left">
+              ⬇ {d.original_gpx_name || 'route.gpx'}
+            </button>
+          </Row>
+        )}
+      </div>
+    </>
+  )
+}
+
 function HireBody({ item }) {
   const d = item.details ?? {}
   const VEHICLE_ICON = { car: '🚗', bike: '🚲', scooter: '🛵', van: '🚐', motorcycle: '🏍' }
@@ -696,6 +736,96 @@ function RiverTransferBody({ item }) {
       {d.cost_per_person && <Row label="Per person">{d.cost_per_person}</Row>}
       {item.cost && <Row label="Cost"><CostDisplay item={item} /></Row>}
     </div>
+  )
+}
+
+const TRANSFER_VEHICLE_ICON = { car: '🚗', bike: '🚲', scooter: '🛵', van: '🚐', motorcycle: '🏍', taxi: '🚕' }
+
+function TransferBody({ item }) {
+  const d = item.details ?? {}
+  const icon = TRANSFER_VEHICLE_ICON[d.vehicle_type?.toLowerCase()] ?? '🚗'
+  return (
+    <div className="space-y-0">
+      {(d.start_location || d.end_location) && (
+        <Row label="Route">{[d.start_location, d.end_location].filter(Boolean).join(' → ')}</Row>
+      )}
+      {d.vehicle_type && <Row label="Vehicle">{icon} <span className="capitalize">{d.vehicle_type}</span></Row>}
+      {d.provider && <Row label="Provider">{d.provider}</Row>}
+      {(d.distance || d.duration) && (
+        <Row label="Stats">{[d.distance, d.duration].filter(Boolean).join('  ·  ')}</Row>
+      )}
+      {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
+      {d.booking_ref && <Row label="Booking ref">{d.booking_ref}</Row>}
+      {d.cost_per_person && <Row label="Per person">{d.cost_per_person}</Row>}
+      {item.cost && <Row label="Cost"><CostDisplay item={item} /></Row>}
+      {d.maps_url && (
+        <Row label="Map">
+          <a href={d.maps_url} target="_blank" rel="noreferrer"
+             style={{ color: 'var(--accent)' }} className="hover:underline break-all">Open in Google Maps ↗</a>
+        </Row>
+      )}
+    </div>
+  )
+}
+
+function TourBody({ item }) {
+  const d = item.details ?? {}
+  return (
+    <>
+      <div className="space-y-0">
+        {item.scheduled_at && <Row label="When">{fmtDateTime(item.scheduled_at)}</Row>}
+        {d.meeting_point && (
+          <Row label="Meeting point">
+            <a href={mapsUrl(d.meeting_point)} target="_blank" rel="noreferrer"
+               style={{ color: 'var(--accent)' }} className="hover:underline">{d.meeting_point}</a>
+          </Row>
+        )}
+        {d.operator && <Row label="Operator">{d.operator}</Row>}
+        {d.tour_type && <Row label="Type"><span className="capitalize">{d.tour_type}</span></Row>}
+        {d.duration && <Row label="Duration">{d.duration}</Row>}
+        {d.language && <Row label="Language">{d.language}</Row>}
+        {d.group_size && <Row label="Group size">{d.group_size}</Row>}
+        {d.contact_phone && (
+          <Row label="Phone">
+            <a href={`tel:${d.contact_phone}`} style={{ color: 'var(--accent)' }} className="hover:underline">
+              {d.contact_phone}
+            </a>
+          </Row>
+        )}
+        {item.link && (
+          <Row label="Website">
+            <a href={item.link} target="_blank" rel="noreferrer"
+               style={{ color: 'var(--accent)' }} className="hover:underline break-all">{item.link}</a>
+          </Row>
+        )}
+      </div>
+      {(d.booking_ref || item.cost || d.cost_per_person) && (
+        <div
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
+          className="p-3 mt-4 space-y-1.5"
+        >
+          <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2 font-medium">Booking</p>
+          {d.booking_ref && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-faint)' }}>Ref</span>
+              <CopyText value={d.booking_ref}>{d.booking_ref}</CopyText>
+            </div>
+          )}
+          {d.cost_per_person && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-faint)' }}>Per person</span>
+              <span>{d.cost_per_person}</span>
+            </div>
+          )}
+          {item.cost && (
+            <div className="flex justify-between gap-4 text-sm">
+              <span style={{ color: 'var(--text-faint)' }}>Cost</span>
+              <CostDisplay item={item} showIcon={false} />
+            </div>
+          )}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -833,6 +963,10 @@ const KIND_COLOR = {
   cycling:       'var(--kind-cycling)',
   hire:          'var(--kind-hire)',
   river_transfer:'var(--kind-river_transfer)',
+  walk:          'var(--kind-walk)',
+  transfer:      'var(--kind-transfer)',
+  tour:          'var(--kind-tour)',
+  show:          'var(--kind-show)',
 }
 
 export default function ItemDetailModal({ item: initialItem, onClose, onEdit, onDeleted, onSave, isNavModal = false }) {
@@ -922,6 +1056,9 @@ export default function ItemDetailModal({ item: initialItem, onClose, onEdit, on
           {item.kind === 'cycling'       && <CyclingBody item={item} />}
           {item.kind === 'hire'          && <HireBody item={item} />}
           {item.kind === 'river_transfer' && <RiverTransferBody item={item} />}
+          {item.kind === 'walk'          && <WalkBody item={item} />}
+          {item.kind === 'transfer'      && <TransferBody item={item} />}
+          {item.kind === 'tour'          && <TourBody item={item} />}
           {/* Notes apply to every kind — shown only when filled (note items show it as their body). */}
           {item.kind !== 'note' && item.notes && <Row label="Notes">{item.notes}</Row>}
           <AttachmentsSection itemId={item.id} />
