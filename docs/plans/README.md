@@ -19,6 +19,10 @@ assigned plan.** Each plan is one PR-sized unit of work.
 | [plan-12c-document-vault-ui.md](plan-12c-document-vault-ui.md) | Document vault — Settings UI, viewer, offline cache | M | plan-12a |
 | [plan-13-passport-ocr.md](plan-13-passport-ocr.md) | Passport MRZ OCR (local Tesseract, no cloud call) with per-field selectable review | M | plan-12a, plan-12c (reads/writes the Documents section) |
 | [plan-14-flight-alert-webhook-migration.md](plan-14-flight-alert-webhook-migration.md) | Investigation: migrate flight live-alerts from polling to AeroDataBox's webhook Flight Alert API | — (spike first) | plan-2 (replaces its polling loop) — **not ready to implement**, see doc |
+| [plan-15a-detail-modal-walk-transfer-tour.md](plan-15a-detail-modal-walk-transfer-tour.md) | Detail-modal bodies for Walk, Road Transfer, Guided Tour (currently render nothing kind-specific) | S–M | — |
+| [plan-15b-detail-modal-purchase-food.md](plan-15b-detail-modal-purchase-food.md) | Detail modals for Purchase and Food & Drink (currently have none — notes/attachments/history inaccessible) | S | — (trivial merge overlap with 15a) |
+| [plan-15c-flight-rail-modal-parity.md](plan-15c-flight-rail-modal-parity.md) | Flight/Rail modals: attachments section + needs-booking chip | S | — |
+| [plan-15d-opening-hours-and-polish.md](plan-15d-opening-hours-and-polish.md) | Display stored opening_hours in detail modals; note Important badge | S | 15a (TourBody mount only — skippable) |
 
 If implementing both plan-2 and plan-10, do plan-2 first — it extracts the
 AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
