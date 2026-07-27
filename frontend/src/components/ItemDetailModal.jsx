@@ -22,6 +22,27 @@ function mapsUrl(address) {
   return `https://maps.google.com/?q=${encodeURIComponent(address)}`
 }
 
+// needs_booking (+ optional book_by) is an optional detail any kind can
+// carry (set in ItemEditModal's shared chrome, below the per-kind forms).
+// Shared across every detail modal — flight/rail have their own headers
+// but must show the same warning, so this is the single source of truth
+// rather than three copies drifting apart.
+export function NeedsBookingChip({ details }) {
+  if (!details?.needs_booking) return null
+  return (
+    <span
+      style={{
+        color: 'var(--warning)',
+        border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
+        fontSize: '0.6rem',
+      }}
+      className="shrink-0 px-1.5 py-0.5 rounded uppercase tracking-wide font-medium"
+    >
+      Needs booking{details.book_by ? ` · book by ${fmtDay(details.book_by)}` : ''}
+    </span>
+  )
+}
+
 function Row({ label, children }) {
   if (!children) return null
   return (
@@ -859,7 +880,7 @@ function formatAttachmentSize(bytes) {
   return `${(bytes / 1048576).toFixed(1)}MB`
 }
 
-function AttachmentsSection({ itemId }) {
+export function AttachmentsSection({ itemId }) {
   const [attachments, setAttachments] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -1050,18 +1071,7 @@ export default function ItemDetailModal({ item: initialItem, onClose, onEdit, on
             <div className="font-semibold text-base">{item.name}</div>
             <div className="flex items-center gap-2 flex-wrap mt-0.5">
               <span style={{ color: kindColor }} className="text-xs capitalize">{item.kind}</span>
-              {item.details?.needs_booking && (
-                <span
-                  style={{
-                    color: 'var(--warning)',
-                    border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
-                    fontSize: '0.6rem',
-                  }}
-                  className="shrink-0 px-1.5 py-0.5 rounded uppercase tracking-wide font-medium"
-                >
-                  Needs booking{item.details.book_by ? ` · book by ${fmtDay(item.details.book_by)}` : ''}
-                </span>
-              )}
+              <NeedsBookingChip details={item.details} />
             </div>
           </div>
           <button
