@@ -1,4 +1,5 @@
 import io
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
@@ -265,7 +266,9 @@ def test_date_warnings_transit_span_overlaps_window(client: TestClient, trip):
     assert names == {"Late Train": "after stop departure"}
 
 
-def test_date_warnings_uncovered_accommodation_gap(client: TestClient, trip):
+def test_date_warnings_uncovered_accommodation_gap(client: TestClient, trip, monkeypatch):
+    from backend import validation
+    monkeypatch.setattr(validation, "_today", lambda: date(2026, 7, 1))
     # Rome: 4 nights (1-5 Aug). One accommodation only covers the first two;
     # the last two nights have nothing booked — a single gap warning, not two.
     rome = client.post(f"/trips/{trip['id']}/stops", json={
@@ -298,6 +301,42 @@ def test_date_warnings_uncovered_accommodation_fully_covered_not_flagged(client:
     assert gaps == []
 
 
+def test_date_warnings_uncovered_accommodation_fully_past_gap_not_flagged(client: TestClient, trip, monkeypatch):
+    # Same 4-night Rome gap as the fully-in-the-future test above, but "today"
+    # is now after the whole stop — nothing left to book, so it must not nag.
+    from backend import validation
+    monkeypatch.setattr(validation, "_today", lambda: date(2026, 8, 20))
+    rome = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "arrive": "2026-08-01T00:00:00", "depart": "2026-08-05T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/stops/{rome['id']}/items", json={
+        "kind": "accommodation", "name": "Hotel Roma", "status": "pending",
+        "details": {"checkin": "2026-08-01T14:00", "checkout": "2026-08-03T10:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    gaps = [w for w in warnings if w["name"] == "Uncovered accommodation"]
+    assert gaps == []
+
+
+def test_date_warnings_uncovered_accommodation_gap_clipped_to_future_remainder(client: TestClient, trip, monkeypatch):
+    # Same gap (nights of the 3rd and 4th uncovered), but "today" falls in the
+    # middle of it (the 4th) — only the still-future night should be reported,
+    # not the one that's already passed.
+    from backend import validation
+    monkeypatch.setattr(validation, "_today", lambda: date(2026, 8, 4))
+    rome = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "arrive": "2026-08-01T00:00:00", "depart": "2026-08-05T00:00:00", "status": "planned"
+    }).json()
+    client.post(f"/stops/{rome['id']}/items", json={
+        "kind": "accommodation", "name": "Hotel Roma", "status": "pending",
+        "details": {"checkin": "2026-08-01T14:00", "checkout": "2026-08-03T10:00"},
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    gaps = [w for w in warnings if w["name"] == "Uncovered accommodation"]
+    assert len(gaps) == 1
+    assert gaps[0]["reason"] == "1 night uncovered from 2026-08-04"
+
+
 def test_date_warnings_same_day_stop_no_accommodation_not_flagged(client: TestClient, trip):
     # A same-day transit stop (arrive and depart the same calendar day) has zero
     # nights — must never nag for "uncovered" nights regardless of accommodation.
@@ -320,7 +359,9 @@ def test_date_warnings_one_night_stop_no_accommodation_not_flagged(client: TestC
     assert gaps == []
 
 
-def test_date_warnings_multi_night_stop_no_accommodation_flagged(client: TestClient, trip):
+def test_date_warnings_multi_night_stop_no_accommodation_flagged(client: TestClient, trip, monkeypatch):
+    from backend import validation
+    monkeypatch.setattr(validation, "_today", lambda: date(2026, 7, 1))
     # A 2+ night stop with literally no accommodation item is worth flagging even
     # though there's no accommodation item to compare gaps against.
     client.post(f"/trips/{trip['id']}/stops", json={
@@ -347,6 +388,22 @@ def test_date_warnings_missing_inter_stop_transport(client: TestClient, trip):
     assert missing[0]["item_id"] is None
     assert missing[0]["stop_location"] == "Nice → Turin"
     assert missing[0]["reason"] == "No transport found between Nice and Turin around 2026-09-04"
+
+
+def test_date_warnings_missing_inter_stop_transport_past_transition_not_flagged(client: TestClient, trip, monkeypatch):
+    # Same Nice → Turin gap, but "today" is after the transition day — the
+    # journey (per the stored dates) already happened, so nothing to book.
+    from backend import validation
+    monkeypatch.setattr(validation, "_today", lambda: date(2026, 9, 10))
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Nice", "arrive": "2026-09-01T00:00:00", "depart": "2026-09-04T00:00:00", "status": "planned"
+    })
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Turin", "arrive": "2026-09-04T00:00:00", "depart": "2026-09-07T00:00:00", "status": "planned"
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    missing = [w for w in warnings if w["name"] == "Missing transport"]
+    assert missing == []
 
 
 def test_date_warnings_transport_present_on_transition_day_not_flagged(client: TestClient, trip):

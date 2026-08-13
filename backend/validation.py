@@ -10,7 +10,7 @@ low. When a signal is ambiguous, don't warn — a noisy banner just trains the
 user to stop reading it.
 """
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlmodel import Session, select
 from sqlalchemy import nullslast, func
 
@@ -25,6 +25,15 @@ _DATE_FORMATS = (
     "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M",
     "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
 )
+
+
+def _today():
+    """Real UTC calendar day — same reasoning as weather.py's utc_today
+    (never the process's local tz, never date.today()). Exists as its own
+    function (rather than inlining datetime.now(...).date()) purely so
+    tests can monkeypatch it to a fixed date, matching that module's
+    testability pattern."""
+    return datetime.now(timezone.utc).date()
 
 
 def _to_dt(v):
@@ -101,7 +110,7 @@ def _ordered_stops(session: Session, trip_id: int):
     ).all()
 
 
-def _uncovered_night_warnings(stop: Stop, items: list[ItineraryItem]) -> list[dict]:
+def _uncovered_night_warnings(stop: Stop, items: list[ItineraryItem], today) -> list[dict]:
     """Nights within [arrive, depart) not covered by any accommodation item's
     checkin→checkout span. One warning per contiguous gap, not per night.
 
@@ -109,10 +118,15 @@ def _uncovered_night_warnings(stop: Stop, items: list[ItineraryItem]) -> list[di
     look at stops with at least one real night (depart after arrive), and among
     those, only warn when there's either an accommodation item present (so the
     stop clearly did mean to have lodging — just check the gap) or the stop spans
-    2+ nights (long enough that "no lodging at all" is itself worth a flag)."""
+    2+ nights (long enough that "no lodging at all" is itself worth a flag).
+
+    A night that's already passed isn't actionable — there's nothing left to
+    book — so the window is clipped to start at `today` (a gap straddling
+    today only reports its still-future remainder; a gap entirely in the
+    past disappears)."""
     if not stop.arrive or not stop.depart:
         return []
-    arrive_day = stop.arrive.date()
+    arrive_day = max(stop.arrive.date(), today)
     depart_day = stop.depart.date()
     nights_count = (depart_day - arrive_day).days
     if nights_count < 1:
@@ -168,10 +182,13 @@ def _emit_gap(out: list[dict], stop: Stop, gap_start, gap_end):
     })
 
 
-def _missing_transport_warnings(stops: list[Stop], items_by_stop: dict) -> list[dict]:
+def _missing_transport_warnings(stops: list[Stop], items_by_stop: dict, today) -> list[dict]:
     """Consecutive stops with different locations where no transport item (in
     either stop) departs or arrives on/around the transition day. Skipped when
-    either stop lacks any date at all — there's nothing to anchor "around" to."""
+    either stop lacks any date at all — there's nothing to anchor "around" to.
+
+    Also skipped once the transition day itself is already past — nothing
+    left to book for a journey that (per the stored dates) already happened."""
     out = []
     for s1, s2 in zip(stops, stops[1:]):
         if not s1.location or not s2.location or s1.location == s2.location:
@@ -179,6 +196,8 @@ def _missing_transport_warnings(stops: list[Stop], items_by_stop: dict) -> list[
         s1_day = s1.depart.date() if s1.depart else (s1.arrive.date() if s1.arrive else None)
         s2_day = s2.arrive.date() if s2.arrive else (s2.depart.date() if s2.depart else None)
         if s1_day is None or s2_day is None:
+            continue
+        if max(s1_day, s2_day) < today:
             continue
 
         window = set()
@@ -369,7 +388,16 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
     issues: uncovered accommodation nights, missing inter-stop transport, and
     impossible (overlapping) transport connections. `item_id` is null for the
     gap-style warnings (uncovered nights, missing transport) since they aren't
-    about one specific item."""
+    about one specific item.
+
+    The two "coverage" checks (uncovered nights, missing transport) only ever
+    alert on what's still in the future — a gap or a missing connection for a
+    day that's already passed isn't actionable, and the alert clears itself
+    out on its own the next day rather than needing to be dismissed. The
+    other checks (date-range, impossible connections, timezone mismatches)
+    are about data correctness rather than "still need to do this," so they
+    keep firing regardless of date."""
+    today = _today()
     stops = _ordered_stops(session, trip_id)
     dated = [s for s in stops if s.arrive or s.depart]
     last_stop_id = max(dated, key=lambda s: s.depart or s.arrive).id if dated else None
@@ -416,9 +444,9 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
                 })
 
     for stop in stops:
-        out.extend(_uncovered_night_warnings(stop, items_by_stop.get(stop.id, [])))
+        out.extend(_uncovered_night_warnings(stop, items_by_stop.get(stop.id, []), today))
 
-    out.extend(_missing_transport_warnings(stops, items_by_stop))
+    out.extend(_missing_transport_warnings(stops, items_by_stop, today))
 
     stop_by_id = {s.id: s for s in stops}
     all_items_with_stop = [(stop_by_id[it.stop_id], it) for it in all_items if it.stop_id in stop_by_id]
