@@ -45,6 +45,12 @@ def test_weather_endpoint_geocodes_when_coords_missing(client, monkeypatch):
 
     monkeypatch.setattr(wr, "geocode", fake_geocode)
     monkeypatch.setattr(wr, "get_weather", fake_get_weather)
+    # Pin "today" well before the requested date, same reasoning as the cache
+    # test above — otherwise this starts failing for real once the wall-clock
+    # date drifts within Open-Meteo's forecast horizon of 2026-08-20, at which
+    # point the mocked climatology payload trips is_degraded() and the second
+    # request is no longer served from cache.
+    monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 6, 1))
 
     r = client.get("/weather", params={"q": "Duffy, Australia", "start": "2026-08-20", "end": "2026-08-20"})
     assert r.status_code == 200
