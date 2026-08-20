@@ -368,6 +368,17 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
+/* Horizontal drags are for day navigation (useSwipeNav). The page itself must
+   never scroll or rubber-band sideways, or a card whose content is a touch too
+   wide turns a day-swipe into an iOS drag-and-snap — so the same gesture does
+   different things on different cards. `clip` contains any overflow without
+   creating a scroll container (so the sticky header keeps working, unlike
+   `hidden`); overscroll-behavior-x kills the horizontal bounce/back-swipe. */
+html, body {
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
 ::placeholder {
   color: var(--text-faint);
   opacity: 0.7;
