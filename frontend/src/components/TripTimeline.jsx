@@ -4,6 +4,7 @@ import StopCard, { computeCrossStopLayover, itemDateKey, itemOccursOn, isPastPen
 import FlightDetailModal from './FlightDetailModal.jsx'
 import RailDetailModal from './RailDetailModal.jsx'
 import ItemDetailModal from './ItemDetailModal.jsx'
+import ItemEditModal from './ItemEditModal.jsx'
 import DocumentImportModal from './DocumentImportModal.jsx'
 import PendingReview from './PendingReview.jsx'
 import { RoleContext, RealRoleContext, canEdit, effectiveRole } from '../roles.js'
@@ -88,8 +89,10 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   const [markDoneError, setMarkDoneError] = useState(null)
   const [fixingStopTz, setFixingStopTz] = useState(null)  // stop_id mid-autofix, for its button's busy state
   const [navItem, setNavItem] = useState(null)
+  const [editItem, setEditItem] = useState(null)  // item being edited from the nav modal
   const [renderKey, setRenderKey] = useState(0)  // force remount on data refresh
   const allItemsRef    = useRef([])
+  const navItemRef     = useRef(null)   // mirrors navItem for the (deps-[]) swipe handler
   const dataVersionRef = useRef(0)      // last known data_version from /health
   const pendingRefresh = useRef(false)  // queued while edit modal is open
   const showInbound = useShowInbound()
@@ -136,12 +139,37 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
       if (idx === -1) return
       const target = direction === 'next' ? items[idx + 1] : items[idx - 1]
       if (!target) return   // at boundary — modal stays open
-      getCurrentModal()?.closeFn()
+      // First swipe transfers from a card-owned detail modal to the nav modal;
+      // once already in the nav modal we just swap the item. (Calling the nav
+      // modal's registered close would run the close-to-list return logic —
+      // jumping the day / scrolling — on every swipe, which we don't want.)
+      if (!navItemRef.current) getCurrentModal()?.closeFn()
       setNavItem(target)
     }
     window.addEventListener('modalNav', handleModalNav)
     return () => window.removeEventListener('modalNav', handleModalNav)
   }, [])
+
+  useEffect(() => { navItemRef.current = navItem }, [navItem])
+
+  // Closing the nav modal (✕ / backdrop / Esc) should leave you where the item
+  // you last viewed lives: in day-view mode, on that item's day; otherwise
+  // scrolled to that item in the full timeline. (Swiping between items doesn't
+  // go through here — see handleModalNav.)
+  const closeNav = useCallback(() => {
+    const it = navItemRef.current
+    setNavItem(null)
+    if (!it) return
+    if (todayMode) {
+      const day = itemDateKey(it)
+      if (day) setSelectedDay(day)
+    } else if (typeof document !== 'undefined') {
+      requestAnimationFrame(() =>
+        document.querySelector(`[data-item-id="${it.id}"]`)
+          ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      )
+    }
+  }, [todayMode])
 
   // Today-view day navigation — j/k, ArrowLeft/ArrowRight, and swipe left/
   // right, mirroring the detail-modal item navigation above. Clamped to the
@@ -538,15 +566,27 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
     </RealRoleContext.Provider>
     </RoleContext.Provider>
 
-    {navItem && (() => {
-      const close = () => setNavItem(null)
-      const save  = updated => setNavItem(updated)
-      if (navItem.kind === 'flight')
-        return <FlightDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
-      if (navItem.kind === 'rail')
-        return <RailDetailModal key={navItem.id} item={navItem} onClose={close} onSave={save} isNavModal />
-      return <ItemDetailModal key={navItem.id} item={navItem} onClose={close} onEdit={() => {}} isNavModal />
+    {navItem && !editItem && (() => {
+      // Fully-wired so a swiped-to item behaves exactly like a tapped-open one:
+      // save refreshes the underlying cards, Edit opens the shared editor, and
+      // Delete closes back to the list. Close returns via closeNav.
+      const save = updated => { setNavItem(updated); load({ background: true }) }
+      const edit = () => setEditItem(navItem)
+      const del  = () => { setNavItem(null); load({ background: true }) }
+      const common = { key: navItem.id, item: navItem, onClose: closeNav, onSave: save, onEdit: edit, onDeleted: del, isNavModal: true }
+      if (navItem.kind === 'flight') return <FlightDetailModal {...common} />
+      if (navItem.kind === 'rail')   return <RailDetailModal {...common} />
+      return <ItemDetailModal {...common} />
     })()}
+
+    {editItem && (
+      <ItemEditModal
+        item={editItem}
+        onClose={() => setEditItem(null)}
+        onSave={updated => { setEditItem(null); setNavItem(updated); load({ background: true }) }}
+        onDeleted={() => { setEditItem(null); setNavItem(null); load({ background: true }) }}
+      />
+    )}
     </>
   )
 }
