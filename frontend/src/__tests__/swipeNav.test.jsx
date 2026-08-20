@@ -50,6 +50,22 @@ describe('useSwipeNav', () => {
     expect(onDirection).not.toHaveBeenCalled()
   })
 
+  it('ignores a horizontal drag that selected text (so copy works)', () => {
+    const onDirection = vi.fn()
+    const spy = vi.spyOn(window, 'getSelection').mockReturnValue({
+      isCollapsed: false,
+      toString: () => 'ABC123',
+    })
+    try {
+      render(<Harness onDirection={onDirection} />)
+      touch('touchstart', 240, 100)
+      touch('touchend', 140, 110)     // a clear left swipe geometrically…
+      expect(onDirection).not.toHaveBeenCalled()  // …but text was selected
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('does not attach listeners when disabled', () => {
     const onDirection = vi.fn()
     render(<Harness onDirection={onDirection} enabled={false} />)
