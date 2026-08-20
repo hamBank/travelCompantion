@@ -993,7 +993,9 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
               else if (item.kind === 'show')          card = <ShowCard {...props} />
               else if (item.kind === 'hire')          card = <HireCard {...props} />
               else card = <ItemRow {...props} />
-              return <PastPendingFrame key={item.id} item={item}>{card}</PastPendingFrame>
+              // data-item-id is the scroll anchor TripTimeline uses to return the
+              // full-timeline view to whichever item you last viewed in the nav modal.
+              return <div key={item.id} data-item-id={item.id}><PastPendingFrame item={item}>{card}</PastPendingFrame></div>
             }
             return (
               <div className="space-y-2">
