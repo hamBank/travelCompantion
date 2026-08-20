@@ -237,7 +237,7 @@ export default function FlightDetailModal({ item: initialItem, onClose, onSave, 
           maxHeight: '90vh',
           borderRadius: '0.75rem',
         }}
-        className="overflow-y-auto"
+        className="overflow-y-auto detail-modal-body"
       >
         {/* Header */}
         <div

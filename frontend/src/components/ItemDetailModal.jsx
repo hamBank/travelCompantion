@@ -515,7 +515,7 @@ export default function ItemDetailModal({ item, onClose, onEdit, onDeleted }) {
           maxHeight: '90vh',
           borderRadius: '0.75rem',
         }}
-        className="overflow-y-auto"
+        className="overflow-y-auto detail-modal-body"
       >
         <div
           style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}

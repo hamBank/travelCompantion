@@ -366,7 +366,7 @@ export default function RailDetailModal({ item: initialItem, onClose, onSave, on
           maxHeight: '90vh',
           borderRadius: '0.75rem',
         }}
-        className="overflow-y-auto"
+        className="overflow-y-auto detail-modal-body"
       >
         {/* Header */}
         <div

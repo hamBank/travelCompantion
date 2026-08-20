@@ -217,7 +217,20 @@ main {
   padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
 }
 
-/* ─── Timeline connector ────────────────────────────────────────── */
+/* ─── Detail modals: selectable text for copy/paste on touch devices ─── */
+/* WebKit (especially a home-screen PWA in standalone mode) suppresses the
+   copy callout and treats a horizontal finger-drag as a pan/navigation
+   gesture, so users can't drag-select a subset of text. Opt the modal body
+   back into text selection and constrain touch gestures to vertical scroll,
+   which frees horizontal drags for selection. */
+.detail-modal-body {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
 .timeline-line {
   position: absolute;
   left: 0.875rem;
