@@ -147,6 +147,11 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   // right, mirroring the detail-modal item navigation above. Clamped to the
   // trip's date span.
   const navigateDay = useCallback(direction => {
+    // A detail/edit modal owns navigation while it's open — otherwise a swipe
+    // meant to page between items (or to select text) would also flip the day
+    // underneath. Mirrors the keyboard guard below. Checked at call time so the
+    // (non-reactive) modal registry reflects the current open modal.
+    if (isEditing() || getCurrentModal()) return
     setSelectedDay(day => (day == null ? day : clampedShiftDay(day, direction, timeline)))
   }, [timeline])
 
