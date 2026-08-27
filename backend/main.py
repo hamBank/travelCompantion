@@ -151,6 +151,8 @@ async def auth_middleware(request: Request, call_next):
 
     from jose import JWTError, jwt
     try:
+        # Signature/expiry gate only. Personal-access-token revocation is checked
+        # in get_current_user, which has the request-scoped DB session.
         jwt.decode(auth_header[7:], JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except JWTError:
         return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)

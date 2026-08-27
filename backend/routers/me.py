@@ -1,16 +1,94 @@
 """Per-user self-service endpoints."""
 import os
 import secrets
+from datetime import datetime
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse
-from sqlmodel import Session, select
+from sqlmodel import Session, SQLModel, select
 
 from ..database import get_session
-from ..auth import get_current_user
-from ..models import UserImportToken, IngestedEmail, IngestedEmailRead
+from ..auth import get_current_user, create_api_token
+from ..models import (
+    UserImportToken, IngestedEmail, IngestedEmailRead, ApiToken, ApiTokenRead,
+)
 
 router = APIRouter()
+
+
+class ApiTokenRequest(SQLModel):
+    # Lifetime in days, clamped to [1, API_TOKEN_EXPIRE_DAYS]. Omit for the default.
+    days: Optional[int] = None
+    label: Optional[str] = None   # optional human label to identify the token later
+
+
+@router.post("/me/api-token")
+def create_personal_api_token(
+    body: Optional[ApiTokenRequest] = None,
+    session: Session = Depends(get_session),
+    user: dict = Depends(get_current_user),
+):
+    """Mint a personal access token for programmatic (non-browser) API use.
+
+    Call this once while signed in to the web app, then use the returned token
+    as `Authorization: Bearer <token>` from a script or agent. It grants the
+    same full account access as a login session — store it like a password. The
+    token is revocable via DELETE /me/api-tokens/{id}. The full token string is
+    returned **only here**, once — we store only its id for later revocation.
+    See docs/programmatic-api.md.
+    """
+    token, jti, exp = create_api_token(user, body.days if body else None)
+    row = ApiToken(
+        jti=jti,
+        user_email=user["email"].lower(),
+        label=(body.label if body and body.label else ""),
+        expires_at=exp,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return {
+        "id": row.id,
+        "token": token,
+        "token_type": "bearer",
+        "label": row.label,
+        "expires_at": exp.replace(microsecond=0).isoformat() + "Z",
+        "email": user["email"],
+    }
+
+
+@router.get("/me/api-tokens", response_model=List[ApiTokenRead])
+def list_personal_api_tokens(
+    session: Session = Depends(get_session),
+    user: dict = Depends(get_current_user),
+):
+    """List this user's personal access tokens (never the secret) — newest
+    first, including already-revoked ones (revoked_at set)."""
+    rows = session.exec(
+        select(ApiToken)
+        .where(ApiToken.user_email == user["email"].lower())
+        .order_by(ApiToken.created_at.desc())
+    ).all()
+    return rows
+
+
+@router.delete("/me/api-tokens/{token_id}", status_code=204)
+def revoke_personal_api_token(
+    token_id: int,
+    session: Session = Depends(get_session),
+    user: dict = Depends(get_current_user),
+):
+    """Revoke one of this user's tokens — it stops authenticating immediately.
+    Idempotent: revoking an already-revoked token is a no-op 204."""
+    row = session.get(ApiToken, token_id)
+    if not row or row.user_email != user["email"].lower():
+        raise HTTPException(status_code=404, detail="Not found")
+    if row.revoked_at is None:
+        row.revoked_at = datetime.utcnow()
+        session.add(row)
+        session.commit()
+    return Response(status_code=204)
 
 _MAIL_DOMAIN = os.getenv("MAIL_DOMAIN", "tripplan.hups.club")
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

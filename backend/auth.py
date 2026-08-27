@@ -4,8 +4,10 @@ from typing import Optional
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
+from sqlmodel import Session
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from .database import get_session
 from .metrics import record_external_call
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
@@ -50,8 +52,55 @@ def create_jwt(user: dict) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+# ── Personal access tokens (programmatic / non-browser clients) ────────────────
+# A PAT is a signed JWT (same signing as the login token, so it passes the auth
+# middleware unchanged) that additionally carries a `jti` backed by an ApiToken
+# row. That makes it *revocable*: get_current_user rejects a token whose jti has
+# no row or a revoked one, so a leaked/retired token can be killed individually
+# without rotating JWT_SECRET. It still grants full account access — treat it
+# like a password. The `scope: "api"` claim keeps it distinguishable in logs and
+# tells get_current_user to run the revocation check. See create_personal_api_token
+# / list / revoke in routers/me.py.
+import secrets  # noqa: E402
+
+API_TOKEN_SCOPE       = "api"
+API_TOKEN_EXPIRE_DAYS = int(os.environ.get("API_TOKEN_EXPIRE_DAYS", "365"))
+
+
+def create_api_token(user: dict, days: Optional[int] = None) -> tuple[str, str, datetime]:
+    """Mint a personal access token for `user`. `days` is clamped to
+    [1, API_TOKEN_EXPIRE_DAYS]; None uses the full default. Returns
+    (token, jti, naive-UTC expiry) — the caller persists an ApiToken row keyed
+    by `jti` so the token can later be listed and revoked."""
+    ttl = API_TOKEN_EXPIRE_DAYS if days is None else max(1, min(int(days), API_TOKEN_EXPIRE_DAYS))
+    exp = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=ttl)
+    jti = secrets.token_urlsafe(12)
+    payload = {
+        "sub":     user["email"],
+        "name":    user.get("name", ""),
+        "picture": user.get("picture", ""),
+        "scope":   API_TOKEN_SCOPE,
+        "jti":     jti,
+        "exp":     exp,
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), jti, exp
+
+
+def api_token_active(session, jti: str) -> bool:
+    """True if `jti` names an ApiToken row that exists and hasn't been revoked.
+    Uses the caller's request-scoped session (so it respects test overrides and
+    opens no extra connection). A blank jti is never active."""
+    if not jti:
+        return False
+    from sqlmodel import select
+    from .models import ApiToken
+    row = session.exec(select(ApiToken).where(ApiToken.jti == jti)).first()
+    return bool(row and row.revoked_at is None)
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_security),
+    session: Session = Depends(get_session),
 ) -> dict:
     if not AUTH_ENABLED:
         return {"email": "dev@local", "name": "Dev", "picture": ""}
@@ -61,13 +110,23 @@ def get_current_user(
         payload = jwt.decode(
             credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM]
         )
-        return {
-            "email":   payload["sub"],
-            "name":    payload.get("name", ""),
-            "picture": payload.get("picture", ""),
-        }
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # Personal access tokens (scope "api") are revocable — reject one whose jti
+    # has been revoked or no longer exists. Login tokens carry no such scope and
+    # skip the lookup. `session` is only a real Session under FastAPI DI; when
+    # get_current_user is called directly (e.g. unit tests) it's the unresolved
+    # Depends marker, so the check is skipped there.
+    if payload.get("scope") == API_TOKEN_SCOPE and isinstance(session, Session):
+        if not api_token_active(session, payload.get("jti")):
+            raise HTTPException(status_code=401, detail="Token revoked")
+
+    return {
+        "email":   payload["sub"],
+        "name":    payload.get("name", ""),
+        "picture": payload.get("picture", ""),
+    }
 
 
 # ── iCal feed tokens ───────────────────────────────────────────────────────────

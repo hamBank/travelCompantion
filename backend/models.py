@@ -315,6 +315,30 @@ class UserImportToken(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class ApiToken(SQLModel, table=True):
+    """Server-side record for a personal access token (see backend/auth.py's
+    create_api_token). The token itself is a signed JWT carrying this row's
+    `jti`; we store the jti — never the token — so a token can be listed and
+    revoked (revoked_at set) without a secret at rest. A token is accepted only
+    while its jti has a row here with revoked_at unset (checked in the auth
+    middleware) AND the JWT's own exp is still valid."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    jti: str = Field(index=True, unique=True)
+    user_email: str = Field(index=True)   # lowercased
+    label: str = Field(default="")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+
+
+class ApiTokenRead(SQLModel):
+    id: int
+    label: str
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+
+
 class Bag(SQLModel, table=True):
     """A piece of luggage for a trip (shared/trip-level). Packing items go in one.
     Bags may nest (parent_id) — e.g. a packing cube inside a suitcase. `packed`
