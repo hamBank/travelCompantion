@@ -1,16 +1,43 @@
 """Per-user self-service endpoints."""
 import os
 import secrets
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from sqlmodel import Session, select
+from sqlmodel import Session, SQLModel, select
 
 from ..database import get_session
-from ..auth import get_current_user
+from ..auth import get_current_user, create_api_token, API_TOKEN_EXPIRE_DAYS
 from ..models import UserImportToken, IngestedEmail, IngestedEmailRead
 
 router = APIRouter()
+
+
+class ApiTokenRequest(SQLModel):
+    # Lifetime in days, clamped to [1, API_TOKEN_EXPIRE_DAYS]. Omit for the default.
+    days: Optional[int] = None
+
+
+@router.post("/me/api-token")
+def create_personal_api_token(
+    body: Optional[ApiTokenRequest] = None,
+    user: dict = Depends(get_current_user),
+):
+    """Mint a personal access token for programmatic (non-browser) API use.
+
+    Call this once while signed in to the web app, then use the returned token
+    as `Authorization: Bearer <token>` from a script or agent. It grants the
+    same full account access as a login session — store it like a password.
+    See docs/programmatic-api.md.
+    """
+    token, exp = create_api_token(user, body.days if body else None)
+    return {
+        "token": token,
+        "token_type": "bearer",
+        "expires_at": exp.replace(microsecond=0).isoformat() + "Z",
+        "email": user["email"],
+    }
 
 _MAIL_DOMAIN = os.getenv("MAIL_DOMAIN", "tripplan.hups.club")
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

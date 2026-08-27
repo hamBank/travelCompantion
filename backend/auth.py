@@ -50,6 +50,34 @@ def create_jwt(user: dict) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+# ── Personal access tokens (programmatic / non-browser clients) ────────────────
+# Same signing as the login JWT, so a PAT passes the auth middleware and
+# get_current_user with no changes — it's just longer-lived and carries a
+# `scope: "api"` tag so it's distinguishable in logs. It grants the SAME access
+# as a login token (full account): treat it like a password. Stateless, so there
+# is no per-token revocation — it self-expires, and rotating JWT_SECRET
+# invalidates every token at once.
+
+API_TOKEN_SCOPE       = "api"
+API_TOKEN_EXPIRE_DAYS = int(os.environ.get("API_TOKEN_EXPIRE_DAYS", "365"))
+
+
+def create_api_token(user: dict, days: Optional[int] = None) -> tuple[str, datetime]:
+    """Mint a personal access token for `user`. `days` is clamped to
+    [1, API_TOKEN_EXPIRE_DAYS]; None uses the full default. Returns
+    (token, naive-UTC expiry)."""
+    ttl = API_TOKEN_EXPIRE_DAYS if days is None else max(1, min(int(days), API_TOKEN_EXPIRE_DAYS))
+    exp = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=ttl)
+    payload = {
+        "sub":     user["email"],
+        "name":    user.get("name", ""),
+        "picture": user.get("picture", ""),
+        "scope":   API_TOKEN_SCOPE,
+        "exp":     exp,
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), exp
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_security),
 ) -> dict:

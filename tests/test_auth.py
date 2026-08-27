@@ -97,6 +97,61 @@ def test_get_current_user_rejects_malformed_token(monkeypatch):
     assert exc.value.status_code == 401
 
 
+# ── create_api_token (personal access tokens) ───────────────────────────────
+
+def test_create_api_token_carries_identity_and_api_scope():
+    token, exp = auth.create_api_token({"email": "a@example.com", "name": "Ann", "picture": "p.png"})
+    payload = jwt.decode(token, auth.JWT_SECRET, algorithms=[auth.JWT_ALGORITHM])
+    assert payload["sub"] == "a@example.com"
+    assert payload["name"] == "Ann"
+    assert payload["scope"] == "api"
+
+
+def test_create_api_token_default_lifetime_is_api_expire_days(monkeypatch):
+    monkeypatch.setattr(auth, "API_TOKEN_EXPIRE_DAYS", 365)
+    token, exp = auth.create_api_token({"email": "a@example.com"})
+    payload = jwt.decode(token, auth.JWT_SECRET, algorithms=[auth.JWT_ALGORITHM])
+    got = datetime.fromtimestamp(payload["exp"], timezone.utc).replace(tzinfo=None)
+    delta = got - datetime.now(timezone.utc).replace(tzinfo=None)
+    assert timedelta(days=364) < delta <= timedelta(days=365)
+
+
+def test_create_api_token_clamps_requested_days(monkeypatch):
+    monkeypatch.setattr(auth, "API_TOKEN_EXPIRE_DAYS", 365)
+    # Over the cap → clamped down; zero/negative → floored to 1.
+    _, exp_hi = auth.create_api_token({"email": "a@example.com"}, days=100000)
+    _, exp_lo = auth.create_api_token({"email": "a@example.com"}, days=0)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    assert (exp_hi - now) <= timedelta(days=365)
+    assert timedelta(hours=23) < (exp_lo - now) <= timedelta(days=1)
+
+
+def test_api_token_authenticates_like_a_login_token(monkeypatch):
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    token, _ = auth.create_api_token({"email": "user@example.com", "name": "User", "picture": "p.png"})
+    user = auth.get_current_user(credentials=_bearer(token))
+    assert user == {"email": "user@example.com", "name": "User", "picture": "p.png"}
+
+
+# ── POST /me/api-token ───────────────────────────────────────────────────────
+
+def test_mint_api_token_endpoint_returns_usable_bearer(client: TestClient, monkeypatch):
+    # Auth disabled in tests → the caller is the dev user; the minted token must
+    # still be a valid bearer once auth is enforced.
+    r = client.post("/me/api-token")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["token_type"] == "bearer"
+    assert data["email"] == "dev@local"
+    payload = jwt.decode(data["token"], auth.JWT_SECRET, algorithms=[auth.JWT_ALGORITHM])
+    assert payload["scope"] == "api"
+
+    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
+    me = client.get("/auth/me", headers={"Authorization": f"Bearer {data['token']}"})
+    assert me.status_code == 200
+    assert me.json()["email"] == "dev@local"
+
+
 # ── verify_google_token ──────────────────────────────────────────────────────
 
 def test_verify_google_token_maps_idinfo_fields(monkeypatch):
