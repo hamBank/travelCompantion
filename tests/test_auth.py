@@ -176,11 +176,8 @@ def test_list_and_revoke_api_tokens(client: TestClient, session: Session):
 
 def test_revoked_token_is_rejected_by_the_auth_gate(client: TestClient, session: Session, monkeypatch):
     """End-to-end: a PAT authenticates on a protected route until its row is
-    revoked, after which the middleware rejects it. `api_token_active` reads the
-    app engine, so point that at the test session's engine for this check."""
+    revoked, after which get_current_user (using the request session) rejects it."""
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
-    from backend import database as database_mod
-    monkeypatch.setattr(database_mod, "engine", session.get_bind())
 
     token, jti, exp = auth.create_api_token({"email": "dev@local", "name": "Dev"})
     from backend.models import ApiToken

@@ -151,18 +151,11 @@ async def auth_middleware(request: Request, call_next):
 
     from jose import JWTError, jwt
     try:
-        payload = jwt.decode(auth_header[7:], JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        # Signature/expiry gate only. Personal-access-token revocation is checked
+        # in get_current_user, which has the request-scoped DB session.
+        jwt.decode(auth_header[7:], JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except JWTError:
         return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)
-
-    # Personal access tokens (scope "api") are revocable: reject one whose jti
-    # has been revoked or no longer exists. Login tokens carry no such scope and
-    # skip the lookup. Runs off the event loop since it hits the DB.
-    if payload.get("scope") == "api":
-        from starlette.concurrency import run_in_threadpool
-        from .auth import api_token_active
-        if not await run_in_threadpool(api_token_active, payload.get("jti")):
-            return JSONResponse({"detail": "Token revoked"}, status_code=401)
 
     return await call_next(request)
 
