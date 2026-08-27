@@ -51,31 +51,51 @@ def create_jwt(user: dict) -> str:
 
 
 # ── Personal access tokens (programmatic / non-browser clients) ────────────────
-# Same signing as the login JWT, so a PAT passes the auth middleware and
-# get_current_user with no changes — it's just longer-lived and carries a
-# `scope: "api"` tag so it's distinguishable in logs. It grants the SAME access
-# as a login token (full account): treat it like a password. Stateless, so there
-# is no per-token revocation — it self-expires, and rotating JWT_SECRET
-# invalidates every token at once.
+# A PAT is a signed JWT (same signing as the login token, so it passes the auth
+# middleware and get_current_user with no changes) that additionally carries a
+# `jti` backed by an ApiToken row. That makes it *revocable*: the middleware
+# rejects a token whose jti has no row or a revoked one, so a leaked/retired
+# token can be killed individually without rotating JWT_SECRET. It still grants
+# full account access — treat it like a password. The `scope: "api"` claim keeps
+# it distinguishable in logs and tells the middleware to run the revocation
+# check. See create_personal_api_token / list / revoke in routers/me.py.
+import secrets  # noqa: E402
 
 API_TOKEN_SCOPE       = "api"
 API_TOKEN_EXPIRE_DAYS = int(os.environ.get("API_TOKEN_EXPIRE_DAYS", "365"))
 
 
-def create_api_token(user: dict, days: Optional[int] = None) -> tuple[str, datetime]:
+def create_api_token(user: dict, days: Optional[int] = None) -> tuple[str, str, datetime]:
     """Mint a personal access token for `user`. `days` is clamped to
     [1, API_TOKEN_EXPIRE_DAYS]; None uses the full default. Returns
-    (token, naive-UTC expiry)."""
+    (token, jti, naive-UTC expiry) — the caller persists an ApiToken row keyed
+    by `jti` so the token can later be listed and revoked."""
     ttl = API_TOKEN_EXPIRE_DAYS if days is None else max(1, min(int(days), API_TOKEN_EXPIRE_DAYS))
     exp = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=ttl)
+    jti = secrets.token_urlsafe(12)
     payload = {
         "sub":     user["email"],
         "name":    user.get("name", ""),
         "picture": user.get("picture", ""),
         "scope":   API_TOKEN_SCOPE,
+        "jti":     jti,
         "exp":     exp,
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), exp
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM), jti, exp
+
+
+def api_token_active(jti: str) -> bool:
+    """True if `jti` names an ApiToken row that exists and hasn't been revoked.
+    Opens its own short-lived session so it's callable from the auth middleware
+    (which has no request-scoped session). A blank jti is never active."""
+    if not jti:
+        return False
+    from sqlmodel import Session, select
+    from .database import engine
+    from .models import ApiToken
+    with Session(engine) as session:
+        row = session.exec(select(ApiToken).where(ApiToken.jti == jti)).first()
+        return bool(row and row.revoked_at is None)
 
 
 def get_current_user(

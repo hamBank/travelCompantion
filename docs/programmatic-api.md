@@ -30,9 +30,9 @@ programmatic use you mint a long-lived **personal access token (PAT)**.
 
 > A PAT grants the **same full access as signing in** — it can read and write
 > everything in your account. Treat it like a password: don't commit it, don't
-> paste it anywhere shared. It is stateless, so it can't be individually
-> revoked — it simply expires (default one year). To revoke *all* tokens at
-> once, rotate `JWT_SECRET` on the server (this also signs everyone out).
+> paste it anywhere shared. Each token is **individually revocable** (§2d) and
+> also self-expires (default one year). The full token string is shown **only
+> once**, when you mint it — only its id is stored, so save it then.
 
 ### 2a. One-time bootstrap — get a session token from the browser
 
@@ -54,23 +54,26 @@ Exchange the session token for a long-lived PAT:
 curl -X POST https://tripplan.hups.club/me/api-token \
   -H "Authorization: Bearer $SESSION_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"days": 365}'
+  -d '{"days": 365, "label": "trip-importer"}'
 ```
 
 Response:
 
 ```json
 {
+  "id": 3,
   "token": "eyJhbGciOiJIUzI1NiIsIn...",
   "token_type": "bearer",
+  "label": "trip-importer",
   "expires_at": "2027-08-20T09:00:00Z",
   "email": "you@example.com"
 }
 ```
 
 - `days` is optional and clamped to `[1, API_TOKEN_EXPIRE_DAYS]` (server default
-  365). Omit the body entirely for the default lifetime.
-- Store `token`; that's what every request below uses.
+  365). `label` is an optional name to recognise the token later. Omit the body
+  entirely for the default lifetime and no label.
+- Store `token` — it's shown **only here**. `id` is what you revoke by (§2d).
 
 If auth isn't configured on the server (`GOOGLE_CLIENT_ID` unset — local dev),
 every request is already the `dev@local` user and no token is needed.
@@ -87,6 +90,25 @@ Quick check that it works:
 curl https://tripplan.hups.club/auth/me -H "Authorization: Bearer $TOKEN"
 # → {"email":"you@example.com","name":"...","picture":"..."}
 ```
+
+### 2d. List and revoke tokens
+
+List your tokens (never the secret — id, label, timestamps, and `revoked_at`):
+
+```bash
+curl https://tripplan.hups.club/me/api-tokens -H "Authorization: Bearer $TOKEN"
+# → [{"id":3,"label":"trip-importer","created_at":"...","expires_at":"...","revoked_at":null}]
+```
+
+Revoke one by id — it stops authenticating immediately (idempotent, `204`):
+
+```bash
+curl -X DELETE https://tripplan.hups.club/me/api-tokens/3 -H "Authorization: Bearer $TOKEN"
+```
+
+Revoke a token the moment it's no longer needed or if it may have leaked. (A
+token also stops working once past `expires_at`, or if the server's `JWT_SECRET`
+is rotated — which invalidates *all* tokens and signs everyone out.)
 
 ---
 

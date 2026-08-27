@@ -99,17 +99,18 @@ def test_get_current_user_rejects_malformed_token(monkeypatch):
 
 # ── create_api_token (personal access tokens) ───────────────────────────────
 
-def test_create_api_token_carries_identity_and_api_scope():
-    token, exp = auth.create_api_token({"email": "a@example.com", "name": "Ann", "picture": "p.png"})
+def test_create_api_token_carries_identity_scope_and_jti():
+    token, jti, exp = auth.create_api_token({"email": "a@example.com", "name": "Ann", "picture": "p.png"})
     payload = jwt.decode(token, auth.JWT_SECRET, algorithms=[auth.JWT_ALGORITHM])
     assert payload["sub"] == "a@example.com"
     assert payload["name"] == "Ann"
     assert payload["scope"] == "api"
+    assert payload["jti"] == jti and jti
 
 
 def test_create_api_token_default_lifetime_is_api_expire_days(monkeypatch):
     monkeypatch.setattr(auth, "API_TOKEN_EXPIRE_DAYS", 365)
-    token, exp = auth.create_api_token({"email": "a@example.com"})
+    token, _jti, exp = auth.create_api_token({"email": "a@example.com"})
     payload = jwt.decode(token, auth.JWT_SECRET, algorithms=[auth.JWT_ALGORITHM])
     got = datetime.fromtimestamp(payload["exp"], timezone.utc).replace(tzinfo=None)
     delta = got - datetime.now(timezone.utc).replace(tzinfo=None)
@@ -119,37 +120,79 @@ def test_create_api_token_default_lifetime_is_api_expire_days(monkeypatch):
 def test_create_api_token_clamps_requested_days(monkeypatch):
     monkeypatch.setattr(auth, "API_TOKEN_EXPIRE_DAYS", 365)
     # Over the cap → clamped down; zero/negative → floored to 1.
-    _, exp_hi = auth.create_api_token({"email": "a@example.com"}, days=100000)
-    _, exp_lo = auth.create_api_token({"email": "a@example.com"}, days=0)
+    _, _, exp_hi = auth.create_api_token({"email": "a@example.com"}, days=100000)
+    _, _, exp_lo = auth.create_api_token({"email": "a@example.com"}, days=0)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     assert (exp_hi - now) <= timedelta(days=365)
     assert timedelta(hours=23) < (exp_lo - now) <= timedelta(days=1)
 
 
-def test_api_token_authenticates_like_a_login_token(monkeypatch):
+def test_api_token_decodes_to_the_user_like_a_login_token(monkeypatch):
+    # get_current_user only decodes claims (revocation is enforced by the
+    # middleware, tested separately) — so a well-formed PAT resolves its user.
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
-    token, _ = auth.create_api_token({"email": "user@example.com", "name": "User", "picture": "p.png"})
+    token, _jti, _exp = auth.create_api_token({"email": "user@example.com", "name": "User", "picture": "p.png"})
     user = auth.get_current_user(credentials=_bearer(token))
     assert user == {"email": "user@example.com", "name": "User", "picture": "p.png"}
 
 
-# ── POST /me/api-token ───────────────────────────────────────────────────────
+# ── /me/api-token(s): mint / list / revoke ───────────────────────────────────
 
-def test_mint_api_token_endpoint_returns_usable_bearer(client: TestClient, monkeypatch):
-    # Auth disabled in tests → the caller is the dev user; the minted token must
-    # still be a valid bearer once auth is enforced.
-    r = client.post("/me/api-token")
+def test_mint_api_token_persists_a_revocable_row(client: TestClient, session: Session):
+    from backend.models import ApiToken
+
+    r = client.post("/me/api-token", json={"label": "cli"})
     assert r.status_code == 200
     data = r.json()
-    assert data["token_type"] == "bearer"
-    assert data["email"] == "dev@local"
+    assert data["token_type"] == "bearer" and data["email"] == "dev@local"
+    assert data["label"] == "cli" and isinstance(data["id"], int)
     payload = jwt.decode(data["token"], auth.JWT_SECRET, algorithms=[auth.JWT_ALGORITHM])
     assert payload["scope"] == "api"
 
+    row = session.get(ApiToken, data["id"])
+    assert row is not None
+    assert row.jti == payload["jti"]
+    assert row.user_email == "dev@local"
+    assert row.revoked_at is None
+
+
+def test_list_and_revoke_api_tokens(client: TestClient, session: Session):
+    from backend.models import ApiToken
+
+    tid = client.post("/me/api-token", json={"label": "one"}).json()["id"]
+
+    listed = client.get("/me/api-tokens").json()
+    assert [t["id"] for t in listed] == [tid]
+    assert listed[0]["revoked_at"] is None
+
+    r = client.delete(f"/me/api-tokens/{tid}")
+    assert r.status_code == 204
+    assert session.get(ApiToken, tid).revoked_at is not None
+
+    # Revoke is idempotent, and a stranger's / unknown id is a 404.
+    assert client.delete(f"/me/api-tokens/{tid}").status_code == 204
+    assert client.delete("/me/api-tokens/999999").status_code == 404
+
+
+def test_revoked_token_is_rejected_by_the_auth_gate(client: TestClient, session: Session, monkeypatch):
+    """End-to-end: a PAT authenticates on a protected route until its row is
+    revoked, after which the middleware rejects it. `api_token_active` reads the
+    app engine, so point that at the test session's engine for this check."""
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
-    me = client.get("/auth/me", headers={"Authorization": f"Bearer {data['token']}"})
-    assert me.status_code == 200
-    assert me.json()["email"] == "dev@local"
+    from backend import database as database_mod
+    monkeypatch.setattr(database_mod, "engine", session.get_bind())
+
+    token, jti, exp = auth.create_api_token({"email": "dev@local", "name": "Dev"})
+    from backend.models import ApiToken
+    row = ApiToken(jti=jti, user_email="dev@local", expires_at=exp)
+    session.add(row); session.commit(); session.refresh(row)
+
+    hdr = {"Authorization": f"Bearer {token}"}
+    assert client.get("/trips/", headers=hdr).status_code == 200   # active → allowed
+
+    row.revoked_at = datetime.utcnow()
+    session.add(row); session.commit()
+    assert client.get("/trips/", headers=hdr).status_code == 401   # revoked → rejected
 
 
 # ── verify_google_token ──────────────────────────────────────────────────────
