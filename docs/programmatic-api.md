@@ -65,7 +65,7 @@ Response:
   "token": "eyJhbGciOiJIUzI1NiIsIn...",
   "token_type": "bearer",
   "label": "trip-importer",
-  "expires_at": "2027-08-20T09:00:00Z",
+  "expires_at": "2027-08-27T21:20:33.123456",
   "email": "you@example.com"
 }
 ```
@@ -74,6 +74,9 @@ Response:
   365). `label` is an optional name to recognise the token later. Omit the body
   entirely for the default lifetime and no label.
 - Store `token` — it's shown **only here**. `id` is what you revoke by (§2d).
+- `expires_at` (here and in §2d's list) is a plain ISO datetime with **no
+  timezone suffix** — it's always UTC, same convention as every other
+  timestamp the API returns.
 
 If auth isn't configured on the server (`GOOGLE_CLIENT_ID` unset — local dev),
 every request is already the `dev@local` user and no token is needed.
@@ -160,6 +163,7 @@ Returns `201` with the stop including its `id`.
 | `scheduled_at` | string | no       | ISO datetime, local wall-clock |
 | `link`         | string | no       | URL |
 | `cost`         | string | no       | Cost-style string, e.g. `"50 EUR"` |
+| `notes`        | string | no       | Free-text notes shown on the item |
 | `status`       | enum   | no       | `pending` (default) · `done` · `skipped` |
 | `details`      | object | no       | Free-form per-kind JSON, see below |
 
@@ -271,9 +275,13 @@ A reliable prompt shape:
 
 - **No idempotency.** Re-running the same POSTs creates duplicate rows. If a run
   might be retried, capture the returned `id`s and don't blindly re-POST.
-- **Errors.** Standard HTTP: `401` (missing/invalid/expired token), `403`
-  (authenticated but not permitted on that trip), `422` (validation error — the
-  body names the offending field), `404` (no such trip/stop).
+- **Errors.** Standard HTTP: `401` (missing/invalid/expired/revoked token),
+  `422` (validation error — the body names the offending field). Permission
+  errors on a trip/stop/item are `404` if you have **no** access to that trip at
+  all (deliberately indistinguishable from the trip not existing, so a probe
+  can't learn it exists) — `403` only if you have **some** role on it but below
+  what the call needs (e.g. a viewer hitting a create endpoint, which needs
+  editor).
 - **One request at a time is fine.** There's no bulk/composite create endpoint
   today; if orchestrating many items becomes painful, a `POST /trips/import`
   that accepts a whole trip in one call would be a natural addition — not built

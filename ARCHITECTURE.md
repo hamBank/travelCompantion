@@ -79,6 +79,8 @@ backend/
     ingest.py        # POST /ingest/email — receives raw .eml from postfix pipe
     pending.py       # GET/PATCH /pending, POST /pending/{id}/apply|discard
     me.py            # GET /me/import-address — stable per-user email forwarding address
+                     #   POST /me/api-token ; GET /me/api-tokens ; DELETE /me/api-tokens/{id}
+                     #   — revocable personal access tokens, see docs/programmatic-api.md
     shared.py        # public (no-login) share-link view of a trip
   static/            # COMPILED frontend output (committed) — served at /
 mail_ingest.py                   # stdlib-only stdin→POST shim (run by postfix pipe)
@@ -182,6 +184,12 @@ sort_order, status`
 `user_email (PK), token, created_at` — the `+token` in a user's stable
 `import+<token>@<MAIL_DOMAIN>` forwarding address.
 
+### ApiToken
+`id, jti (unique), user_email, label, created_at, expires_at?, revoked_at?` —
+one row per minted personal access token (`POST /me/api-token`). Stores only
+the `jti`, never the token itself; `revoked_at` set makes `get_current_user`
+reject that `jti` immediately. See `docs/programmatic-api.md`.
+
 ### Bag / PackingItem (packing list)
 - `Bag`: `id, trip_id, name, parent_id? (self-FK, nesting), packed, created_at`.
   Bags nest via `parent_id` (e.g. a packing cube inside a suitcase). `packed`
@@ -265,6 +273,13 @@ plus a public no-login `share_token` link (`shared.py` router / `SharedTripView.
   stay localhost-only — Apache never proxies it.
 - Google OAuth client id served via `/auth/config`; login posts credential to
   `/auth/google`, returns JWT stored in `localStorage` as `tc-token`.
+- Personal access tokens (`POST /me/api-token`) are long-lived JWTs for
+  non-browser clients (scripts, agents) — same signing/claims as a login JWT
+  plus `scope: "api"` and a `jti`. Unlike a login JWT, revocation is checked:
+  `get_current_user` looks up the `jti` in the `apitoken` table and rejects it
+  if revoked or unknown (`DELETE /me/api-tokens/{id}`), which the auth
+  middleware itself does not do — it only checks signature/expiry. See
+  `docs/programmatic-api.md`.
 - The document vault (`UserDocument`) is **not** trip-scoped or role-gated —
   it's owner-only-by-`user_email`, same identity as everything else, but
   outside the `TripMembership` model entirely.
@@ -307,6 +322,9 @@ Sharing:  GET /shared/{token} ; GET /shared/{token}/timeline   (public, no login
 Import:   POST /import/sheets ; /import/sheets/flights/{trip_id} ; …backfill endpoints
 Auth:     POST /auth/google ; GET /auth/me ; GET /auth/config
 Me:       GET /me/import-address          (generate/return stable email forwarding address)
+          POST /me/api-token ; GET /me/api-tokens ; DELETE /me/api-tokens/{id}
+              (revocable personal access tokens for programmatic use — see
+              docs/programmatic-api.md)
 Ingest:   POST /ingest/email              (localhost-only; secret-auth; called by postfix pipe)
 Pending:  GET /pending[?trip_id=N] ; PATCH /pending/{id} ; POST /pending/{id}/apply|discard
 System:   POST /deploy (GitHub webhook, HMAC) ; GET /health ; GET /currency/convert
