@@ -12,11 +12,12 @@ import PendingReview from './components/PendingReview.jsx'
 import PackingList from './components/PackingList.jsx'
 import OfflineQueueBanner from './components/OfflineQueueBanner.jsx'
 import BudgetSummary from './components/BudgetSummary.jsx'
+import DistanceSummary from './components/DistanceSummary.jsx'
 import DocumentsModal from './components/DocumentsModal.jsx'
 import MenuDropdown from './components/MenuDropdown.jsx'
 import { DEFAULT_THEME } from './themes.js'
 import { getAuthConfig, exportTripPdf, getPending, refreshAuthToken, AUTH_EXPIRED_EVENT } from './api.js'
-import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, Plane } from 'lucide-react'
+import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, Plane, Route } from 'lucide-react'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale, KindFilterContext, getDefaultToToday } from './settings.js'
 import { getSavedNav, saveNav, clearNav } from './navState.js'
@@ -71,6 +72,7 @@ function AppShell({ user, onLogout }) {
   const [packing, setPacking] = useState(false)
   const [today, setToday] = useState(false)
   const [showBudget, setShowBudget] = useState(false)
+  const [showDistance, setShowDistance] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
   const [showImportDoc, setShowImportDoc] = useState(false)
   const online = useOnline()
@@ -204,6 +206,9 @@ function AppShell({ user, onLogout }) {
             {selectedTrip && online && !packing && (
               <MenuItem onClick={() => setShowBudget(true)}><Wallet size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Budget</MenuItem>
             )}
+            {selectedTrip && online && !packing && (
+              <MenuItem onClick={() => setShowDistance(true)}><Route size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Distance</MenuItem>
+            )}
             {online && pendingCount > 0 && (
               <MenuItem onClick={() => setShowImports(true)}>
                 <span style={{ color: 'var(--warning)' }}><Inbox size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Imports ({pendingCount})</span>
@@ -234,6 +239,9 @@ function AppShell({ user, onLogout }) {
           canEdit={online && canEdit(selectedTrip.role)}
           onClose={() => setShowBudget(false)}
         />
+      )}
+      {showDistance && selectedTrip && (
+        <DistanceSummary trip={selectedTrip} onClose={() => setShowDistance(false)} />
       )}
       {showImports && (
         <PendingReview

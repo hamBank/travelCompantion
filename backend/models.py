@@ -486,6 +486,36 @@ class AirportCoverage(SQLModel, table=True):
     checked_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class LocationCoords(SQLModel, table=True):
+    """Cache of location name/IATA code → (lat, lng), resolved on demand by
+    backend/distance.py (never cron-triggered — see CLAUDE.md's "Metered
+    external APIs" note) the first time a trip's distance is computed, then
+    reused forever. A location that fails to resolve is not cached — it's
+    retried on the next computation rather than permanently remembered as
+    "unknown", since a typo'd or since-corrected place name should get another
+    chance.
+    """
+    location: str = Field(primary_key=True)     # normalized place name or IATA code
+    lat: float
+    lng: float
+    resolved_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class UserDistanceTotal(SQLModel, table=True):
+    """Per-user, per-transport-mode distance total in km — recomputed fresh
+    from scratch (never incrementally updated) by
+    backend/distance.py:compute_user_distance_totals whenever a user views
+    their totals, summing every trip they belong to. This table is a cache of
+    that computation, not a ledger, so editing/deleting an item or trip is
+    correctly reflected on the next view rather than needing an explicit
+    adjustment at every write site.
+    """
+    user_email: str = Field(primary_key=True)
+    mode: str = Field(primary_key=True)           # "air" | "rail" | "road" | "bike" | "walking" | "boat"
+    total_km: float = 0.0
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 # ── ItemHistory (versioning / audit log) ──────────────────────────────────────
 
 class ItemHistory(SQLModel, table=True):

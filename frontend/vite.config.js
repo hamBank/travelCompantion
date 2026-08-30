@@ -179,6 +179,7 @@ export default defineConfig({
       '/auth': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
       '/weather': 'http://localhost:8000',
+      '/me': 'http://localhost:8000',
     },
   },
 })
