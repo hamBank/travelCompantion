@@ -176,3 +176,15 @@ def download_ingested_email(
         media_type="message/rfc822",
         filename=f"email-{email_id}.eml",
     )
+
+
+@router.get("/me/distance-totals")
+def get_distance_totals(session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Lifetime distance traveled across every trip this account belongs to
+    (any role), broken down by transport mode. Recomputed fresh on each call
+    from current trip/item data (see backend/distance.py) — not an
+    append-only ledger, so a deleted trip or edited item is reflected
+    immediately, with no adjustment needed anywhere items are written."""
+    from ..distance import compute_user_distance_totals
+    by_mode = compute_user_distance_totals(session, user["email"])
+    return {"by_mode": by_mode, "total_km": round(sum(by_mode.values()), 1)}

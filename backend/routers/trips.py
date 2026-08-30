@@ -240,6 +240,18 @@ def trip_date_warnings(trip_id: int, session: Session = Depends(get_session), us
     return {"warnings": date_warnings(session, trip_id)}
 
 
+@router.get("/{trip_id}/distance")
+def trip_distance(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Distance traveled on this trip, in km, broken down by transport mode
+    (air/rail/road/bike/walking/boat). A mode is present only when at least
+    one item on the trip had a computable distance — see backend/distance.py
+    for what counts as computable per item kind."""
+    require_trip_role(session, user, trip_id, TripRole.viewer)
+    from ..distance import compute_trip_distances
+    by_mode = compute_trip_distances(session, trip_id)
+    return {"by_mode": by_mode, "total_km": round(sum(by_mode.values()), 1)}
+
+
 # ── Timeline ──────────────────────────────────────────────────────────────────
 
 class StopWithItems(StopRead):

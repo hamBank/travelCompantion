@@ -207,6 +207,25 @@ def test_resolve_icao_maps_iata_to_icao():
     assert fas.resolve_icao("FCO", request=api) == "LIRF"
 
 
+def test_airport_location_extracts_lat_lon():
+    def fake_request(method, path, json_body=None):
+        assert path == "/airports/Iata/FCO"
+        return FakeResponse(200, {"icao": "LIRF", "location": {"lat": 41.8045, "lon": 12.2508}})
+    assert fas.airport_location("FCO", request=fake_request) == (41.8045, 12.2508)
+
+
+def test_airport_location_none_when_no_location_in_response():
+    def fake_request(method, path, json_body=None):
+        return FakeResponse(200, {"icao": "LIRF"})
+    assert fas.airport_location("FCO", request=fake_request) is None
+
+
+def test_airport_location_none_on_api_error():
+    def failing_request(method, path, json_body=None):
+        raise fas.FlightAlertApiError("boom")
+    assert fas.airport_location("FCO", request=failing_request) is None
+
+
 def test_check_live_updates_ok_true_for_ok_status():
     api = FakeApi(feed_status={"LIRF": "OK"})
     assert fas.check_live_updates_ok("LIRF", request=api) is True

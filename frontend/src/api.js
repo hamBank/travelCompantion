@@ -198,6 +198,8 @@ export const getTripTimeline = (id, opts = {}) => {
   return req(`/trips/${id}/timeline${qs}`)
 }
 export const getDateWarnings = (id) => req(`/trips/${id}/date-warnings`)
+export const getTripDistance = (id) => req(`/trips/${id}/distance`)
+export const getMyDistanceTotals = () => req(`/me/distance-totals`)
 
 // ── Pending changes (review-before-apply imports) ────────────────────────────
 export const getPending     = (tripId) => req(`/pending${tripId != null ? `?trip_id=${tripId}` : ''}`)

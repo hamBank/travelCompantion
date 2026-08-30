@@ -131,6 +131,21 @@ def resolve_icao(iata: str, *, request=_request) -> Optional[str]:
     return r.json().get("icao")
 
 
+def airport_location(iata: str, *, request=_request) -> Optional[tuple]:
+    """IATA → (lat, lng), same /airports/Iata/{code} endpoint as resolve_icao
+    (a separate call, not a shared one — this and resolve_icao are cached
+    independently in different tables, by different callers, so the modest
+    duplication is simpler than threading one response through two call
+    sites). Used by backend/distance.py for great-circle flight distance."""
+    try:
+        r = request("GET", f"/airports/Iata/{iata}")
+    except FlightAlertApiError:
+        return None
+    loc = r.json().get("location") or {}
+    lat, lng = loc.get("lat"), loc.get("lon")
+    return (lat, lng) if lat is not None and lng is not None else None
+
+
 def check_live_updates_ok(icao: str, *, request=_request) -> bool:
     """FREE TIER — whether `icao`'s live-flight-updates feed is usable. See
     docs/plans/plan-14-flight-alert-webhook-migration.md: confirmed live that
