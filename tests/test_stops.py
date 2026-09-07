@@ -373,9 +373,15 @@ def test_date_warnings_multi_night_stop_no_accommodation_flagged(client: TestCli
     assert gaps[0]["reason"] == "2 nights uncovered from 2026-08-10"
 
 
-def test_date_warnings_missing_inter_stop_transport(client: TestClient, trip):
+def test_date_warnings_missing_inter_stop_transport(client: TestClient, trip, monkeypatch):
     # Nice → Turin, different locations, no transport item anywhere near the
-    # transition day (4 Aug, where Nice departs and Turin arrives).
+    # transition day (4 Sep, where Nice departs and Turin arrives). "Today"
+    # must be pinned before the transition day — the sibling test right below
+    # this one confirms the warning is deliberately suppressed once "today" is
+    # past it, so leaving this on the real clock means the test starts failing
+    # for real the moment the calendar catches up to 2026-09-04 (it did).
+    from backend import validation
+    monkeypatch.setattr(validation, "_today", lambda: date(2026, 8, 20))
     client.post(f"/trips/{trip['id']}/stops", json={
         "location": "Nice", "arrive": "2026-09-01T00:00:00", "depart": "2026-09-04T00:00:00", "status": "planned"
     })
