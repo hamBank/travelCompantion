@@ -546,25 +546,45 @@ else
 fi
 
 # ── 6b. Frontend build ──────────────────────────────────────────────────────────
-# backend/static/ is committed to git — the correct build is already on disk after
-# git reset --hard.  npm is only needed the very first time node_modules doesn't
-# exist yet.  Never run npm on webhook updates (UPDATE_ONLY=true).
+# Rebuild whenever anything under frontend/ has changed since the last build THIS
+# SERVER actually completed — not just "the very first time node_modules doesn't
+# exist yet". That older assumption ("backend/static/ is committed to git, so the
+# correct build is already on disk after git reset --hard") relies on whoever
+# merges a frontend change first rebuilding and committing backend/static/ as its
+# own commit (CLAUDE.md's documented flow). Every merge to main goes through
+# GitHub's squash-merge button, which never runs a local `git push` — so the
+# pre-push hook that's supposed to enforce that convention structurally never
+# sees it. It silently broke twice in one session (2026-09-07: PRs #162 and #164
+# landed with no rebuilt static/, and the server kept serving a bundle from
+# before either) before being caught by hand. Deploy must be able to catch up on
+# its own regardless of whether that commit-time convention was followed.
 NPM="sudo -u $APP_USER HOME=$APP_DIR npm"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/.npm" 2>/dev/null || true
 
-if [[ ! -d "$APP_DIR/frontend/node_modules" ]]; then
-  info "Installing Node dependencies (node_modules absent)"
+FRONTEND_COMMIT="$(git -C "$APP_DIR" log -1 --format=%H -- frontend 2>/dev/null || true)"
+BUILT_COMMIT_FILE="$APP_DIR/.frontend-built-commit"
+BUILT_COMMIT="$(cat "$BUILT_COMMIT_FILE" 2>/dev/null || true)"
+
+if [[ ! -d "$APP_DIR/frontend/node_modules" ]] || [[ "$FRONTEND_COMMIT" != "$BUILT_COMMIT" ]]; then
+  if [[ ! -d "$APP_DIR/frontend/node_modules" ]]; then
+    info "Installing Node dependencies (node_modules absent)"
+  else
+    info "frontend/ changed since the last build on this server (${BUILT_COMMIT:-none} -> $FRONTEND_COMMIT) — rebuilding"
+  fi
   $NPM --prefix "$APP_DIR/frontend" ci --silent \
     || warn "npm ci failed — frontend static files from git will still be served"
 
   if [[ -d "$APP_DIR/frontend/node_modules" ]]; then
     info "Building frontend"
-    $NPM --prefix "$APP_DIR/frontend" run build \
-      || warn "Frontend build failed — static files from git will still be served"
-    ok "Frontend built → backend/static"
+    if $NPM --prefix "$APP_DIR/frontend" run build; then
+      ok "Frontend built → backend/static"
+      sudo -u "$APP_USER" sh -c "echo '$FRONTEND_COMMIT' > '$BUILT_COMMIT_FILE'"
+    else
+      warn "Frontend build failed — static files from git (or a previous successful build) will still be served"
+    fi
   fi
 else
-  ok "Frontend node_modules present — skipping npm (static files served from git)"
+  ok "frontend/ unchanged since the last build on this server ($FRONTEND_COMMIT) — skipping npm"
 fi
 
 # ── 6c. Coverage reports → /coverage (best-effort; never abort the deploy) ──────
