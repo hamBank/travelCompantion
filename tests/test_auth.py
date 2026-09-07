@@ -156,6 +156,17 @@ def test_mint_api_token_persists_a_revocable_row(client: TestClient, session: Se
     assert row.revoked_at is None
 
 
+def test_mint_response_expires_at_matches_list_response_format(client: TestClient):
+    """docs/programmatic-api.md documents one format (plain ISO, no "Z") for
+    expires_at in both the mint and list responses — they must actually agree,
+    not just each individually look like a datetime."""
+    minted = client.post("/me/api-token", json={"label": "fmt"}).json()
+    listed = client.get("/me/api-tokens").json()
+    row = next(t for t in listed if t["id"] == minted["id"])
+    assert minted["expires_at"] == row["expires_at"]
+    assert not minted["expires_at"].endswith("Z")
+
+
 def test_list_and_revoke_api_tokens(client: TestClient, session: Session):
     from backend.models import ApiToken
 
@@ -172,6 +183,15 @@ def test_list_and_revoke_api_tokens(client: TestClient, session: Session):
     # Revoke is idempotent, and a stranger's / unknown id is a 404.
     assert client.delete(f"/me/api-tokens/{tid}").status_code == 204
     assert client.delete("/me/api-tokens/999999").status_code == 404
+
+
+def test_list_api_tokens_orders_newest_first(client: TestClient):
+    first = client.post("/me/api-token", json={"label": "first"}).json()["id"]
+    second = client.post("/me/api-token", json={"label": "second"}).json()["id"]
+    third = client.post("/me/api-token", json={"label": "third"}).json()["id"]
+
+    listed = client.get("/me/api-tokens").json()
+    assert [t["id"] for t in listed] == [third, second, first]
 
 
 def test_revoked_token_is_rejected_by_the_auth_gate(client: TestClient, session: Session, monkeypatch):

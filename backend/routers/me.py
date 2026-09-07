@@ -53,7 +53,10 @@ def create_personal_api_token(
         "token": token,
         "token_type": "bearer",
         "label": row.label,
-        "expires_at": exp.replace(microsecond=0).isoformat() + "Z",
+        # Plain (non-"Z"-suffixed) ISO datetime, same as every other timestamp
+        # in the API (including GET /me/api-tokens' own expires_at) — FastAPI's
+        # default jsonable_encoder for a naive datetime, not hand-formatted.
+        "expires_at": exp,
         "email": user["email"],
     }
 
@@ -68,7 +71,10 @@ def list_personal_api_tokens(
     rows = session.exec(
         select(ApiToken)
         .where(ApiToken.user_email == user["email"].lower())
-        .order_by(ApiToken.created_at.desc())
+        # id.desc() breaks ties: created_at is datetime.utcnow(), which can
+        # collide at microsecond resolution for tokens minted back-to-back
+        # (e.g. a script minting several) — id is monotonic and always distinct.
+        .order_by(ApiToken.created_at.desc(), ApiToken.id.desc())
     ).all()
     return rows
 
