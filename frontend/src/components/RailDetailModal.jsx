@@ -282,12 +282,22 @@ function RailCheckPanel({ item, onItemUpdate }) {
   }
 
   const mismatches = result.checks.filter(c => c.match === false)
+  // A field with nothing stored has no value to conflict with, so it's
+  // match: null rather than false — but the live data IS available, sitting
+  // unclaimed. Rows already render regardless (see below), but the "All
+  // match" label/green border must not claim that when there's still
+  // real, unpopulated data to look at.
+  const unfilled = result.checks.filter(c => c.match === null)
 
   return (
     <div
       style={{
         background: 'var(--surface)',
-        border: `1px solid ${mismatches.length ? 'color-mix(in srgb, var(--warning) 40%, transparent)' : 'color-mix(in srgb, var(--success) 40%, transparent)'}`,
+        border: `1px solid ${
+          mismatches.length ? 'color-mix(in srgb, var(--warning) 40%, transparent)'
+          : unfilled.length ? 'color-mix(in srgb, var(--accent-alt) 40%, transparent)'
+          : 'color-mix(in srgb, var(--success) 40%, transparent)'
+        }`,
         borderRadius: '0.5rem',
       }}
       className="mt-4 overflow-hidden"
@@ -300,7 +310,9 @@ function RailCheckPanel({ item, onItemUpdate }) {
         <div className="flex items-center gap-2">
           {mismatches.length > 0
             ? <span style={{ color: 'var(--warning)' }} className="text-xs font-medium">{mismatches.length} mismatch{mismatches.length > 1 ? 'es' : ''}</span>
-            : <span style={{ color: 'var(--success)' }} className="text-xs font-medium">All match</span>
+            : unfilled.length > 0
+              ? <span style={{ color: 'var(--accent-alt)' }} className="text-xs font-medium">{unfilled.length} field{unfilled.length > 1 ? 's' : ''} to fill in</span>
+              : <span style={{ color: 'var(--success)' }} className="text-xs font-medium">All match</span>
           }
           <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70" title="Re-check">↺</button>
         </div>

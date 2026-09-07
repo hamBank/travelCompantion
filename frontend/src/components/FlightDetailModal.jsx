@@ -165,14 +165,28 @@ function FlightCheckResults({ check }) {
 
   const statusColor = STATUS_COLOR[result.flight_status] ?? 'var(--text-muted)'
   const mismatches = result.checks.filter(c => c.match === false)
+  // A field with no stored value has nothing to conflict with, so chk() marks
+  // it `match: null` rather than false — but AeroDataBox DID return real data
+  // for it, sitting there unclaimed. Lumping that into "All match" (which
+  // reads as "nothing to do here") and hiding its Apply button behind the
+  // same gate as real mismatches is how a mostly-empty flight record (e.g.
+  // just flight number + departure date) reports "all match" while every
+  // other field AeroDataBox found — origin, destination, airline, times,
+  // terminals, gates — never gets shown or offered for populating.
+  const unfilled = result.checks.filter(c => c.match === null)
+  const actionable = mismatches.length + unfilled.length
   const positionText = formatPosition(result.aircraft_position)
-  const hasMoreBelowHeader = mismatches.length > 0 || !!positionText
+  const hasMoreBelowHeader = actionable > 0 || !!positionText
 
   return (
     <div
       style={{
         background: 'var(--surface)',
-        border: `1px solid ${mismatches.length ? 'color-mix(in srgb, var(--warning) 40%, transparent)' : 'color-mix(in srgb, var(--success) 40%, transparent)'}`,
+        border: `1px solid ${
+          mismatches.length ? 'color-mix(in srgb, var(--warning) 40%, transparent)'
+          : unfilled.length ? 'color-mix(in srgb, var(--accent-alt) 40%, transparent)'
+          : 'color-mix(in srgb, var(--success) 40%, transparent)'
+        }`,
         borderRadius: '0.5rem',
       }}
       className="mb-4 overflow-hidden"
@@ -207,7 +221,9 @@ function FlightCheckResults({ check }) {
         <div className="flex items-center gap-2">
           {mismatches.length > 0
             ? <span style={{ color: 'var(--warning)' }} className="text-xs font-medium">{mismatches.length} mismatch{mismatches.length > 1 ? 'es' : ''}</span>
-            : <span style={{ color: 'var(--success)' }} className="text-xs font-medium">All match</span>
+            : unfilled.length > 0
+              ? <span style={{ color: 'var(--accent-alt)' }} className="text-xs font-medium">{unfilled.length} field{unfilled.length > 1 ? 's' : ''} to fill in</span>
+              : <span style={{ color: 'var(--success)' }} className="text-xs font-medium">All match</span>
           }
           <button onClick={run} style={{ color: 'var(--text-faint)' }} className="text-xs hover:opacity-70" title="Re-check">↺</button>
         </div>
@@ -219,7 +235,7 @@ function FlightCheckResults({ check }) {
       {positionText && (
         <div
           className="flex items-center gap-2 px-3 py-1.5 text-xs"
-          style={mismatches.length > 0 ? { borderBottom: '1px solid var(--border)' } : undefined}
+          style={actionable > 0 ? { borderBottom: '1px solid var(--border)' } : undefined}
         >
           <span style={{ color: 'var(--text-muted)' }}>{positionText}</span>
           <a
@@ -234,9 +250,11 @@ function FlightCheckResults({ check }) {
         </div>
       )}
 
-      {/* check rows — only when there's something to act on; a clean "All
-          match" header alone is enough when nothing's actually mismatched */}
-      {mismatches.length > 0 && (
+      {/* check rows — whenever there's something to act on: a real mismatch,
+          or a field AeroDataBox has data for but nothing's stored yet. A
+          clean "All match" header alone is enough only when every comparable
+          field truly matches. */}
+      {actionable > 0 && (
         <div className="divide-y" style={{ '--tw-divide-color': 'var(--border)' }}>
           {result.checks.map(c => (
             <div key={c.field} className="flex items-start gap-2 px-3 py-2 text-xs">
