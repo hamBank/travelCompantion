@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 vi.mock('../api.js', () => ({
   checkFlight: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('../api.js', () => ({
   updatePackItem: vi.fn(),
 }))
 
-import { updateItemStatus, listAttachments } from '../api.js'
+import { updateItemStatus, listAttachments, checkFlight, updateItem } from '../api.js'
 import FlightDetailModal, { formatStatus, formatPosition, powerbankSummary } from '../components/FlightDetailModal.jsx'
 import { getPowerbankPolicy } from '../powerbank.js'
 
@@ -224,5 +224,80 @@ describe('FlightDetailModal — status toggle', () => {
     fireEvent.click(btn)
     await waitFor(() => expect(updateItemStatus).toHaveBeenCalledWith(1, 'done'))
     expect(await screen.findByRole('button', { name: 'Pending' })).toBeInTheDocument()
+  })
+})
+
+// Reported: "flight check on a basic populated flight (flight no + departure
+// date) reports all match, but ... not populated other details." A field with
+// nothing stored has no value to conflict with, so the backend marks it
+// `match: null` rather than false — chk()'s ternary is `stored ? (compare) :
+// None`. The bug: the check-rows panel (Apply buttons included) only rendered
+// when there was a real `match: false` mismatch, so a minimally-populated
+// flight — where every comparable field is either an exact match or has
+// nothing stored yet (null) — showed "All match" and hid every unfilled
+// field's Apply button, with no way to pull in AeroDataBox's origin/
+// destination/airline/times/terminals/gates data at all.
+describe('FlightDetailModal — check results for a minimally-populated flight', () => {
+  function baseItem(details) {
+    return { id: 1, kind: 'flight', name: 'Flight', details }
+  }
+
+  const nullMatchResult = {
+    found: true,
+    flight_iata: 'QF37',
+    flight_status: null,
+    departure_delay_min: null, departure_delay: null,
+    arrival_delay_min: null, arrival_delay: null,
+    aircraft_position: null,
+    checks: [
+      // Only depart_time was stored, and it happens to agree — true match.
+      { field: 'Depart time', key: 'depart_time', stored: '10:00', live: '10:00', update_value: '2026-07-25T10:00', match: true },
+      // Nothing stored for these, but AeroDataBox returned real values.
+      { field: 'Origin', key: 'origin', stored: null, live: 'SYD', update_value: 'SYD', match: null },
+      { field: 'Destination', key: 'destination', stored: null, live: 'MEL', update_value: 'MEL', match: null },
+      { field: 'Airline', key: 'airline', stored: null, live: 'Qantas', update_value: 'Qantas', match: null },
+    ],
+  }
+
+  it('does not claim "All match" when unfilled fields have live data available', async () => {
+    checkFlight.mockResolvedValue(nullMatchResult)
+    render(
+      <FlightDetailModal
+        item={baseItem({ flight_number: 'QF37', depart_time: '2026-07-25T10:00' })}
+        onClose={() => {}}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Check flight' }))
+    await screen.findByText('Live check · QF37')
+    expect(screen.queryByText('All match')).not.toBeInTheDocument()
+    expect(screen.getByText(/3 fields to fill in/)).toBeInTheDocument()
+  })
+
+  it('shows an Apply button for an unfilled (match: null) field and applies it', async () => {
+    checkFlight.mockResolvedValue(nullMatchResult)
+    updateItem.mockResolvedValue({
+      id: 1, kind: 'flight', name: 'Flight',
+      details: { flight_number: 'QF37', depart_time: '2026-07-25T10:00', origin: 'SYD' },
+    })
+    render(
+      <FlightDetailModal
+        item={baseItem({ flight_number: 'QF37', depart_time: '2026-07-25T10:00' })}
+        onClose={() => {}}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Check flight' }))
+
+    // The Origin row (match: null) must render with its own Apply button —
+    // this is exactly what was hidden by the "only when mismatches.length >
+    // 0" gate. The field label's immediate parent is that row's own
+    // container div, scoping the query to just this row (several other rows
+    // also have an Apply button).
+    const originRow = (await screen.findByText('Origin')).closest('div')
+    const applyBtn = within(originRow).getByRole('button', { name: 'Apply' })
+    fireEvent.click(applyBtn)
+
+    await waitFor(() => expect(updateItem).toHaveBeenCalledWith(1, {
+      details: { flight_number: 'QF37', depart_time: '2026-07-25T10:00', origin: 'SYD' },
+    }))
   })
 })
