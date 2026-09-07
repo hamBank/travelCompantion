@@ -211,6 +211,11 @@ export const getImportAddress  = () => req('/me/import-address')
 export const regenerateImportAddress = () => req('/me/import-address/regenerate', { method: 'POST' })
 export const getIngestedEmail  = (id) => req(`/me/emails/${id}`)
 
+// ── Personal access tokens (programmatic API use — see docs/programmatic-api.md) ──
+export const getApiTokens   = () => req('/me/api-tokens')
+export const createApiToken = (body) => req('/me/api-token', { method: 'POST', body: JSON.stringify(body || {}) })
+export const revokeApiToken = (id) => req(`/me/api-tokens/${id}`, { method: 'DELETE' })
+
 export async function downloadIngestedEmail(id) {
   const token = getToken()
   const r = await fetch(`/me/emails/${id}/raw`, {

@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { HOME_CURRENCY_KEY } from '../currency.js'
 import { useState as useReactState, useEffect } from 'react'
 import { getHideCompleted, setHideCompleted, getShowInbound, setShowInbound, getHideStopFrames, setHideStopFrames, getDefaultToToday, setDefaultToToday, getFontScale, setFontScale, FONT_SCALE_OPTIONS } from '../settings.js'
-import { getImportAddress, regenerateImportAddress } from '../api.js'
+import { getImportAddress, regenerateImportAddress, getApiTokens, createApiToken, revokeApiToken } from '../api.js'
 import { isPushSupported, getPushEnabled, enablePush, disablePush, showLocalTestNotification } from '../push.js'
+import { fmtDay } from '../dates.js'
 import Toggle from './Toggle.jsx'
 
 function NotificationsSection() {
@@ -130,6 +131,132 @@ function ImportAddress() {
   )
 }
 
+// Personal access tokens for programmatic API use (scripts, agents) — see
+// docs/programmatic-api.md. Mirrors ImportAddress's shape: list what exists,
+// offer to create/regenerate, and make the one-time secret easy to copy.
+function ApiTokensSection() {
+  const [tokens, setTokens] = useReactState(null)
+  const [label, setLabel] = useReactState('')
+  const [creating, setCreating] = useReactState(false)
+  const [justCreated, setJustCreated] = useReactState(null)  // { token, label } — shown once
+  const [copied, setCopied] = useReactState(false)
+  const [revoking, setRevoking] = useReactState(null)  // id mid-revoke
+  const [error, setError] = useReactState(null)
+
+  function load() { Promise.resolve(getApiTokens()).then(setTokens).catch(() => {}) }
+  useEffect(load, [])
+
+  async function create() {
+    setCreating(true); setError(null)
+    try {
+      const r = await createApiToken(label.trim() ? { label: label.trim() } : {})
+      setJustCreated({ token: r.token, label: r.label })
+      setLabel('')
+      setCopied(false)
+      load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  function copy() {
+    navigator.clipboard?.writeText(justCreated.token)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
+      .catch(() => {})
+  }
+
+  async function revoke(id) {
+    setRevoking(id); setError(null)
+    try {
+      await revokeApiToken(id)
+      load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setRevoking(null)
+    }
+  }
+
+  return (
+    <div>
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-1">API access tokens</p>
+      <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2">
+        For scripts or agents creating trips on your behalf — see docs/programmatic-api.md.
+        Grants the same full access as signing in; treat it like a password.
+      </p>
+
+      {justCreated && (
+        <div
+          style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)' }}
+          className="rounded-lg p-2.5 mb-2"
+        >
+          <p style={{ color: 'var(--warning)' }} className="text-xs font-medium mb-1.5">
+            Copy this now — it won't be shown again{justCreated.label ? ` (“${justCreated.label}”)` : ''}.
+          </p>
+          <div className="flex items-center gap-2">
+            <code style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }} className="flex-1 min-w-0 rounded-lg px-2 py-1.5 text-xs break-all">
+              {justCreated.token}
+            </code>
+            <button onClick={copy} style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }} className="text-xs px-2 py-1.5 rounded-lg hover:opacity-80 transition-opacity shrink-0">
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {tokens?.length > 0 && (
+        <div className="space-y-1.5 mb-2">
+          {tokens.map(t => (
+            <div
+              key={t.id}
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+              className="rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2 text-xs"
+            >
+              <div className="min-w-0">
+                <div style={{ color: 'var(--text)' }} className="font-medium truncate">{t.label || 'Unlabeled token'}</div>
+                <div style={{ color: 'var(--text-faint)' }}>
+                  {t.revoked_at ? 'Revoked' : t.expires_at ? `Expires ${fmtDay(t.expires_at)}` : 'No expiry'}
+                </div>
+              </div>
+              {!t.revoked_at && (
+                <button
+                  onClick={() => revoke(t.id)}
+                  disabled={revoking === t.id}
+                  style={{ color: 'var(--error)' }}
+                  className="hover:opacity-70 transition-opacity disabled:opacity-50 shrink-0"
+                >
+                  {revoking === t.id ? 'Revoking…' : 'Revoke'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <input
+          value={label}
+          onChange={e => setLabel(e.target.value)}
+          placeholder="Label (optional)"
+          style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          className="flex-1 min-w-0 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[var(--accent)]"
+        />
+        <button
+          onClick={create}
+          disabled={creating}
+          style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}
+          className="text-xs px-2 py-1.5 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-50 shrink-0"
+        >
+          {creating ? 'Creating…' : 'Create token'}
+        </button>
+      </div>
+      {error && <p style={{ color: 'var(--error)' }} className="text-xs mt-1">{error}</p>}
+    </div>
+  )
+}
+
 const COMMON_CURRENCIES = [
   'AED', 'ARS', 'AUD', 'BDT', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY',
   'COP', 'CZK', 'DKK', 'EGP', 'EUR', 'GBP', 'GHS', 'HKD', 'HUF',
@@ -212,6 +339,8 @@ export default function UserSettings({ onClose }) {
           <NotificationsSection />
 
           <ImportAddress />
+
+          <ApiTokensSection />
 
           <div>
             <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-1">Home currency</p>
