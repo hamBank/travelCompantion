@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getTrips, importFromSheets, deleteTrip } from '../api.js'
+import CreateTripModal from './CreateTripModal.jsx'
 
 function fmtDate(iso) {
   if (!iso) return null
@@ -28,6 +29,7 @@ export default function TripList({ onOpen, skipAutoOpen, restoreTripId = null, r
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState(null)
   const [tripName, setTripName] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
 
   useEffect(() => { load(true) }, [])
 
@@ -61,10 +63,30 @@ export default function TripList({ onOpen, skipAutoOpen, restoreTripId = null, r
     catch (e) { setError(e.message) }
   }
 
+  async function handleCreated(trip) {
+    setShowCreate(false)
+    await load()
+    onOpen(trip)
+  }
+
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading…</p>
 
   return (
     <div className="space-y-5">
+      <button
+        onClick={() => setShowCreate(true)}
+        style={{ border: '1px dashed var(--text-faint)', color: 'var(--text-muted)' }}
+        className="w-full rounded-xl py-3 text-sm font-medium transition-colors"
+        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)' }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--text-faint)'; e.currentTarget.style.color = 'var(--text-muted)' }}
+      >
+        + Create a new trip
+      </button>
+
+      {showCreate && (
+        <CreateTripModal onClose={() => setShowCreate(false)} onCreated={handleCreated} />
+      )}
+
       <div style={{ background: 'var(--surface)', borderRadius: '0.75rem' }} className="p-5 space-y-3">
         <p style={{ color: 'var(--text-muted)' }} className="text-xs uppercase tracking-wide font-medium">
           Import from Google Sheets
@@ -105,7 +127,7 @@ export default function TripList({ onOpen, skipAutoOpen, restoreTripId = null, r
 
       {trips.length === 0 ? (
         <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">
-          No trips yet — import from Google Sheets to get started.
+          No trips yet — create one or import from Google Sheets to get started.
         </p>
       ) : (
         <div className="space-y-2">

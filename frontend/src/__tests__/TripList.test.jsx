@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
 vi.mock('../api.js', () => ({
   getTrips: vi.fn(),
   importFromSheets: vi.fn(),
   deleteTrip: vi.fn(),
+  createTrip: vi.fn(),
 }))
 
-import { getTrips } from '../api.js'
+import { getTrips, createTrip } from '../api.js'
 import TripList from '../components/TripList.jsx'
 
 beforeEach(() => vi.clearAllMocks())
@@ -45,5 +46,33 @@ describe('TripList — auto-open', () => {
     render(<TripList onOpen={onOpen} skipAutoOpen={true} restoreTripId={1} restoreToday={true} />)
     await screen.findByText('Old Trip')
     expect(onOpen).not.toHaveBeenCalled()
+  })
+})
+
+describe('TripList — create a new trip', () => {
+  it('opens the create-trip modal from the button', async () => {
+    getTrips.mockResolvedValue(TRIPS)
+    render(<TripList onOpen={vi.fn()} skipAutoOpen={true} />)
+    await screen.findByText('Old Trip')
+
+    fireEvent.click(screen.getByText('+ Create a new trip'))
+    expect(await screen.findByText('Create a new trip')).toBeTruthy()
+    expect(screen.getByLabelText('Trip name')).toBeTruthy()
+  })
+
+  it('reloads the list and opens the new trip once created', async () => {
+    const newTrip = { id: 9, name: 'New Zealand' }
+    getTrips.mockResolvedValueOnce(TRIPS).mockResolvedValueOnce([...TRIPS, newTrip])
+    createTrip.mockResolvedValue(newTrip)
+    const onOpen = vi.fn()
+    render(<TripList onOpen={onOpen} skipAutoOpen={true} />)
+    await screen.findByText('Old Trip')
+
+    fireEvent.click(screen.getByText('+ Create a new trip'))
+    fireEvent.change(await screen.findByLabelText('Trip name'), { target: { value: 'New Zealand' } })
+    fireEvent.click(screen.getByText('Create trip'))
+
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith(newTrip))
+    expect(getTrips).toHaveBeenCalledTimes(2)   // initial load + reload after create
   })
 })

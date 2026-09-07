@@ -148,6 +148,7 @@ export async function refreshAuthToken() {
 }
 
 export const getTrips   = () => req('/trips/')
+export const createTrip = (data) => req('/trips/', { method: 'POST', body: JSON.stringify(data) })
 export const deleteTrip = (id) => req(`/trips/${id}`, { method: 'DELETE' })
 export const updateTrip = (id, data) =>
   req(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
