@@ -132,7 +132,7 @@ function AppShell({ user, onLogout }) {
       <OfflineQueueBanner onLogout={onLogout} />
 
       <header
-        className="px-3 sm:px-6 flex items-center gap-2 sticky top-0 z-20"
+        className="pr-3 sm:px-6 flex items-center gap-2 sticky top-0 z-20"
         style={{
           background: 'var(--bg)',
           borderBottom: '1px solid var(--border)',
@@ -149,14 +149,23 @@ function AppShell({ user, onLogout }) {
           // see the note by the `main` safe-area rule there.
           paddingTop: 'env(safe-area-inset-top)',
           paddingBottom: '0.1rem',
+          // Left padding is deliberately bigger than the right side (and set
+          // here, not via a px-3 class) to clear iOS Safari's edge-swipe
+          // "go back in page history" gesture zone (~20pt from the true
+          // screen edge). overscroll-behavior-x (index.css) only stops the
+          // page's own rubber-band bounce, not that system gesture, so the
+          // back button below must sit outside the zone itself or taps on it
+          // get eaten by the OS gesture recognizer instead of firing click.
+          paddingLeft: 'calc(env(safe-area-inset-left) + 1.25rem)',
         }}
       >
         {selectedTrip ? (
           <>
             <button
               onClick={goBack}
+              aria-label="Back to trip list"
               style={{ color: 'var(--text-faint)' }}
-              className="text-xs hover:opacity-70 transition-opacity shrink-0"
+              className="text-sm hover:opacity-70 transition-opacity shrink-0 -my-2 py-2 pr-2"
             >
               ←
             </button>
