@@ -6,13 +6,13 @@ Google identity / JWT subject). Roles, lowest→highest: viewer < editor < owner
 When auth is disabled (no GOOGLE_CLIENT_ID) every request is treated as owner so
 local development behaves as before.
 """
-from typing import Optional
+from typing import Optional, Tuple
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from .auth import AUTH_ENABLED
 from .models import (
-    Trip, Stop, ItineraryItem, TripMembership, TripRole, ROLE_RANK,
+    Trip, Stop, ItineraryItem, TripMembership, TripRole, ROLE_RANK, Traveler,
 )
 
 
@@ -65,3 +65,46 @@ def require_stop_role(session: Session, user: dict, stop_id: int, minimum: TripR
 
 def require_item_role(session: Session, user: dict, item_id: int, minimum: TripRole) -> TripRole:
     return require_trip_role(session, user, trip_id_for_item(session, item_id), minimum)
+
+
+def require_traveler_access(
+    session: Session, user: dict, traveler_id: int, *, write: bool
+) -> Tuple[Traveler, TripRole]:
+    """The D4 permission matrix (docs/plans/plan-17-travelers.md) in one
+    place, so no traveler route hand-rolls it:
+
+        actor    | write=False (profile read) | write=True (patch/delete/
+                 |                             | profile put/profile delete)
+        ---------|-----------------------------|------------------------------
+        owner    | any traveler                | any traveler
+        editor   | own entry only               | own entry only
+        viewer   | own entry only               | never (even own)
+        no access| 404 (require_trip_role's existence-hiding rule)
+
+    "Own entry" = the traveler row whose user_email equals the caller's
+    email. Returns (traveler, role) so callers can vary further behavior
+    (e.g. whether user_email itself may be changed) off the role without
+    re-deriving it. Raises 404 if the traveler id doesn't exist at all —
+    callers that also need "traveler belongs to THIS path's trip_id" must
+    check `traveler.trip_id == trip_id` themselves (this function only knows
+    the traveler's own trip, not which trip the caller's URL named), and
+    should also raise 404 (not 403) on a mismatch — don't leak that a
+    traveler id exists on some other trip.
+    """
+    traveler = session.get(Traveler, traveler_id)
+    if not traveler:
+        raise HTTPException(status_code=404, detail="Traveler not found")
+
+    role = require_trip_role(session, user, traveler.trip_id, TripRole.viewer)
+    if role == TripRole.owner:
+        return traveler, role
+
+    is_own = traveler.user_email is not None and traveler.user_email == user["email"].lower()
+    if write:
+        if role == TripRole.editor and is_own:
+            return traveler, role
+        raise HTTPException(status_code=403, detail="Can only modify your own traveler entry")
+    else:
+        if is_own:
+            return traveler, role
+        raise HTTPException(status_code=403, detail="Can only view your own traveler profile")

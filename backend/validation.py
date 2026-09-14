@@ -9,13 +9,20 @@ Design constraint for every check in this module: keep the false-positive rate
 low. When a signal is ambiguous, don't warn — a noisy banner just trains the
 user to stop reading it.
 """
+import calendar
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date as _date, datetime, timedelta, timezone
+from typing import Optional
 from sqlmodel import Session, select
 from sqlalchemy import nullslast, func
 
 from . import tz_check
-from .models import Stop, ItineraryItem
+from .models import Stop, ItineraryItem, Trip, Traveler
+
+# D8 (docs/plans/plan-17-travelers.md): the common "must be valid N months
+# beyond travel" passport entry rule. A constant, not configurable per trip —
+# see plan-17a-traveler-model-api.md.
+PASSPORT_VALIDITY_MONTHS = 6
 
 # Items that represent movement between places. Shared by the missing-transport
 # and impossible-connection checks below.
@@ -369,6 +376,68 @@ def _timezone_mismatch_warnings(session: Session, all_items: list[ItineraryItem]
     return out
 
 
+def _trip_last_day(trip: Trip, stops: list[Stop], all_items: list[ItineraryItem]) -> Optional[_date]:
+    """The latest date anywhere in the trip: `Trip.end_date`, every stop's
+    arrive/depart, and every item's span end (falling back to its primary
+    date) — the same "how far out does this trip run" range the rest of
+    this module already reasons about (e.g. the uncovered-nights/missing-
+    transport checks' stop dates), just widened to also cover the trip's own
+    end_date and item dates so an undated final stop with only dated items,
+    or a trip whose `end_date` runs later than any stop, doesn't understate
+    the range. Used by the passport_expiry warning (D8)."""
+    candidates: list[_date] = []
+    if trip.end_date:
+        candidates.append(trip.end_date.date())
+    for s in stops:
+        if s.arrive:
+            candidates.append(s.arrive.date())
+        if s.depart:
+            candidates.append(s.depart.date())
+    for it in all_items:
+        start, end = _item_span(it)
+        d = end or start
+        if d:
+            candidates.append(d.date())
+    return max(candidates) if candidates else None
+
+
+def _add_months(d: _date, months: int) -> _date:
+    """Calendar-month addition, clamping the day when the target month is
+    shorter (e.g. 2026-08-31 + 6 -> 2027-02-28, not an OverflowError)."""
+    month_index = d.month - 1 + months
+    year = d.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return _date(year, month, day)
+
+
+def _passport_expiry_warnings(travelers: list[Traveler], last_day: Optional[_date]) -> list[dict]:
+    """D8: a traveler whose clear `passport_expiry` is before the trip's
+    last day plus PASSPORT_VALIDITY_MONTHS gets a warning naming them. No
+    decrypt needed (passport_expiry is a clear column). Nothing to compare
+    against (no last_day, or no traveler has an expiry stored at all) means
+    no warning — this only fires once there's an actual date to check."""
+    if last_day is None:
+        return []
+    with_expiry = [t for t in travelers if t.passport_expiry]
+    if not with_expiry:
+        return []
+    threshold = _add_months(last_day, PASSPORT_VALIDITY_MONTHS)
+    out = []
+    for t in with_expiry:
+        expiry_day = t.passport_expiry.date()
+        if expiry_day < threshold:
+            out.append({
+                "kind": "passport_expiry",
+                "traveler_id": t.id,
+                "message": (
+                    f"{t.display_name}'s passport expires {expiry_day.isoformat()}, "
+                    f"less than {PASSPORT_VALIDITY_MONTHS} months after the trip ends"
+                ),
+            })
+    return out
+
+
 def date_warnings(session: Session, trip_id: int) -> list[dict]:
     """Items whose date sits before their stop's arrival or after its departure.
     Stops without dates are skipped.
@@ -396,7 +465,12 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
     out on its own the next day rather than needing to be dismissed. The
     other checks (date-range, impossible connections, timezone mismatches)
     are about data correctness rather than "still need to do this," so they
-    keep firing regardless of date."""
+    keep firing regardless of date.
+
+    Also flags travelers (plan-17, D8) whose passport_expiry is too close to
+    the trip's last day — see _passport_expiry_warnings; that check's dict
+    shape (`kind`/`traveler_id`/`message`) deliberately differs from the
+    item/stop warnings above since it isn't about any item or stop."""
     today = _today()
     stops = _ordered_stops(session, trip_id)
     dated = [s for s in stops if s.arrive or s.depart]
@@ -453,5 +527,11 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
     out.extend(_impossible_connection_warnings(all_items_with_stop))
 
     out.extend(_timezone_mismatch_warnings(session, all_items, stops))
+
+    trip = session.get(Trip, trip_id)
+    if trip:
+        travelers = session.exec(select(Traveler).where(Traveler.trip_id == trip_id)).all()
+        last_day = _trip_last_day(trip, stops, all_items)
+        out.extend(_passport_expiry_warnings(travelers, last_day))
 
     return out

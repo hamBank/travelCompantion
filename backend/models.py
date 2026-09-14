@@ -111,6 +111,105 @@ class MembershipCreate(SQLModel):
     role: TripRole = TripRole.viewer
 
 
+# ── Traveler (who is *going*, separate from who may edit — plan 17) ───────────
+
+class Traveler(SQLModel, table=True):
+    """One person traveling on a trip. Deliberately independent of
+    TripMembership (D1, docs/plans/plan-17-travelers.md): a traveler may have
+    no account (`user_email` None — a child, a partner who doesn't use the
+    app) and a member may not be traveling. Creating a trip does NOT auto-add
+    a Traveler row for the creator.
+
+    Clear columns (D3) are queryable/listable without a decrypt: `user_email`,
+    `display_name`, `age_band` (derived — see backend/travelers.py:age_band),
+    `passport_expiry` (needed by the date-warning check without touching the
+    encrypted blob). Everything else PII-bearing (full name as on passport,
+    date of birth, passport number/issuing country, nationality, contact,
+    loyalty numbers, notes) lives Fernet-encrypted in `profile_encrypted`
+    (backend/travelers.py:encode_profile/decode_profile, same
+    document_crypto.py machinery as the document vault) and is never present
+    in a list/detail response — only GET .../profile decrypts it on demand.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    trip_id: int = Field(foreign_key="trip.id", index=True)
+    user_email: Optional[str] = Field(default=None, index=True)   # lowercase; None = no account
+    display_name: str
+    age_band: Optional[str] = None              # "infant" | "child" | "adult" — derived at profile-save time (D5)
+    passport_expiry: Optional[datetime] = None   # clear (D3), for the passport_expiry date warning (D8)
+    profile_encrypted: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TravelerRead(SQLModel):
+    """Clear-only view (D3) — never includes anything from profile_encrypted."""
+    id: int
+    trip_id: int
+    user_email: Optional[str] = None
+    display_name: str
+    age_band: Optional[str] = None
+    passport_expiry: Optional[datetime] = None
+    has_profile: bool = False   # derived: profile_encrypted is present (not its content)
+    created_at: datetime
+    updated_at: datetime
+
+
+class TravelerCreate(SQLModel):
+    display_name: str
+    # Owner may set any email (or none); an editor's value is ignored/forced
+    # to their own email by the route (D4) — see backend/routers/travelers.py.
+    user_email: Optional[str] = None
+
+
+class TravelerUpdate(SQLModel):
+    display_name: Optional[str] = None
+    # Only the owner may actually change this (D4) — an editor sending a
+    # different value on their own row gets 403; see require_traveler_access.
+    user_email: Optional[str] = None
+
+
+class TravelerProfile(SQLModel):
+    """Decrypted shape returned by GET/PUT .../profile — the D3 encrypted
+    keys plus the clear `passport_expiry` (so the profile form has the full
+    passport section in one response) and the derived, never-stored
+    `age_at_trip_start` (D5)."""
+    full_name: Optional[str] = None
+    date_of_birth: Optional[str] = None   # "YYYY-MM-DD"
+    sex: Optional[str] = None
+    nationality: Optional[str] = None
+    passport_number: Optional[str] = None
+    passport_issuing_country: Optional[str] = None
+    passport_expiry: Optional[datetime] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    frequent_flyer: List[dict] = []       # [{airline, number}]
+    meal_preference: Optional[str] = None
+    seat_preference: Optional[str] = None
+    notes: Optional[str] = None
+    age_at_trip_start: Optional[int] = None
+
+
+class TravelerProfileUpdate(SQLModel):
+    """Same keys as TravelerProfile, all optional (merged into the existing
+    decrypted blob — a PUT with only one field keeps the rest, see
+    backend/routers/travelers.py). `passport_expiry` is accepted here (it's
+    part of the same passport-details form) but is written to the Traveler's
+    clear column, not into the encrypted blob."""
+    full_name: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    sex: Optional[str] = None
+    nationality: Optional[str] = None
+    passport_number: Optional[str] = None
+    passport_issuing_country: Optional[str] = None
+    passport_expiry: Optional[datetime] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    frequent_flyer: Optional[List[dict]] = None
+    meal_preference: Optional[str] = None
+    seat_preference: Optional[str] = None
+    notes: Optional[str] = None
+
+
 # ── Stop ──────────────────────────────────────────────────────────────────────
 
 class StopBase(SQLModel):
