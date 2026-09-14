@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { useState, useEffect, useRef, useCallback, useContext, forwardRef, useImperativeHandle } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending, updateItemStatus, updateStop } from '../api.js'
 import StopCard, { computeCrossStopLayover, itemDateKey, itemOccursOn, isPastPending, DayMap, dayMapPoints } from './StopCard.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
@@ -16,6 +16,8 @@ import { useOnline } from '../online.js'
 import { offlineQueue, sendOp } from '../offlineQueue.js'
 import { useSwipeNav } from '../swipeNav.js'
 import { approxLocalDateStr } from '../tzutil.js'
+import { pushNav, replaceNav, back, registerNavGuard } from '../historyNav.js'
+import { NavBaseContext } from '../navContext.js'
 
 // The stop whose [arrive, depart] range covers `dateStr`, if any — used to
 // refine "today" using where the trip actually is on that day, rather than
@@ -76,12 +78,14 @@ export function clampedShiftDay(dateStr, direction, timeline) {
   return next
 }
 
-// forwardRef (plan-18a): a seam for plan-18b's internal Back/Forward layers
-// (Today-mode day, item detail, detail -> edit). App.jsx forwards
-// snapshot.day/snapshot.item to `ref.current.applyNav(snapshot)` on every
-// pop; this is a no-op stub until 18b fills it in.
+// forwardRef (plan-18a/18b): the seam App.jsx uses to forward a popped
+// snapshot's day/item down — applyNav (below) applies it: sets the Today-mode
+// day, opens/closes the item detail modal (stashing the id and applying once
+// load() resolves if the timeline isn't loaded yet, or replacing the entry
+// without `item` if it genuinely doesn't exist), and opens/closes the edit
+// layer on top of it.
 const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday, importing = false, setImporting = () => {}, initialDay = null }, ref) {
-  useImperativeHandle(ref, () => ({ applyNav: () => {} }))
+  const navBase = useContext(NavBaseContext)
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -105,6 +109,29 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
   const online = useOnline()
   const [selectedDay, setSelectedDay] = useState(null)  // 'YYYY-MM-DD', only meaningful while todayMode
   const dayInitializedRef = useRef(false)  // have we already picked a day for this todayMode "on" stint?
+  // Mirrors selectedDay for callbacks with a stale-closure-prone dep array
+  // (openItem, handleModalNav, applyNav). Set directly alongside every
+  // setSelectedDay call below rather than via its own effect — a plain
+  // (passive) effect runs asynchronously after paint, which raced visibly
+  // against DOM-mutation-driven test assertions (a render showing the new
+  // day could be observed before the mirroring effect had actually run).
+  const selectedDayRef = useRef(null)
+  function setDay(day) { selectedDayRef.current = day; setSelectedDay(day) }
+  // A popped/restored snapshot naming an item id the timeline hasn't fetched
+  // yet (still loading, or a fresh mount) — resolved once load() lands (the
+  // effect further down, keyed on `loading`/`timeline`) instead of
+  // immediately treating an unresolved id as "doesn't exist" (applyNav below).
+  const pendingNavItemRef = useRef(null)  // { id, edit } | null
+  // Written by ItemEditModal on every edit (plan-18 D5) — keeps the dirty
+  // comparison in one place (ItemEditModal.jsx) instead of duplicating it
+  // here; read by the Back guard registered below while editItem is open.
+  const editDirtyRef = useRef(false)
+  // Set for the span of a delete-from-Edit: onDeleted below does its own
+  // history.go(-2) (closing both the edit and detail layers in one jump —
+  // plan-18b), but ItemEditModal's handleDelete calls onClose right after
+  // onDeleted regardless — this flag makes that second call a no-op instead
+  // of an extra back() fighting the go(-2) that already ran.
+  const deletingFromEditRef = useRef(false)
 
   useEffect(() => { load() }, [tripId])
 
@@ -144,49 +171,54 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
       if (idx === -1) return
       const target = direction === 'next' ? items[idx + 1] : items[idx - 1]
       if (!target) return   // at boundary — modal stays open
-      // First swipe transfers from a card-owned detail modal to the nav modal;
-      // once already in the nav modal we just swap the item. (Calling the nav
-      // modal's registered close would run the close-to-list return logic —
-      // jumping the day / scrolling — on every swipe, which we don't want.)
-      if (!navItemRef.current) getCurrentModal()?.closeFn()
+      // Cycling between items with the modal open updates the current entry
+      // rather than stacking one per item (plan-18 D3) — j/j/Back must land
+      // on the timeline in one hop, not one per swipe.
+      replaceNav({ ...navBase, day: selectedDayRef.current, item: { id: target.id, edit: false } })
       setNavItem(target)
     }
     window.addEventListener('modalNav', handleModalNav)
     return () => window.removeEventListener('modalNav', handleModalNav)
-  }, [])
+  }, [navBase])
 
   useEffect(() => { navItemRef.current = navItem }, [navItem])
 
-  // Closing the nav modal (✕ / backdrop / Esc) should leave you where the item
-  // you last viewed lives: in day-view mode, on that item's day; otherwise
-  // scrolled to that item in the full timeline. (Swiping between items doesn't
-  // go through here — see handleModalNav.)
-  const closeNav = useCallback(() => {
-    const it = navItemRef.current
-    setNavItem(null)
-    if (!it) return
-    if (todayMode) {
-      const day = itemDateKey(it)
-      if (day) setSelectedDay(day)
-    } else if (typeof document !== 'undefined') {
-      requestAnimationFrame(() =>
-        document.querySelector(`[data-item-id="${it.id}"]`)
-          ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      )
-    }
-  }, [todayMode])
+  // Opening an item's detail (a card tap, or the inbound banner) is a new
+  // Back-stop (plan-18 D3) — passed to StopCard as `onOpen`.
+  function openItem(item) {
+    pushNav({ ...navBase, day: selectedDayRef.current, item: { id: item.id, edit: false } })
+    setNavItem(item)
+  }
+
+  // Back on a dirty edit warns before discarding (plan-18 D5) — same text as
+  // ItemEditModal's own ✕/Cancel confirm (isDirtyRef, passed to it below,
+  // keeps the dirty comparison in one place). Registered only while there's
+  // actually an edit open, so a plain Back elsewhere never hits a confirm.
+  useEffect(() => {
+    if (!editItem) return
+    return registerNavGuard(() => !editDirtyRef.current || window.confirm('Discard unsaved changes?'))
+  }, [editItem])
 
   // Today-view day navigation — j/k, ArrowLeft/ArrowRight, and swipe left/
   // right, mirroring the detail-modal item navigation above. Clamped to the
-  // trip's date span.
+  // trip's date span. Cycling the day updates the current entry rather than
+  // stacking one per day (plan-18 D3) — a week of swiping mustn't need a
+  // week of Backs. Reads `selectedDay` via a ref (not a functional setState
+  // update) so the history write here isn't a side effect living inside a
+  // state updater function.
   const navigateDay = useCallback(direction => {
     // A detail/edit modal owns navigation while it's open — otherwise a swipe
     // meant to page between items (or to select text) would also flip the day
     // underneath. Mirrors the keyboard guard below. Checked at call time so the
     // (non-reactive) modal registry reflects the current open modal.
     if (isEditing() || getCurrentModal()) return
-    setSelectedDay(day => (day == null ? day : clampedShiftDay(day, direction, timeline)))
-  }, [timeline])
+    const day = selectedDayRef.current
+    if (day == null) return
+    const next = clampedShiftDay(day, direction, timeline)
+    if (next === day) return
+    setDay(next)
+    replaceNav({ ...navBase, day: next })
+  }, [timeline, navBase])
 
   useEffect(() => {
     if (!todayMode) return
@@ -215,13 +247,19 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
   // `initialDay` (set by App.jsx when entering Today mode from the calendar's
   // "open day"/chip tap — plan-16b) wins over pickInitialDay's own guess for
   // that one "on" stint; a plain Today toggle passes no initialDay and falls
-  // back to pickInitialDay as before.
+  // back to pickInitialDay as before. The first pick for a stint replaces the
+  // entry Today mode's own push already created (App.jsx), so it records the
+  // picked day (plan-18b) — when a popped/restored snapshot supplies the day
+  // itself instead, applyNav (below) already sets dayInitializedRef, so this
+  // effect no-ops rather than clobbering it with a fresh guess.
   useEffect(() => {
-    if (!todayMode) { dayInitializedRef.current = false; setSelectedDay(null); return }
+    if (!todayMode) { dayInitializedRef.current = false; setDay(null); return }
     if (dayInitializedRef.current || !timeline) return
     dayInitializedRef.current = true
-    setSelectedDay(initialDay || pickInitialDay(timeline))
-  }, [todayMode, timeline, initialDay])
+    const day = initialDay || pickInitialDay(timeline)
+    setDay(day)
+    replaceNav({ ...navBase, day })
+  }, [todayMode, timeline, initialDay, navBase])
 
   // Surface stop counts to the header (shown in the minimal title bar).
   useEffect(() => {
@@ -278,6 +316,69 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
     catch (e) { if (!background) setError(e.message) }
     finally { if (!background) setLoading(false) }
   }
+
+  // Applies a popped/restored snapshot's day/item (plan-18b) — App.jsx
+  // forwards every popped snapshot here via the ref (its own applyNav); this
+  // never pushes/replaces itself except to correct a stale entry (an unknown
+  // item id, once data has actually loaded) — it just makes state match what
+  // history already says is current, mirroring App.jsx's own applyNav.
+  useImperativeHandle(ref, () => ({
+    applyNav(snapshot) {
+      if (snapshot.mode === 'today' && snapshot.day) {
+        dayInitializedRef.current = true
+        setDay(snapshot.day)
+      }
+      if (!snapshot.item) {
+        // Closing — same return-to-the-list behaviour as ✕ today: scroll the
+        // item back into view in the full timeline. Today mode's own day is
+        // already restored above straight from the snapshot, so no separate
+        // day-jump is needed here (unlike the old direct-state closeNav).
+        const it = navItemRef.current
+        pendingNavItemRef.current = null
+        setNavItem(null)
+        setEditItem(null)
+        if (it && snapshot.mode !== 'today' && typeof document !== 'undefined') {
+          requestAnimationFrame(() =>
+            document.querySelector(`[data-item-id="${it.id}"]`)
+              ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          )
+        }
+        return
+      }
+      const target = allItemsRef.current.find(i => i.id === snapshot.item.id)
+      if (target) {
+        pendingNavItemRef.current = null
+        setNavItem(target)
+        setEditItem(snapshot.item.edit ? target : null)
+        return
+      }
+      if (loading || !timeline) {
+        // Not loaded yet (fresh mount, or still fetching) — resolved by the
+        // effect below once load() lands, rather than treating an id we
+        // simply haven't seen yet as "doesn't exist".
+        pendingNavItemRef.current = { id: snapshot.item.id, edit: !!snapshot.item.edit }
+        return
+      }
+      // Loaded, and the item genuinely isn't in this trip (deleted on
+      // another device, say) — drop it from the entry rather than getting
+      // stuck pointing at nothing.
+      replaceNav({ ...navBase, day: selectedDayRef.current, item: null })
+    },
+  }))
+
+  // Resolves a stash left by applyNav above once fresh data lands.
+  useEffect(() => {
+    if (loading || !timeline || !pendingNavItemRef.current) return
+    const pending = pendingNavItemRef.current
+    pendingNavItemRef.current = null
+    const target = allItemsRef.current.find(i => i.id === pending.id)
+    if (target) {
+      setNavItem(target)
+      setEditItem(pending.edit ? target : null)
+    } else {
+      replaceNav({ ...navBase, day: selectedDayRef.current, item: null })
+    }
+  }, [loading, timeline, navBase])
 
   if (loading) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading timeline…</p>
   if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
@@ -547,7 +648,7 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
               inbound={inboundByStop[stop.id]} hideFrame={hideStopFrames}
               inboundConnection={inboundConnections[stop.id] ?? null}
               skipDays={skipDaysByStop[stop.id] ?? null}
-              forceOpen={!!activeDay} tripId={tripId} />
+              forceOpen={!!activeDay} tripId={tripId} onOpen={openItem} />
           ))}
         </div>
 
@@ -576,13 +677,23 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
     </RoleContext.Provider>
 
     {navItem && !editItem && (() => {
-      // Fully-wired so a swiped-to item behaves exactly like a tapped-open one:
-      // save refreshes the underlying cards, Edit opens the shared editor, and
-      // Delete closes back to the list. Close returns via closeNav.
+      // Fully-wired so a swiped-to (or card-tap-opened) item behaves the same
+      // way: save refreshes the underlying cards, Edit opens the shared
+      // editor as its own layer (plan-18 D3), and Delete closes back to the
+      // list. Close (✕ / backdrop / Esc, via each modal's registerModal /
+      // onClose) is back() itself now (plan-18 D4) — the actual
+      // setNavItem(null) and the scroll-to-item/day-jump it used to perform
+      // directly moved into applyNav above, so they run identically whether
+      // triggered by ✕ or by browser Back.
       const save = updated => { setNavItem(updated); load({ background: true }) }
-      const edit = () => setEditItem(navItem)
-      const del  = () => { setNavItem(null); load({ background: true }) }
-      const common = { key: navItem.id, item: navItem, onClose: closeNav, onSave: save, onEdit: edit, onDeleted: del, isNavModal: true }
+      const edit = () => {
+        pushNav({ ...navBase, day: selectedDayRef.current, item: { id: navItem.id, edit: true } })
+        setEditItem(navItem)
+      }
+      // Just the refresh — the close (back(), one layer) is left to the
+      // onClose DetailActions' handleDelete always calls right after onDeleted.
+      const del = () => { load({ background: true }) }
+      const common = { key: navItem.id, item: navItem, onClose: back, onSave: save, onEdit: edit, onDeleted: del, isNavModal: true }
       if (navItem.kind === 'flight') return <FlightDetailModal {...common} />
       if (navItem.kind === 'rail')   return <RailDetailModal {...common} />
       return <ItemDetailModal {...common} />
@@ -591,9 +702,23 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
     {editItem && (
       <ItemEditModal
         item={editItem}
-        onClose={() => setEditItem(null)}
-        onSave={updated => { setEditItem(null); setNavItem(updated); load({ background: true }) }}
-        onDeleted={() => { setEditItem(null); setNavItem(null); load({ background: true }) }}
+        isDirtyRef={editDirtyRef}
+        onClose={() => {
+          // onDeleted (below) already closed both layers via go(-2) when
+          // this fires right after it (ItemEditModal's handleDelete always
+          // calls onClose after onDeleted) — nothing left to do.
+          if (deletingFromEditRef.current) { deletingFromEditRef.current = false; return }
+          back()
+        }}
+        onSave={updated => { setEditItem(null); setNavItem(updated); load({ background: true }); back() }}
+        onDeleted={() => {
+          deletingFromEditRef.current = true
+          setEditItem(null); setNavItem(null); load({ background: true })
+          // Two layers close at once: edit, and the detail modal of a now-
+          // deleted item (plan-18b) — one jump rather than two back()s, which
+          // would each schedule their own async navigation.
+          window.history.go(-2)
+        }}
       />
     )}
     </>

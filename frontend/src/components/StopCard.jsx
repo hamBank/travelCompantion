@@ -9,8 +9,6 @@ import { KindIcon } from '../kindIcons.jsx'
 import { Check, Pencil, Wind, BedDouble } from 'lucide-react'
 import { offlineQueue } from '../offlineQueue.js'
 import ItemRow from './ItemRow.jsx'
-import FlightDetailModal from './FlightDetailModal.jsx'
-import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal, { buildMapsUrl } from './ItemEditModal.jsx'
 import ExpenseQuickAdd from './ExpenseQuickAdd.jsx'
 import CostDisplay from './CostDisplay.jsx'
@@ -20,7 +18,6 @@ import { countryFlag, countryCode } from '../countryFlag.js'
 import { countryFacts } from '../countryFacts.js'
 import { airportName } from '../airportNames.js'
 import { KIND_ICON } from '../kinds.js'
-import RailDetailModal from './RailDetailModal.jsx'
 
 const STATUS_CYCLE = { planned: 'confirmed', confirmed: 'completed', completed: 'planned', cancelled: 'planned' }
 
@@ -727,7 +724,7 @@ function LayoverBadge({ duration, location }) {
   )
 }
 
-export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false, inboundConnection = null, skipDays = null, onItemAdded, forceOpen = false, tripId = null }) {
+export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = false, inboundConnection = null, skipDays = null, onItemAdded, forceOpen = false, tripId = null, onOpen }) {
   const [open, setOpen] = useState(index === 0)
   const [status, setStatus] = useState(stop.status)
   const [busy, setBusy] = useState(false)
@@ -866,7 +863,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
       <>
       <div className="space-y-2">
         {hasCountryFacts(stop.country) && <OffsetRow><CountryFactsRow country={stop.country} /></OffsetRow>}
-        {inbound && <OffsetRow><InboundBanner inbound={inbound} onUpdate={onUpdate} /></OffsetRow>}
+        {inbound && <OffsetRow><InboundBanner inbound={inbound} onUpdate={onUpdate} onOpen={onOpen} /></OffsetRow>}
         {inboundConnection && <OffsetRow><LayoverBadge {...inboundConnection} /></OffsetRow>}
         {timeline.length > 0 && (() => {
           const byDate = {}
@@ -879,7 +876,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
           const sortedDates = Object.keys(byDate).sort()
           const layovers = computeLayovers(timeline)
           function renderCard(item) {
-            const props = { item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
+            const props = { item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted, onOpen }
             let card
             if (item.kind === 'accommodation') card = <AccomCard {...props} />
             else if (item.kind === 'flight')        card = <FlightCard {...props} />
@@ -917,8 +914,8 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             </>
           )
         })()}
-        {foodItems.map(item => <OffsetRow key={item.id}><FoodCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
-        {purchaseItems.map(item => <OffsetRow key={item.id}><PurchaseCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} /></OffsetRow>)}
+        {foodItems.map(item => <OffsetRow key={item.id}><FoodCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} onOpen={onOpen} /></OffsetRow>)}
+        {purchaseItems.map(item => <OffsetRow key={item.id}><PurchaseCard item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} onOpen={onOpen} /></OffsetRow>)}
       </div>
     </>
     )
@@ -963,7 +960,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
       {contentVisible && (
         <div style={{ borderTop: '1px solid var(--border)' }} className="px-1.5 py-3 space-y-4">
           <CountryFactsRow country={stop.country} />
-          <InboundBanner inbound={inbound} onUpdate={onUpdate} />
+          <InboundBanner inbound={inbound} onUpdate={onUpdate} onOpen={onOpen} />
           {inboundConnection && <LayoverBadge {...inboundConnection} />}
 
           {timeline.length > 0 && (() => {
@@ -977,7 +974,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             const sortedDates = Object.keys(byDate).sort()
             const layovers = computeLayovers(timeline)
             function renderCard(item) {
-              const props = { item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted }
+              const props = { item, onItemSaved: handleItemSaved, onItemDeleted: handleItemDeleted, onOpen }
               let card
               if (item.kind === 'accommodation') card = <AccomCard {...props} />
               else if (item.kind === 'flight')        card = <FlightCard {...props} />
@@ -1015,13 +1012,13 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
 
           {foodItems.length > 0 && (
             <Section label="Food & Drink">
-              {foodItems.map(item => <FoodCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />)}
+              {foodItems.map(item => <FoodCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} onOpen={onOpen} />)}
             </Section>
           )}
 
           {purchaseItems.length > 0 && (
             <Section label="Purchases">
-              {purchaseItems.map(item => <PurchaseCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} />)}
+              {purchaseItems.map(item => <PurchaseCard key={item.id} item={item} onItemSaved={handleItemSaved} onItemDeleted={handleItemDeleted} onOpen={onOpen} />)}
             </Section>
           )}
 
@@ -1147,9 +1144,8 @@ function EditPencil({ onClick, absolute = true }) {
 
 // "Arriving here" banner — surfaces the inbound flight/rail's arrival details on the
 // destination stop. Read-only summary; tapping opens the full detail modal.
-function InboundBanner({ inbound, onUpdate }) {
+function InboundBanner({ inbound, onUpdate, onOpen }) {
   const show = useShowInbound()
-  const [showDetail, setShowDetail] = useState(false)
   if (!show || !inbound) return null
 
   const d = inbound.details ?? {}
@@ -1170,7 +1166,7 @@ function InboundBanner({ inbound, onUpdate }) {
   return (
     <>
       <button
-        onClick={() => setShowDetail(true)}
+        onClick={() => onOpen(inbound)}
         className="w-full text-left hover:opacity-80 transition-opacity"
         style={{
           background: `color-mix(in srgb, ${color} 10%, var(--surface-2))`,
@@ -1193,22 +1189,12 @@ function InboundBanner({ inbound, onUpdate }) {
           </div>
         </div>
       </button>
-      {showDetail && (
-        isFlight ? (
-          <FlightDetailModal item={inbound} onClose={() => setShowDetail(false)} onSave={() => onUpdate?.()} />
-        ) : isRail ? (
-          <RailDetailModal item={inbound} onClose={() => setShowDetail(false)} onSave={() => onUpdate?.()} />
-        ) : (
-          <ItemEditModal item={inbound} onClose={() => setShowDetail(false)} onSave={() => onUpdate?.()} />
-        )
-      )}
     </>
   )
 }
 
-function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
+function FlightCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
   const route = [d.origin, d.destination].filter(Boolean).map(airportName).join(' → ') || item.name || 'Flight'
@@ -1221,7 +1207,7 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-flight) 6%, var(--surface-2))',
@@ -1257,7 +1243,6 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <FlightDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1270,9 +1255,8 @@ function FlightCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
+function RailCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
   const route = [d.origin, d.destination].filter(Boolean).join(' → ')
@@ -1281,7 +1265,7 @@ function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-rail) 6%, var(--surface-2))',
@@ -1324,7 +1308,6 @@ function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <RailDetailModal item={item} onClose={() => setShowDetail(false)} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1337,9 +1320,8 @@ function RailCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
+function AccomCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const hideTime = useHideTime()
   const d = item.details ?? {}
@@ -1348,7 +1330,7 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-accommodation) 8%, var(--surface-2))',
@@ -1380,7 +1362,6 @@ function AccomCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1410,9 +1391,8 @@ export function routeMapSource(details, mode = 'w') {
   return { hasGpxRoute, embedUrl, mapsLink }
 }
 
-function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
+function WalkCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [showMap, setShowMap] = useState(false)
   const [gpxMapUrl, setGpxMapUrl] = useState(null)
@@ -1452,7 +1432,7 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
         {/* Card header */}
         <div className="relative group">
           <button
-            onClick={() => setShowDetail(true)}
+            onClick={() => onOpen(item)}
             className="w-full text-left hover:opacity-80 transition-opacity"
             style={{ padding: '0.75rem' }}
           >
@@ -1535,7 +1515,6 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
         )}
       </div>
 
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1548,10 +1527,9 @@ function WalkCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
+function TourCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
-  const [showDetail, setShowDetail] = useState(false)
   const d = item.details ?? {}
 
   const timeStr = fmtDayTime(item.scheduled_at)
@@ -1561,7 +1539,7 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-tour) 6%, var(--surface-2))',
@@ -1597,7 +1575,6 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1610,10 +1587,9 @@ function TourCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
+function TransferCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
-  const [showDetail, setShowDetail] = useState(false)
   const [showMap, setShowMap] = useState(false)
   const hideTime = useHideTime()
   const d = item.details ?? {}
@@ -1636,7 +1612,7 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
       >
         <div className="relative group">
           <button
-            onClick={() => setShowDetail(true)}
+            onClick={() => onOpen(item)}
             className="w-full text-left hover:opacity-80 transition-opacity"
             style={{ padding: '0.75rem' }}
           >
@@ -1711,7 +1687,6 @@ function TransferCard({ item: initial, onItemSaved, onItemDeleted }) {
         )}
       </div>
 
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1729,10 +1704,9 @@ function placeSearchUrl(place) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`
 }
 
-function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
+function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
-  const [showDetail, setShowDetail] = useState(false)
   const [showMap, setShowMap] = useState(false)
   const [mapUrl, setMapUrl] = useState(null)
   const d = item.details ?? {}
@@ -1767,7 +1741,7 @@ function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
       >
         <div className="relative group">
           <button
-            onClick={() => setShowDetail(true)}
+            onClick={() => onOpen(item)}
             className="w-full text-left hover:opacity-80 transition-opacity"
             style={{ padding: '0.75rem' }}
           >
@@ -1847,7 +1821,6 @@ function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
         )}
       </div>
 
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1860,9 +1833,8 @@ function RiverTransferCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
+function CyclingCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [showMap, setShowMap] = useState(false)
   const [gpxMapUrl, setGpxMapUrl] = useState(null)
@@ -1900,7 +1872,7 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
       >
         <div className="relative group">
           <button
-            onClick={() => setShowDetail(true)}
+            onClick={() => onOpen(item)}
             className="w-full text-left hover:opacity-80 transition-opacity"
             style={{ padding: '0.75rem' }}
           >
@@ -1979,7 +1951,6 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
           />
         )}
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -1993,9 +1964,8 @@ function CyclingCard({ item: initial, onItemSaved, onItemDeleted }) {
 }
 
 
-function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
+function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
   const timeStr = item.scheduled_at ? fmtDayTime(item.scheduled_at) : (d.pickup_time ? fmtDayTime(d.pickup_time) : null)
@@ -2004,7 +1974,7 @@ function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-hire) 6%, var(--surface-2))',
@@ -2036,7 +2006,6 @@ function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -2049,17 +2018,16 @@ function HireCard({ item: initial, onItemSaved, onItemDeleted, hideTime }) {
   )
 }
 
-function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
+function PurchaseCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
-  const [showDetail, setShowDetail] = useState(false)
   const d = item.details ?? {}
 
   return (
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-purchase) 6%, var(--surface-2))',
@@ -2098,7 +2066,6 @@ function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -2111,17 +2078,16 @@ function PurchaseCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
+function FoodCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
   const [showEdit, setShowEdit] = useState(false)
-  const [showDetail, setShowDetail] = useState(false)
   const d = item.details ?? {}
 
   return (
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-food) 6%, var(--surface-2))',
@@ -2156,7 +2122,6 @@ function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -2169,9 +2134,8 @@ function FoodCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
+function ActivityCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
   const timeStr = fmtDayTime(item.scheduled_at)
@@ -2181,7 +2145,7 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-activity) 6%, var(--surface-2))',
@@ -2216,15 +2180,6 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && (
-        <ItemDetailModal
-          item={item}
-          onClose={() => setShowDetail(false)}
-          onEdit={() => { setShowDetail(false); setShowEdit(true) }}
-          onDeleted={onItemDeleted}
-          onSave={updated => { setItem(updated); onItemSaved?.(updated) }}
-        />
-      )}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -2237,9 +2192,8 @@ function ActivityCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
+function ShowCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const d = item.details ?? {}
   const timeStr = fmtDayTime(item.scheduled_at)
@@ -2249,7 +2203,7 @@ function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-show) 6%, var(--surface-2))',
@@ -2290,15 +2244,6 @@ function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && (
-        <ItemDetailModal
-          item={item}
-          onClose={() => setShowDetail(false)}
-          onEdit={() => { setShowDetail(false); setShowEdit(true) }}
-          onDeleted={onItemDeleted}
-          onSave={updated => { setItem(updated); onItemSaved?.(updated) }}
-        />
-      )}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -2311,9 +2256,8 @@ function ShowCard({ item: initial, onItemSaved, onItemDeleted }) {
   )
 }
 
-function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
+function NoteCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
 
   const timeStr = fmtDayTime(item.scheduled_at)
@@ -2326,7 +2270,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
       <div className="relative group">
         {important ? (
           <button
-            onClick={() => setShowDetail(true)}
+            onClick={() => onOpen(item)}
             className="w-full text-left hover:opacity-80 transition-opacity"
             style={{
               background: 'color-mix(in srgb, var(--warning) 14%, var(--surface-2))',
@@ -2345,7 +2289,7 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
           </button>
         ) : (
           <button
-            onClick={() => setShowDetail(true)}
+            onClick={() => onOpen(item)}
             className="w-full text-left hover:opacity-80 transition-opacity"
             style={{
               background: 'color-mix(in srgb, var(--kind-note) 6%, var(--surface-2))',
@@ -2373,15 +2317,6 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
         )}
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && (
-        <ItemDetailModal
-          item={item}
-          onClose={() => setShowDetail(false)}
-          onEdit={() => { setShowDetail(false); setShowEdit(true) }}
-          onDeleted={onItemDeleted}
-          onSave={updated => { setItem(updated); onItemSaved?.(updated) }}
-        />
-      )}
       {showEdit && (
         <ItemEditModal
           item={item}
@@ -2396,9 +2331,8 @@ function NoteCard({ item: initial, onItemSaved, onItemDeleted }) {
 
 const BOOKING_STATUS_COLOR = { planned: 'var(--text-faint)', booked: 'var(--kind-activity)', confirmed: 'var(--success)' }
 
-function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
+function RestaurantCard({ item: initial, onItemSaved, onItemDeleted, onOpen }) {
   const [item, setItem] = useState(initial)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const hideTime = useHideTime()
   const d = item.details ?? {}
@@ -2407,7 +2341,7 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
     <>
       <div className="relative group">
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(item)}
           className="w-full text-left hover:opacity-80 transition-opacity"
           style={{
             background: 'color-mix(in srgb, var(--kind-restaurant) 6%, var(--surface-2))',
@@ -2448,7 +2382,6 @@ function RestaurantCard({ item: initial, onItemSaved, onItemDeleted }) {
         </button>
         <EditPencil onClick={e => { e.stopPropagation(); setShowEdit(true) }} />
       </div>
-      {showDetail && <ItemDetailModal item={item} onClose={() => setShowDetail(false)} onEdit={() => { setShowDetail(false); setShowEdit(true) }} onDeleted={onItemDeleted} onSave={updated => { setItem(updated); onItemSaved?.(updated) }} />}
       {showEdit && (
         <ItemEditModal
           item={item}

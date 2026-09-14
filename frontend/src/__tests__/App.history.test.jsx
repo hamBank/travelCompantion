@@ -62,7 +62,7 @@ vi.mock('../components/TripTimeline.jsx', () => ({
 }))
 
 vi.mock('../components/TripCalendar.jsx', () => ({
-  default: vi.fn(({ view, planning, draft, onDraftChange }) => (
+  default: vi.fn(({ view, planning, draft, onDraftChange, onOpenDay }) => (
     <div data-testid="calendar" data-view={view} data-planning={String(planning)}>
       {planning && (
         <button onClick={() => onDraftChange({
@@ -72,6 +72,7 @@ vi.mock('../components/TripCalendar.jsx', () => ({
           simulate-drag
         </button>
       )}
+      <button onClick={() => onOpenDay('2026-09-16')}>open-day</button>
     </div>
   )),
 }))
@@ -224,6 +225,20 @@ describe('mode toggles push; Timeline (from within a mode) closes via back(); ca
     fireEvent.click(screen.getByLabelText('Menu'))
     fireEvent.click(screen.getByText('Timeline'))
     expect(backSpy).toHaveBeenCalled()
+  })
+
+  it('Calendar onOpenDay hand-off: pushes a Today snapshot with the day (plan-18b)', async () => {
+    await openTrip1()
+    fireEvent.click(screen.getByLabelText('Menu'))
+    fireEvent.click(screen.getByText('Calendar'))
+    await waitFor(() => expect(screen.getByTestId('calendar')).toBeTruthy())
+    pushNav.mockClear()
+
+    fireEvent.click(screen.getByText('open-day'))
+
+    expect(pushNav).toHaveBeenCalledWith(expect.objectContaining({
+      tripId: 1, mode: 'today', day: '2026-09-16',
+    }))
   })
 
   it('Today ("All days" footer toggle): enter pushes, closing calls back()', async () => {
