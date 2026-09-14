@@ -123,11 +123,48 @@ export function weeksCovering(first, last, weekStartsOn = 1) {
   return weeks
 }
 
+// Deterministic small-int hash (xorshift/multiply, not cryptographic) so a
+// stop's colour perturbation is stable across renders and reloads without
+// storing a random seed anywhere — Math.random() would reshuffle colours on
+// every fetch, which would be worse than no colour-coding at all.
+function hashInt(n) {
+  let h = (n ^ 0x9e3779b9) >>> 0
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0
+  h = Math.imul(h ^ (h >>> 13), 0x45d9f3b) >>> 0
+  return (h ^ (h >>> 16)) >>> 0
+}
+
+// A ranked stop's band colour comes from a hue *family* keyed on its
+// priority number, not the plain per-trip --stop-N rotation — every
+// priority-1 stop reads as "the blue option", every priority-2 stop as a
+// different, clearly-distinct family, and so on, so competing options are
+// recognisable across the whole calendar at a glance. Families are spread
+// with the golden angle starting from blue: priority 1 is blue as a
+// deliberate anchor, and every later priority lands far around the wheel
+// from its neighbours even for small, consecutive priority numbers.
+// Within a family, a stop's own id perturbs hue/saturation/lightness a
+// little — "just enough" to tell same-priority stops apart — deterministically
+// (hashInt, not Math.random()) so the colour doesn't change on every reload.
+const GOLDEN_ANGLE = 137.508
+const PRIORITY_1_HUE = 210 // blue
+
+export function priorityBandColor(priority, stopId) {
+  const baseHue = (PRIORITY_1_HUE + (Number(priority) - 1) * GOLDEN_ANGLE) % 360
+  const h = hashInt(Number(stopId) || 0)
+  const hueJitter = (h % 41) - 20             // ±20°, small next to the 137° gap between families
+  const lightness = 68 + ((h >>> 8) % 5) * 3  // 68–80%, matching the pastel --stop-N palette's range
+  const saturation = 55 + ((h >>> 16) % 4) * 6 // 55–73%
+  const hue = (baseHue + hueJitter + 360) % 360
+  return `hsl(${hue.toFixed(1)}deg ${saturation}% ${lightness}%)`
+}
+
 // One band per dated stop (arrive and/or depart). A stop with only one of
 // the two becomes a one-day band on that day; a fully undated stop is
 // omitted (the caller lists those separately — see TripCalendar's "Undated
 // stops" strip). colorIndex is the stop's position in timeline order, mod 8,
-// matching the --stop-1…--stop-8 palette in index.css.
+// matching the --stop-1…--stop-8 palette in index.css — used only when the
+// stop has no priority; `color` (a priorityBandColor hsl() string, or null)
+// takes precedence whenever one is set.
 export function stopBands(timeline) {
   const stops = timeline?.stops || []
   const bands = []
@@ -135,17 +172,32 @@ export function stopBands(timeline) {
     const arrive = stop.arrive ? String(stop.arrive).slice(0, 10) : null
     const depart = stop.depart ? String(stop.depart).slice(0, 10) : null
     if (!arrive && !depart) return
-    bands.push({ stop, first: arrive || depart, last: depart || arrive, colorIndex: i % 8 })
+    const color = stop.priority != null ? priorityBandColor(stop.priority, stop.id) : null
+    bands.push({ stop, first: arrive || depart, last: depart || arrive, colorIndex: i % 8, color })
   })
   return bands
 }
 
-// Greedy interval-colouring (plan-16 D7): sort by start day, place each band
-// in the first lane whose last-placed band ended before this one starts.
-// Overlap is inclusive of the end day — a band ending on day X and one
-// starting on day X are treated as overlapping and can't share a lane.
+// Greedy interval-colouring (plan-16 D7), sorted by priority first (lower
+// number = earlier = a lower, "more top" lane — the whole point of ranking
+// overlapping options) and start day second, then place each band in the
+// first lane whose last-placed band ended before this one starts. Overlap
+// is inclusive of the end day — a band ending on day X and one starting on
+// day X are treated as overlapping and can't share a lane. An unranked stop
+// (priority null/undefined) sorts after every ranked one; ties (same
+// priority, or both unranked) fall back to start-day order, same as before
+// priority existed. Processing out of pure chronological order can only
+// ever make the packing use a lane or two more than the true minimum for
+// bands that don't actually overlap in dates — the `end < start` check
+// itself is date-based and always safe, so two overlapping bands can never
+// land in the same lane regardless of processing order.
 export function packLanes(bands) {
-  const sorted = [...bands].sort((a, b) => (a.first < b.first ? -1 : a.first > b.first ? 1 : 0))
+  const rank = b => (b.stop?.priority ?? Infinity)
+  const sorted = [...bands].sort((a, b) => {
+    const pa = rank(a), pb = rank(b)
+    if (pa !== pb) return pa - pb
+    return a.first < b.first ? -1 : a.first > b.first ? 1 : 0
+  })
   const laneEnds = []
   return sorted.map(band => {
     let lane = laneEnds.findIndex(end => end < band.first)

@@ -222,6 +222,13 @@ class StopBase(SQLModel):
     lng: str = ""
     sort_order: int = 0
     status: StopStatus = StopStatus.planned
+    # Ranks overlapping stops (e.g. two candidate side-trips on the same
+    # dates) for the calendar view: lower numbers render in higher/"more top"
+    # lanes and get their own colour family (frontend/src/calendarModel.js's
+    # priorityBandColor). None means "unranked" — sorts after every ranked
+    # stop and keeps the plain per-trip colour rotation. No uniqueness
+    # constraint: ties are broken by start date, same as unranked stops.
+    priority: Optional[int] = None
 
 
 class Stop(StopBase, table=True):
@@ -251,6 +258,7 @@ class StopUpdate(SQLModel):
     lng: Optional[str] = None
     sort_order: Optional[int] = None
     status: Optional[StopStatus] = None
+    priority: Optional[int] = None
     # Offline queue replay (plan 11): base value of each changed field as seen
     # by the client at edit time, for compare-and-set conflict detection.
     base: Optional[dict] = None
