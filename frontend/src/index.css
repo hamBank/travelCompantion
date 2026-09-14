@@ -479,6 +479,90 @@ main {
   padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
 }
 
+/* ─── Calendar chip overflow (plan-16c) ─────────────────────────────
+   All chips for a day are always in the DOM (TripCalendar.jsx no longer
+   slices the list) so print can show every one of them; on screen, Month/
+   Trip views (`.cal-capped`) still cap the visible count at MAX_CHIPS (4)
+   the same way the old `.slice()` did, via CSS instead. Week view never
+   gets the `.cal-capped` class, so it's unaffected (still shows every
+   chip on screen, per plan-16b). Undone under @media print below. */
+.cal-day-items.cal-capped > .cal-chip:nth-child(n + 5) {
+  display: none;
+}
+
+/* ─── Print (plan-16c calendar) ────────────────────────────────────
+   Theme tokens (--text, --bg, etc.) are driven by [data-theme] and, for the
+   default theme, an unconditional `:root` plus a prefers-color-scheme dark
+   block — none of that is meaningful on paper, so this block forces every
+   consumer of those tokens to explicit light-mode-safe hex via !important
+   on the custom properties themselves (cheaper and more robust than
+   chasing every var(--text) usage across StopCard/TripCalendar), then adds
+   the calendar-specific layout/pagination rules the plan calls for. Stop
+   band (--stop-N) and kind (--kind-N) colours are left alone — those tints
+   are already legible in print and are the whole point of "stop bands
+   still coloured"; only the *text/surface* tokens need pinning. */
+.print-only { display: none; }
+
+@media print {
+  :root {
+    --bg: #ffffff !important;
+    --surface: #ffffff !important;
+    --surface-2: #f2f2f2 !important;
+    --modal-bg: #ffffff !important;
+    --border: #999999 !important;
+    --text: #000000 !important;
+    --text-muted: #333333 !important;
+    --text-faint: #555555 !important;
+    --accent: #1d4ed8 !important;
+    --accent-fg: #ffffff !important;
+  }
+
+  body { background: #fff; color: #000; }
+
+  header, footer, [data-print-hide], .fixed.inset-0 {
+    display: none !important;
+  }
+
+  main { padding: 0 !important; }
+
+  /* Chrome/Firefox default to "don't print background colours" — the stop
+     bands and kind dots are backgrounds, so force them through everywhere. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .cal-root { overflow: visible !important; }
+  .cal-grid { overflow: visible !important; max-height: none !important; width: 100% !important; }
+
+  .cal-week-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* "+N more" is a screen-only affordance (plan-16c: all chips stay in the
+     DOM always, so print just needs to stop hiding the overflow rather
+     than reconstruct it). */
+  .cal-chip-name { display: inline !important; font-size: 8pt; }
+  .cal-day-items.cal-capped > .cal-chip:nth-child(n + 5) { display: flex !important; }
+
+  .print-only { display: block !important; }
+
+  @page { margin: 12mm; }
+}
+
+/* Named-page technique: App.jsx toggles this class on <html> only while
+   printing Week/Trip (Month stays portrait — reads better on A4/Letter).
+   `page: landscape` assigns every element under <html> to the named page
+   below, whose `size: landscape` then applies only for that print. */
+html.print-landscape {
+  page: landscape;
+}
+@page landscape {
+  size: landscape;
+  margin: 12mm;
+}
+
 /* ─── Timeline connector ────────────────────────────────────────── */
 .timeline-line {
   position: absolute;

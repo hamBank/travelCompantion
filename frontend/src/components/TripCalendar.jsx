@@ -28,6 +28,9 @@ function fmtShortYear(dateStr) {
 function fmtMonthYear(dateStr) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 }
+function fmtPrintedOn() {
+  return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
 function daysInclusive(a, b) {
   return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000) + 1
 }
@@ -87,7 +90,10 @@ export default function TripCalendar({ timeline, view = 'trip', anchorDay, onOpe
 
   const weeks = weeksCovering(rangeFirst, rangeLast)
   const today = todayKey()
-  const maxChips = view === 'week' ? Infinity : MAX_CHIPS
+  // Screen-only cap (plan-16b); print always shows every chip (plan-16c) —
+  // enforced in CSS via `.cal-capped`, not here, so the DOM is identical
+  // for screen and print and only the on-screen truncation is CSS.
+  const capped = view !== 'week'
 
   function itemsForDay(day) {
     const items = byDay.get(day) || []
@@ -95,12 +101,22 @@ export default function TripCalendar({ timeline, view = 'trip', anchorDay, onOpe
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-center mb-3">
+    <div className="cal-root">
+      {/* Print-only title block (hidden on screen, see .print-only in
+          index.css) — the app chrome (header/footer) is hidden in print,
+          so the printed page needs its own "what is this" line. */}
+      <div className="print-only" style={{ marginBottom: '4mm' }}>
+        <h1 style={{ color: '#000', fontSize: '14pt', fontWeight: 600, margin: 0 }}>{timeline?.name}</h1>
+        <p style={{ color: '#333', fontSize: '9pt', margin: '2px 0 0' }}>
+          {`${headerLabel} · printed ${fmtPrintedOn()}`}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-center mb-3" data-print-hide>
         <h2 style={{ color: 'var(--text)' }} className="text-sm font-medium">{headerLabel}</h2>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto cal-grid">
         <div className="grid" style={{ gridTemplateColumns: 'repeat(7, minmax(2.5rem, 1fr))' }}>
           {WEEKDAY_LABELS.map(label => (
             <div key={label} style={{ color: 'var(--text-faint)' }} className="text-[0.65rem] font-medium text-center py-1">
@@ -119,7 +135,7 @@ export default function TripCalendar({ timeline, view = 'trip', anchorDay, onOpe
           const laneCount = weekBands.reduce((m, b) => Math.max(m, b.lane + 1), 0)
 
           return (
-            <div key={week[0]} className="mb-1" data-testid="week-row">
+            <div key={week[0]} className="mb-1 cal-week-row" data-testid="week-row">
               {laneCount > 0 && (
                 <div
                   className="grid"
@@ -149,8 +165,10 @@ export default function TripCalendar({ timeline, view = 'trip', anchorDay, onOpe
                 {week.map(day => {
                   const inRange = day >= rangeFirst && day <= rangeLast
                   const items = itemsForDay(day)
-                  const shown = items.slice(0, maxChips)
-                  const extra = items.length - shown.length
+                  // All chips render always — "+N more" only hides the
+                  // overflow visually on screen (CSS, `.cal-capped`), so
+                  // print (which ignores that rule) shows every chip.
+                  const extra = capped ? Math.max(0, items.length - MAX_CHIPS) : 0
                   const isToday = day === today
                   return (
                     <div
@@ -176,20 +194,21 @@ export default function TripCalendar({ timeline, view = 'trip', anchorDay, onOpe
                       >
                         {Number(day.slice(8, 10))}
                       </button>
-                      <div className="flex flex-col gap-0.5 min-w-0">
-                        {shown.map(item => (
+                      <div className={`flex flex-col gap-0.5 min-w-0 cal-day-items${capped ? ' cal-capped' : ''}`}>
+                        {items.map(item => (
                           <button
                             key={item.id}
                             onClick={() => onOpenItem?.(item)}
-                            className="flex items-center gap-1 min-w-0 text-left hover:opacity-70 transition-opacity"
+                            className="cal-chip flex items-center gap-1 min-w-0 text-left hover:opacity-70 transition-opacity"
                           >
                             <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '9999px', background: KIND_VAR[item.kind], flexShrink: 0 }} />
                             <span style={{ color: 'var(--text-faint)' }} className="text-[0.6rem] shrink-0">{itemTimeStr(item)}</span>
-                            <span style={{ color: 'var(--text)' }} className="hidden sm:inline text-[0.6rem] truncate">{item.name}</span>
+                            <span style={{ color: 'var(--text)' }} className="cal-chip-name hidden sm:inline text-[0.6rem] truncate">{item.name}</span>
                           </button>
                         ))}
                         {extra > 0 && (
                           <button
+                            data-print-hide
                             onClick={() => onOpenDay?.(day)}
                             style={{ color: 'var(--accent)' }}
                             className="text-[0.6rem] font-medium text-left hover:opacity-70 transition-opacity"
