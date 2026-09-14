@@ -153,6 +153,7 @@ automatically makes you its **owner**, so you can add stops and items to it.
 | `lat`, `lng` | string | no       | Coordinates as strings |
 | `sort_order` | int    | no       | Manual ordering hint; stops are otherwise ordered by date |
 | `status`     | enum   | no       | `planned` (default) · `confirmed` · `completed` · `cancelled` |
+| `priority`   | int    | no       | Ranks overlapping stop options for the calendar view — lower first, unset sorts last. No uniqueness constraint. |
 
 Returns `201` with the stop including its `id`.
 

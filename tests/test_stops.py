@@ -71,6 +71,45 @@ def test_update_stop_dates(client: TestClient, trip):
     assert "2026-08-10" in r.json()["arrive"]
 
 
+def test_create_stop_priority_defaults_to_none(client: TestClient, trip):
+    stop = client.post(f"/trips/{trip['id']}/stops", json={"location": "Nice", "status": "planned"}).json()
+    assert stop["priority"] is None
+
+
+def test_create_stop_with_priority(client: TestClient, trip):
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Nice", "status": "planned", "priority": 1,
+    }).json()
+    assert stop["priority"] == 1
+
+
+def test_update_stop_priority(client: TestClient, trip):
+    stop = client.post(f"/trips/{trip['id']}/stops", json={"location": "Menton", "status": "planned"}).json()
+    r = client.patch(f"/stops/{stop['id']}", json={"priority": 2})
+    assert r.status_code == 200
+    assert r.json()["priority"] == 2
+
+    # Explicitly clearing it back to unranked.
+    r = client.patch(f"/stops/{stop['id']}", json={"priority": None})
+    assert r.status_code == 200
+    assert r.json()["priority"] is None
+
+
+def test_update_stop_priority_compare_and_set_conflict(client: TestClient, trip):
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Antibes", "status": "planned", "priority": 1,
+    }).json()
+    # Someone else already bumped it to 3 server-side; our stale `base` still
+    # says 1, so this should be reported as a conflict, not silently applied.
+    client.patch(f"/stops/{stop['id']}", json={"priority": 3})
+    r = client.patch(f"/stops/{stop['id']}", json={
+        "priority": 2,
+        "base": {"priority": 1},
+    })
+    assert r.status_code == 409
+    assert r.json()["detail"]["conflicts"][0]["field"] == "priority"
+
+
 def test_accommodation_is_an_item(client: TestClient, trip):
     # Accommodation is no longer a Stop field — it's an ItineraryItem (kind=accommodation),
     # with check-in/out stored in the item's free-form `details`.

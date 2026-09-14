@@ -23,6 +23,7 @@ def _stop_snapshot(stop) -> dict:
         "lng": stop.lng,
         "sort_order": stop.sort_order,
         "status": stop.status,
+        "priority": stop.priority,
     }
 
 

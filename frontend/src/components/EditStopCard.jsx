@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { updateStop, deleteStop } from '../api.js'
 import EditItemsSection from './EditItemsSection.jsx'
+import { priorityBandColor } from '../calendarModel.js'
 
 const STATUS_OPTIONS = ['planned', 'confirmed', 'completed', 'cancelled']
 
@@ -37,6 +38,7 @@ export default function EditStopCard({ stop, index, onRefresh }) {
     lat: stop.lat ?? '',
     lng: stop.lng ?? '',
     status: stop.status,
+    priority: stop.priority ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -54,6 +56,7 @@ export default function EditStopCard({ stop, index, onRefresh }) {
         ...fields,
         arrive: fromDateInput(fields.arrive),
         depart: fromDateInput(fields.depart),
+        priority: fields.priority === '' ? null : parseInt(fields.priority, 10),
       })
       setSaved(true)
       onRefresh()
@@ -122,6 +125,31 @@ export default function EditStopCard({ stop, index, onRefresh }) {
               >
                 {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+            </div>
+            <div>
+              <label htmlFor={`stop-priority-${stop.id}`} style={{ color: 'var(--text-faint)' }} className="block text-xs mb-0.5" title="Ranks overlapping stop options for the calendar view — lower first. Leave blank if this stop isn't competing with another for the same dates.">
+                Priority
+              </label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  id={`stop-priority-${stop.id}`}
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={fields.priority}
+                  onChange={e => set('priority', e.target.value)}
+                  placeholder="—"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                  className="w-16 rounded px-2 py-1.5 text-sm outline-none focus:border-[var(--accent)]"
+                />
+                {fields.priority !== '' && (
+                  <span
+                    aria-hidden="true"
+                    title={`Priority ${fields.priority} colour`}
+                    style={{ width: '0.9rem', height: '0.9rem', borderRadius: '9999px', background: priorityBandColor(parseInt(fields.priority, 10) || 1, stop.id) }}
+                  />
+                )}
+              </div>
             </div>
             <div className="flex-1" />
             <button

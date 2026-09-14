@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   tripDateRange, dayKeysBetween, weeksCovering, stopBands, packLanes,
-  itemsByDay, shiftPeriod,
+  itemsByDay, shiftPeriod, priorityBandColor,
 } from '../calendarModel.js'
 
 describe('tripDateRange', () => {
@@ -65,7 +65,7 @@ describe('dayKeysBetween', () => {
 describe('stopBands', () => {
   it('arrive-only stop becomes a one-day band', () => {
     const timeline = { stops: [{ id: 1, location: 'Tokyo', arrive: '2026-09-14T10:00', depart: null, items: [] }] }
-    expect(stopBands(timeline)).toEqual([{ stop: timeline.stops[0], first: '2026-09-14', last: '2026-09-14', colorIndex: 0 }])
+    expect(stopBands(timeline)).toEqual([{ stop: timeline.stops[0], first: '2026-09-14', last: '2026-09-14', colorIndex: 0, color: null }])
   })
 
   it('omits fully undated stops', () => {
@@ -78,10 +78,37 @@ describe('stopBands', () => {
     const bands = stopBands({ stops })
     expect(bands.map(b => b.colorIndex)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 0, 1])
   })
+
+  it('a stop with a priority gets a priorityBandColor instead of null', () => {
+    const timeline = { stops: [{ id: 5, location: 'Hakone', arrive: '2026-09-14T10:00', depart: '2026-09-15T10:00', priority: 1, items: [] }] }
+    const [band] = stopBands(timeline)
+    expect(band.color).toBe(priorityBandColor(1, 5))
+    expect(band.color).not.toBeNull()
+  })
+})
+
+describe('priorityBandColor', () => {
+  it('is deterministic for the same priority + stop id', () => {
+    expect(priorityBandColor(1, 42)).toBe(priorityBandColor(1, 42))
+  })
+
+  it('differs between two different priorities for the same stop id', () => {
+    expect(priorityBandColor(1, 42)).not.toBe(priorityBandColor(2, 42))
+  })
+
+  it('differs between two different stop ids at the same priority', () => {
+    expect(priorityBandColor(1, 1)).not.toBe(priorityBandColor(1, 2))
+  })
+
+  it('priority 1 is a shade of blue', () => {
+    const [, hue] = priorityBandColor(1, 7).match(/^hsl\(([\d.]+)deg/)
+    expect(Number(hue)).toBeGreaterThanOrEqual(190)
+    expect(Number(hue)).toBeLessThanOrEqual(230)
+  })
 })
 
 describe('packLanes', () => {
-  const band = (id, first, last) => ({ stop: { id }, first, last, colorIndex: 0 })
+  const band = (id, first, last, priority) => ({ stop: { id, priority }, first, last, colorIndex: 0 })
 
   it('three mutually overlapping bands get lanes 0, 1, 2', () => {
     const bands = [band('a', '2026-09-01', '2026-09-05'), band('b', '2026-09-02', '2026-09-06'), band('c', '2026-09-03', '2026-09-07')]
@@ -102,6 +129,56 @@ describe('packLanes', () => {
     const byId = Object.fromEntries(packed.map(b => [b.stop.id, b.lane]))
     expect(byId.a).toBe(0)
     expect(byId.b).toBe(1)
+  })
+
+  it('a lower priority number wins the top lane over an overlapping unranked stop', () => {
+    // 'b' (unranked) starts first chronologically, but 'a' (priority 1)
+    // should still land in the top lane — that's the whole point of ranking.
+    const bands = [band('b', '2026-09-01', '2026-09-05', undefined), band('a', '2026-09-02', '2026-09-06', 1)]
+    const packed = packLanes(bands)
+    const byId = Object.fromEntries(packed.map(b => [b.stop.id, b.lane]))
+    expect(byId.a).toBe(0)
+    expect(byId.b).toBe(1)
+  })
+
+  it('a lower priority number wins the top lane over a higher (worse) priority', () => {
+    const bands = [band('worse', '2026-09-01', '2026-09-05', 3), band('best', '2026-09-02', '2026-09-06', 1)]
+    const packed = packLanes(bands)
+    const byId = Object.fromEntries(packed.map(b => [b.stop.id, b.lane]))
+    expect(byId.best).toBe(0)
+    expect(byId.worse).toBe(1)
+  })
+
+  it('same priority falls back to start-day order, same as unranked bands', () => {
+    const bands = [band('later', '2026-09-03', '2026-09-06', 1), band('earlier', '2026-09-01', '2026-09-04', 1)]
+    const packed = packLanes(bands)
+    const byId = Object.fromEntries(packed.map(b => [b.stop.id, b.lane]))
+    expect(byId.earlier).toBe(0)
+    expect(byId.later).toBe(1)
+  })
+
+  it('never puts two genuinely overlapping bands in the same lane, regardless of priority ordering', () => {
+    // A deliberately adversarial mix: three mutually-overlapping bands with
+    // priorities in a different order than their start dates.
+    const bands = [
+      band('a', '2026-09-05', '2026-09-10', 3),
+      band('b', '2026-09-01', '2026-09-06', 1),
+      band('c', '2026-09-03', '2026-09-08', 2),
+    ]
+    const packed = packLanes(bands)
+    const byLane = new Map()
+    for (const b of packed) {
+      if (!byLane.has(b.lane)) byLane.set(b.lane, [])
+      byLane.get(b.lane).push(b)
+    }
+    for (const laneBands of byLane.values()) {
+      for (let i = 0; i < laneBands.length; i++) {
+        for (let j = i + 1; j < laneBands.length; j++) {
+          const overlap = laneBands[i].first <= laneBands[j].last && laneBands[j].first <= laneBands[i].last
+          expect(overlap).toBe(false)
+        }
+      }
+    }
   })
 })
 

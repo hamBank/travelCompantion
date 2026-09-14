@@ -350,7 +350,7 @@ export default function TripCalendar({
                           lineHeight: `${BAND_H}rem`,
                           position: 'relative',
                           zIndex: 1,
-                          background: `var(--stop-${b.colorIndex + 1})`,
+                          background: b.color || `var(--stop-${b.colorIndex + 1})`,
                           color: '#1e1e2e',
                           textDecoration: b.isDeleted ? 'line-through' : 'none',
                           opacity: b.isDeleted ? 0.55 : 1,
