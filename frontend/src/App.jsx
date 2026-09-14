@@ -23,7 +23,7 @@ import {
   getAuthConfig, exportTripPdf, getPending, getTripTimeline, refreshAuthToken, AUTH_EXPIRED_EVENT,
   rescheduleTrip, getDateWarnings,
 } from './api.js'
-import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, CalendarRange, Plane, Route } from 'lucide-react'
+import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, CalendarRange, Plane, Route, Printer } from 'lucide-react'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale, KindFilterContext, getDefaultToToday, getCalendarView, setCalendarView as persistCalendarView } from './settings.js'
 import { getSavedNav, saveNav, clearNav } from './navState.js'
@@ -160,6 +160,25 @@ function AppShell({ user, onLogout }) {
     setCalendarAnchor(a => shiftPeriod(calendarView, a, direction === 'next' ? 1 : -1))
   }
 
+  // Print (plan-16c): Week/Trip read better landscape (agenda rows / a long
+  // date range), Month better portrait (a near-square grid) — see the named
+  // `@page landscape` rule in index.css that `.print-landscape` on <html>
+  // switches on. `afterprint` (fired for both the real dialog and a
+  // cancelled one) is the only reliable place to remove it again; a
+  // setTimeout after calling print() can't be trusted to run after the
+  // (blocking, in most browsers) print dialog closes.
+  function handlePrintCalendar() {
+    const root = document.documentElement
+    const landscape = calendarView === 'week' || calendarView === 'trip'
+    if (landscape) root.classList.add('print-landscape')
+    const cleanup = () => {
+      root.classList.remove('print-landscape')
+      window.removeEventListener('afterprint', cleanup)
+    }
+    window.addEventListener('afterprint', cleanup)
+    window.print()
+  }
+
   // Swipe navigation for the calendar (the touch analogue of the ‹ › arrows)
   // — mirrors TripTimeline's own useSwipeNav(navigateDay, todayMode), gated
   // so only one of the two document-level listeners is ever enabled at once
@@ -264,13 +283,16 @@ function AppShell({ user, onLogout }) {
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
       {!online && (
         <div
+          data-print-hide
           className="w-full text-center text-xs py-1.5 px-4"
           style={{ background: 'var(--warning)', color: '#1e1e2e', fontWeight: 500 }}
         >
           Offline — read-only
         </div>
       )}
-      <OfflineQueueBanner onLogout={onLogout} />
+      <div data-print-hide>
+        <OfflineQueueBanner onLogout={onLogout} />
+      </div>
 
       <header
         className="pr-3 sm:px-6 flex items-center gap-2 sticky top-0 z-20"
@@ -543,6 +565,16 @@ function AppShell({ user, onLogout }) {
               >
                 ›
               </button>
+              {!planning && (
+                <button
+                  onClick={handlePrintCalendar}
+                  aria-label="Print calendar"
+                  style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+                >
+                  <Printer size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Print
+                </button>
+              )}
               {selectedTrip && online && canEdit(selectedTrip.role) && (
                 planning ? (
                   <div className="flex items-center gap-1.5">
