@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
-  SNAPSHOT_VERSION, rootSnapshot, pushNav, replaceNav, back, currentNav,
+  SNAPSHOT_VERSION, rootSnapshot, pushNav, replaceNav, back, backSteps, currentNav,
   onPopNav, registerNavGuard, layerDepth,
 } from '../historyNav.js'
 
@@ -70,10 +70,22 @@ describe('pushNav / replaceNav / currentNav', () => {
 })
 
 describe('back()', () => {
-  it('delegates to history.back()', () => {
+  it('closes one layer via history.back(), ignoring any argument it is called with', () => {
     const spy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
-    back()
+    // Called the way every event-handler binding in App.jsx calls it —
+    // e.g. onClick={back} — where React passes a SyntheticEvent as the
+    // first argument. back() must ignore it entirely.
+    back({ fakeSyntheticEvent: true })
     expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy).toHaveBeenCalledWith()
+  })
+})
+
+describe('backSteps()', () => {
+  it('closes multiple layers at once via history.go(-n)', () => {
+    const spy = vi.spyOn(window.history, 'go').mockImplementation(() => {})
+    backSteps(2)
+    expect(spy).toHaveBeenCalledWith(-2)
   })
 })
 

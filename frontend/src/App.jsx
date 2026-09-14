@@ -32,7 +32,7 @@ import { useSwipeNav } from './swipeNav.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
 import { useOnline } from './online.js'
 import ItemEditModal from './components/ItemEditModal.jsx'
-import { rootSnapshot, pushNav, replaceNav, back, onPopNav, registerNavGuard } from './historyNav.js'
+import { rootSnapshot, pushNav, replaceNav, back, backSteps, onPopNav, registerNavGuard } from './historyNav.js'
 import { NavBaseContext } from './navContext.js'
 
 // Apply saved font scale before first render
@@ -763,7 +763,20 @@ function AppShell({ user, onLogout }) {
           {selectedTrip && online && !packing && !calendar && (
             <button
               onClick={() => {
-                if (today) { back(); return } // "All days" closes the Today layer (D4)
+                if (today) {
+                  // "All days" closes the Today layer (D4) — normally just
+                  // one pop, back to Timeline. But a Today session entered by
+                  // jumping to a day from the calendar (handleOpenDay) sits
+                  // on top of a Calendar layer, not Timeline directly — a
+                  // single pop would surface the Calendar grid instead (where
+                  // Edit is equally unavailable, so this looked like Edit had
+                  // vanished for good). todayInitialDay is non-null only for
+                  // that jump (and is cleared whenever Today turns off, see
+                  // above), so it's exactly the signal for "skip the Calendar
+                  // layer too and land straight on Timeline."
+                  if (todayInitialDay != null) { backSteps(2) } else { back() }
+                  return
+                }
                 setToday(true); setEditing(false); setCalendar(false)
                 pushSnapshot({ today: true, editing: false, calendar: false })
               }}

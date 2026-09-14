@@ -48,6 +48,7 @@ vi.mock('../historyNav.js', async (importOriginal) => {
     pushNav: vi.fn(actual.pushNav),
     replaceNav: vi.fn(actual.replaceNav),
     back: vi.fn(actual.back),
+    backSteps: vi.fn(actual.backSteps),
   }
 })
 
@@ -116,7 +117,7 @@ vi.mock('../offlineQueue.js', () => ({
 }))
 
 import { getTrips } from '../api.js'
-import { pushNav, replaceNav, back as backSpy, rootSnapshot } from '../historyNav.js'
+import { pushNav, replaceNav, back as backSpy, backSteps as backStepsSpy, rootSnapshot } from '../historyNav.js'
 import { clearNav } from '../navState.js'
 import App, { snapshotFromState, OVERLAY_KINDS } from '../App.jsx'
 
@@ -248,8 +249,29 @@ describe('mode toggles push; Timeline (from within a mode) closes via back(); ca
     expect(pushNav).toHaveBeenCalledWith(expect.objectContaining({ tripId: 1, mode: 'today' }))
 
     backSpy.mockClear()
+    backStepsSpy.mockClear()
     fireEvent.click(screen.getByText('All days'))
-    expect(backSpy).toHaveBeenCalled()
+    expect(backSpy).toHaveBeenCalledTimes(1)
+    expect(backStepsSpy).not.toHaveBeenCalled()
+  })
+
+  it('Today reached via a calendar day/stop click: "All days" skips the Calendar layer too (backSteps(2))', async () => {
+    // The bug this covers: tapping a stop on the calendar jumps into Today
+    // mode on top of the Calendar layer (not Timeline). A plain back() from
+    // "All days" would then surface Calendar again — where Edit is equally
+    // unavailable — leaving no in-app way back to a view with Edit on it.
+    await openTrip1()
+    fireEvent.click(screen.getByLabelText('Menu'))
+    fireEvent.click(screen.getByText('Calendar'))
+    await waitFor(() => expect(screen.getByTestId('calendar')).toBeTruthy())
+    fireEvent.click(screen.getByText('open-day'))
+    await waitFor(() => expect(screen.getByText('All days')).toBeTruthy())
+
+    backSpy.mockClear()
+    backStepsSpy.mockClear()
+    fireEvent.click(screen.getByText('All days'))
+    expect(backStepsSpy).toHaveBeenCalledWith(2)
+    expect(backSpy).not.toHaveBeenCalled()
   })
 })
 
