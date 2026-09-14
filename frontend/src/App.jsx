@@ -14,6 +14,7 @@ import OfflineQueueBanner from './components/OfflineQueueBanner.jsx'
 import BudgetSummary from './components/BudgetSummary.jsx'
 import DistanceSummary from './components/DistanceSummary.jsx'
 import DocumentsModal from './components/DocumentsModal.jsx'
+import TravelersModal from './components/TravelersModal.jsx'
 import MenuDropdown from './components/MenuDropdown.jsx'
 import TripCalendar from './components/TripCalendar.jsx'
 import { itemDateKey } from './components/StopCard.jsx'
@@ -23,7 +24,7 @@ import {
   getAuthConfig, exportTripPdf, getPending, getTripTimeline, refreshAuthToken, AUTH_EXPIRED_EVENT,
   rescheduleTrip, getDateWarnings,
 } from './api.js'
-import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, CalendarRange, Plane, Route, Printer } from 'lucide-react'
+import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, CalendarRange, Plane, Route, Printer, Users } from 'lucide-react'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale, KindFilterContext, getDefaultToToday, getCalendarView, setCalendarView as persistCalendarView } from './settings.js'
 import { getSavedNav, saveNav, clearNav } from './navState.js'
@@ -88,6 +89,7 @@ function AppShell({ user, onLogout }) {
   const [showBudget, setShowBudget] = useState(false)
   const [showDistance, setShowDistance] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
+  const [showTravelers, setShowTravelers] = useState(false)
   const [showImportDoc, setShowImportDoc] = useState(false)
   // Planning mode (plan-16d): `planning` gates the calendar into editable
   // bands; `draft` accumulates unsaved moves/creates/deletes (calendarModel.js
@@ -375,6 +377,11 @@ function AppShell({ user, onLogout }) {
             {selectedTrip && online && canManage(selectedTrip.role) && (
               <MenuItem onClick={() => setShowShare(true)}>Share</MenuItem>
             )}
+            {selectedTrip && (
+              <MenuItem onClick={() => setShowTravelers(true)}>
+                <Users size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Travelers
+              </MenuItem>
+            )}
             {selectedTrip && online && (
               <MenuItem onClick={handleExportPdf} disabled={exporting}>
                 {exporting ? 'Exporting…' : 'Export PDF'}
@@ -409,6 +416,9 @@ function AppShell({ user, onLogout }) {
       {showSettings && <UserSettings onClose={() => setShowSettings(false)} />}
       {showDocuments && <DocumentsModal onClose={() => setShowDocuments(false)} />}
       {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={() => setShowShare(false)} />}
+      {showTravelers && selectedTrip && (
+        <TravelersModal trip={selectedTrip} userEmail={user?.email} onClose={() => setShowTravelers(false)} />
+      )}
 
       {showBudget && selectedTrip && (
         <BudgetSummary
