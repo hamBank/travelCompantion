@@ -84,11 +84,16 @@ def update_stop(stop_id: int, stop_in: StopUpdate, session: Session = Depends(ge
     return stop
 
 
-@router.delete("/stops/{stop_id}", status_code=204)
-def delete_stop(stop_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
-    require_stop_role(session, user, stop_id, TripRole.editor)
-    stop = session.get(Stop, stop_id)
-    items = session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop_id)).all()
+def _delete_stop_cascade(session: Session, stop: Stop) -> None:
+    """Delete `stop` and every row that FK-references it, explicitly and in
+    dependency order — shared by DELETE /stops/{id} below and
+    POST /trips/{trip_id}/reschedule's deletes[] (backend/routers/trips.py,
+    plan 16a) so this cascade exists in exactly one place rather than being
+    copy-pasted. Does NOT commit — the reschedule endpoint batches several
+    stops' deletes together with creates/moves in one atomic transaction, so
+    committing is the caller's job.
+    """
+    items = session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop.id)).all()
     # ItemAttachment has a real FK to the item but no ORM Relationship()
     # linking them, so the unit-of-work has no dependency info to order these
     # deletes correctly on its own — flush this stage before deleting the
@@ -103,7 +108,7 @@ def delete_stop(stop_id: int, session: Session = Depends(get_session), user: dic
     # directly to this stop and expenses linked to one of its items (which
     # are about to be deleted below).
     item_ids = [item.id for item in items]
-    expenses = {e.id: e for e in session.exec(select(Expense).where(Expense.stop_id == stop_id)).all()}
+    expenses = {e.id: e for e in session.exec(select(Expense).where(Expense.stop_id == stop.id)).all()}
     if item_ids:
         for e in session.exec(select(Expense).where(Expense.item_id.in_(item_ids))).all():
             expenses[e.id] = e
@@ -115,6 +120,13 @@ def delete_stop(stop_id: int, session: Session = Depends(get_session), user: dic
     for item in items:
         session.delete(item)
     session.delete(stop)
+
+
+@router.delete("/stops/{stop_id}", status_code=204)
+def delete_stop(stop_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    require_stop_role(session, user, stop_id, TripRole.editor)
+    stop = session.get(Stop, stop_id)
+    _delete_stop_cascade(session, stop)
     session.commit()
 
 

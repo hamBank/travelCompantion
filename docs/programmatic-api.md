@@ -6,7 +6,9 @@ using the app's existing REST endpoints. It covers the two things that aren't
 obvious from the endpoints themselves: **authentication** and the **create
 flow**.
 
-Scope: **create only**. Updating and deleting are intentionally out of scope for
+Scope: creating trips/stops/items (§3), and rescheduling stops — moving,
+creating and deleting them atomically, with their items' dates following
+along (§6). Other updates and deletes are intentionally out of scope for
 now — the endpoints exist, but this document doesn't cover them.
 
 ---
@@ -271,7 +273,68 @@ A reliable prompt shape:
 
 ---
 
-## 6. Notes & caveats
+## 6. Reschedule stops
+
+`POST /trips/{trip_id}/reschedule` moves, creates and deletes a trip's stops
+in one atomic request — and, for any moved stop, shifts every date-bearing
+field of every item inside it by the same number of whole days (a stop
+dragged 4 days later takes its flights, hotel check-in/out, and activities 4
+days later too; time-of-day is always preserved exactly). Requires editor
+access.
+
+```bash
+curl -s -X POST "$BASE/trips/$trip_id/reschedule" -H "$AUTH" -H "$JSON" -d '{
+  "moves": [
+    {"stop_id": 12, "arrive": "2026-10-04T00:00", "depart": "2026-10-07T00:00"}
+  ],
+  "creates": [
+    {"location": "Hakone", "country": "JP", "arrive": "2026-10-05T00:00",
+     "depart": "2026-10-06T00:00", "timezone": "GMT+9", "client_ref": "tmp-1"}
+  ],
+  "deletes": [15]
+}'
+```
+
+- `moves[].arrive`/`depart` are the **full new values** for the stop (either
+  may be `null` to clear), not a partial patch — same local wall-clock, no-
+  timezone convention as everywhere else (§4). The shift applied to that
+  stop's items is `new_arrive.date() - old_arrive.date()` (falling back to
+  `depart` when a stop has no `arrive`, and to a no-op when it has neither).
+- `moves[].base` is optional compare-and-set: `{"arrive": ..., "depart":
+  ...}` as your script last saw them. If the server's current value has since
+  changed and doesn't match, the whole request is rejected with `409` and
+  **nothing is applied** — no stop in the batch is moved, not just the
+  conflicting one.
+- `creates[]` take the same fields as `POST /trips/{trip_id}/stops` (§3b)
+  plus an optional `client_ref` string, echoed back in the response's
+  `created` list as `{"client_ref": ..., "id": <new stop id>}` so you can map
+  your own temporary ids to the real ones.
+- `deletes[]` are stop ids to delete (same cascade as `DELETE /stops/{id}`:
+  attachments removed, expenses unlinked not deleted). A stop id can't
+  appear in both `moves` and `deletes` (`422`), and any id not belonging to
+  `trip_id` is a `404`.
+- An empty body (`{}`) is a no-op — `200` with the trip's stops unchanged.
+
+Response:
+
+```json
+{
+  "stops": [ "...every stop in the trip, in timeline order..." ],
+  "created": [{"client_ref": "tmp-1", "id": 31}],
+  "shifted_items": [{"item_id": 88, "stop_id": 12, "delta_days": 4}],
+  "inverse": {"moves": [...], "creates": [], "deletes": [31]},
+  "undo_lossy": false
+}
+```
+
+`inverse` is a request body that undoes this call — `POST` it straight back
+to this same endpoint to revert. `undo_lossy` is `true` whenever this call's
+`deletes` was non-empty: a deleted stop's items are gone, so undoing a delete
+can't be expressed as a create, and `inverse.creates` is always `[]`.
+
+---
+
+## 7. Notes & caveats
 
 - **No idempotency.** Re-running the same POSTs creates duplicate rows. If a run
   might be retried, capture the returned `id`s and don't blindly re-POST.
