@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 
 vi.mock('../api.js', () => ({
   updateStopStatus: vi.fn(), updateItemStatus: vi.fn(), getWeather: vi.fn(),
@@ -20,8 +20,14 @@ import StopCard from '../components/StopCard.jsx'
 /**
  * Purchase and food cards previously had no detail modal at all — clicking
  * the card body did nothing. Regression coverage: tapping either card's
- * body now opens ItemDetailModal (asserted via modal-only content), while
- * the status icon and the item's own link keep working without opening it.
+ * body now calls `onOpen` with the item.
+ *
+ * Since plan-18b, StopCard's cards no longer own a detail modal instance
+ * each — opening one is unified onto TripTimeline's single nav-modal
+ * mechanism (so Back can close it), reached via the `onOpen` prop StopCard
+ * threads down to every card. StopCard itself is tested here in isolation
+ * (no TripTimeline/nav wiring), so it only asserts the hand-off happens —
+ * the modal's own content is covered by ItemDetailModal's own tests.
  */
 
 function stopWith(item) {
@@ -33,29 +39,29 @@ function stopWith(item) {
 beforeEach(() => vi.clearAllMocks())
 
 describe('PurchaseCard — detail modal', () => {
-  it('opens the detail modal on click, showing description and notes', async () => {
+  it('calls onOpen with the item on click', () => {
     const item = {
       id: 10, kind: 'purchase', name: 'Leather wallet', status: 'pending',
       notes: 'Ask about the discount for cash',
       details: { description: 'Handmade, tan color' },
     }
-    render(<StopCard stop={stopWith(item)} index={0} forceOpen />)
+    const onOpen = vi.fn()
+    render(<StopCard stop={stopWith(item)} index={0} forceOpen onOpen={onOpen} />)
     fireEvent.click(screen.getByText('Leather wallet'))
-    expect(screen.getByText('Ask about the discount for cash')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('Attachments')).toBeInTheDocument())
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 10 }))
   })
 })
 
 describe('FoodCard — detail modal', () => {
-  it('opens the detail modal on click, showing description and notes', async () => {
+  it('calls onOpen with the item on click', () => {
     const item = {
       id: 11, kind: 'food', name: 'Gelato stop', status: 'pending',
       notes: 'Try the pistachio',
       details: { description: 'Best gelato in the neighborhood' },
     }
-    render(<StopCard stop={stopWith(item)} index={0} forceOpen />)
+    const onOpen = vi.fn()
+    render(<StopCard stop={stopWith(item)} index={0} forceOpen onOpen={onOpen} />)
     fireEvent.click(screen.getByText('Gelato stop'))
-    expect(screen.getByText('Try the pistachio')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('Attachments')).toBeInTheDocument())
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 11 }))
   })
 })

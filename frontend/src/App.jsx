@@ -33,6 +33,7 @@ import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
 import { useOnline } from './online.js'
 import ItemEditModal from './components/ItemEditModal.jsx'
 import { rootSnapshot, pushNav, replaceNav, back, onPopNav, registerNavGuard } from './historyNav.js'
+import { NavBaseContext } from './navContext.js'
 
 // Apply saved font scale before first render
 applyFontScale()
@@ -84,10 +85,14 @@ export const OVERLAY_KINDS = {
 // Pure derivation of "what's on screen" (plan-18 D2) from AppShell's state —
 // kept free of React so it's trivial to unit-test. Mode precedence mirrors
 // how the JSX below picks a view: edit > packing > calendar > today >
-// timeline. `day`/`item` stay null here — TripTimeline owns those (18b);
-// App only forwards a popped snapshot's day/item to it (applyNav below).
+// timeline. `day`/`item` are normally absent from AppShell's own state bag
+// (TripTimeline owns those, 18b) and default to null — the one exception is
+// the calendar's onOpenDay/onOpenItem hand-off, which passes `day` explicitly
+// as an override so the Today snapshot it pushes records which day it jumped
+// to (see handleOpenDay below). App only forwards a popped snapshot's
+// day/item on to TripTimeline (applyNav below); it never reads them back out.
 export function snapshotFromState(state) {
-  const { selectedTrip, editing, packing, today, calendar, calendarView, planning } = state
+  const { selectedTrip, editing, packing, today, calendar, calendarView, planning, day, item } = state
   const mode = editing ? 'edit' : packing ? 'packing' : calendar ? 'calendar' : today ? 'today' : 'timeline'
   let overlay = null
   for (const flag of Object.keys(OVERLAY_KINDS)) {
@@ -97,13 +102,17 @@ export function snapshotFromState(state) {
     v: 1,
     tripId: selectedTrip?.id ?? null,
     mode,
-    day: null,
+    day: day ?? null,
     calView: calendar ? (calendarView ?? null) : null,
     planning: !!planning,
     overlay,
-    item: null,
+    item: item ?? null,
   }
 }
+
+// Re-exported for convenience/discoverability — see navContext.js for why
+// the context object itself lives there rather than being defined here.
+export { NavBaseContext }
 
 function AppShell({ user, onLogout }) {
   const [selectedTrip, setSelectedTrip] = useState(null)
@@ -147,9 +156,10 @@ function AppShell({ user, onLogout }) {
   const [undo, setUndo] = useState(null) // {inverse, lossy} while the ~10s Undo toast is up
   const online = useOnline()
 
-  // History (plan-18a): timelineRef is the seam for 18b's internal layers
-  // (day/item/edit) — App forwards a popped snapshot to it and it's a no-op
-  // until 18b fills it in. applyingRef is set while applyNav (below) is
+  // History (plan-18a/18b): timelineRef is the seam onto TripTimeline's own
+  // internal layers (day/item/edit) — App forwards every popped snapshot to
+  // it via timelineRef.current.applyNav(snapshot); TripTimeline owns what
+  // that does with day/item. applyingRef is set while applyNav (below) is
   // running a popped snapshot's state changes, so the explicit push/replace
   // calls at each action site (openTrip, mode toggles, etc.) can't fire
   // again in response to state a pop already caused — those calls are all
@@ -218,7 +228,7 @@ function AppShell({ user, onLogout }) {
   function handleOpenDay(day) { guardLeavePlanning(() => {
     const wasPlanning = planning
     setCalendar(false); setToday(true); setTodayInitialDay(day)
-    const overrides = { calendar: false, today: true, planning: false }
+    const overrides = { calendar: false, today: true, planning: false, day }
     // Leaving Calendar+Planning in one click closes two push layers at once
     // (D3: mode and planning are separate layers) — replaceNav collapses
     // them into the new one in place rather than needing an async
@@ -685,13 +695,15 @@ function AppShell({ user, onLogout }) {
                         onOpenDay={handleOpenDay} onOpenItem={handleOpenItem}
                         planning={planning} draft={draft} onDraftChange={setDraft}
                       />
-                : <TripTimeline
-                    ref={timelineRef}
-                    tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
-                    todayMode={today} initialDay={todayInitialDay}
-                    onExitToday={() => setToday(false)}
-                    importing={showImportDoc} setImporting={back}
-                  />
+                : <NavBaseContext.Provider value={snapshotFromState(currentStateBag())}>
+                    <TripTimeline
+                      ref={timelineRef}
+                      tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
+                      todayMode={today} initialDay={todayInitialDay}
+                      onExitToday={() => setToday(false)}
+                      importing={showImportDoc} setImporting={back}
+                    />
+                  </NavBaseContext.Provider>
           : tripNavLoading
             // A Back/Forward/reload-restore names a trip not already held in
             // state (applyNav, above) — show a spinner rather than let

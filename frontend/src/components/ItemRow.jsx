@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { updateItemStatus } from '../api.js'
-import ItemDetailModal from './ItemDetailModal.jsx'
 import ItemEditModal from './ItemEditModal.jsx'
 import CostDisplay from './CostDisplay.jsx'
 import { isFullyPaid } from '../currency.js'
@@ -16,10 +15,9 @@ const ICON = { pending: '○', done: '✓', skipped: '—' }
  * add a dedicated card for `item.kind` rather than relying on this. The visible
  * "⚠ unsupported type" badge below is intentional so the gap is obvious in the UI.
  */
-export default function ItemRow({ item, onItemSaved, onItemDeleted }) {
+export default function ItemRow({ item, onItemSaved, onItemDeleted, onOpen }) {
   const [current, setCurrent] = useState(item)
   const [status, setStatus] = useState(item.status)
-  const [showDetail, setShowDetail] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
 
   async function cycle(e) {
@@ -44,7 +42,7 @@ export default function ItemRow({ item, onItemSaved, onItemDeleted }) {
           {ICON[status]}
         </button>
         <button
-          onClick={() => setShowDetail(true)}
+          onClick={() => onOpen(current)}
           className="flex-1 min-w-0 text-left hover:opacity-70 transition-opacity flex items-center gap-2"
           style={{ opacity: struck ? 0.4 : 1 }}
         >
@@ -81,14 +79,6 @@ export default function ItemRow({ item, onItemSaved, onItemDeleted }) {
           <Pencil size={12} aria-hidden="true" />
         </button>
       </div>
-      {showDetail && (
-        <ItemDetailModal
-          item={current}
-          onClose={() => setShowDetail(false)}
-          onEdit={() => { setShowDetail(false); setShowEdit(true) }}
-          onDeleted={onItemDeleted}
-        />
-      )}
       {showEdit && (
         <ItemEditModal
           item={current}

@@ -1617,7 +1617,7 @@ function FoodForm({ core, details, setCore, setDetails }) {
   )
 }
 
-export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew = false, stops: stopsProp }) {
+export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew = false, stops: stopsProp, isDirtyRef = null }) {
   // Block data-sync refreshes while this modal is open
   useEffect(() => { setEditing(true); return () => setEditing(false) }, [])
 
@@ -1654,9 +1654,24 @@ export default function ItemEditModal({ item, onSave, onClose, onDeleted, isNew 
   // changed field's value as seen when this modal was opened, not whatever
   // it's since been edited to.
   const openedAt = useRef({ core, details })
+
+  // Mirrors `dirty` into isDirtyRef on every change, when the caller passed
+  // one (plan-18b) — TripTimeline's Back guard reads it so the *same*
+  // discard confirm fires whether the edit is closed via ✕/Cancel below or
+  // via the browser's Back button, without duplicating this comparison.
+  useEffect(() => {
+    if (!isDirtyRef) return
+    isDirtyRef.current = JSON.stringify({ core, details, targetStop }) !== initialSnapshot.current
+  })
+
   function requestClose() {
-    const dirty = JSON.stringify({ core, details, targetStop }) !== initialSnapshot.current
-    if (dirty && !confirm('Discard unsaved changes?')) return
+    // A caller that passed isDirtyRef also registered a nav guard that runs
+    // this same check on the back() call below (plan-18 D5) — checking here
+    // too would show the confirm twice for the same close.
+    if (!isDirtyRef) {
+      const dirty = JSON.stringify({ core, details, targetStop }) !== initialSnapshot.current
+      if (dirty && !confirm('Discard unsaved changes?')) return
+    }
     onClose()
   }
 
