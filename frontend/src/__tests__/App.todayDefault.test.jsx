@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
+import { forwardRef } from 'react'
 
 /**
  * "Open trips in Today view by default" (settings.js) is a persistent user
@@ -25,8 +26,13 @@ vi.mock('../api.js', async (importOriginal) => {
   }
 })
 
+// forwardRef — see App.calendar.test.jsx's comment on the same mock; App.jsx
+// passes a ref to TripTimeline (plan-18a's seam for 18b).
+const { TripTimelineMock } = vi.hoisted(() => ({
+  TripTimelineMock: vi.fn(({ todayMode }) => <div data-testid="timeline" data-today={String(todayMode)} />),
+}))
 vi.mock('../components/TripTimeline.jsx', () => ({
-  default: vi.fn(({ todayMode }) => <div data-testid="timeline" data-today={String(todayMode)} />),
+  default: forwardRef((props, ref) => TripTimelineMock(props, ref)),
 }))
 
 // Unrelated to what's under test — OfflineQueueBanner (rendered by AppShell
@@ -38,7 +44,6 @@ vi.mock('../offlineQueue.js', () => ({
 }))
 
 import { getTrips } from '../api.js'
-import TripTimeline from '../components/TripTimeline.jsx'
 import { setDefaultToToday } from '../settings.js'
 import { saveNav, clearNav } from '../navState.js'
 import App from '../App.jsx'
@@ -61,16 +66,16 @@ describe('default-to-today setting vs. restored nav state', () => {
   it('opens in Today view on a fresh auto-open when the setting is on (no saved nav)', async () => {
     setDefaultToToday(true)
     render(<App />)
-    await waitFor(() => expect(TripTimeline).toHaveBeenCalled())
-    const lastCall = TripTimeline.mock.calls.at(-1)
+    await waitFor(() => expect(TripTimelineMock).toHaveBeenCalled())
+    const lastCall = TripTimelineMock.mock.calls.at(-1)
     expect(lastCall[0]).toEqual(expect.objectContaining({ todayMode: true }))
   })
 
   it('does not default to Today when the setting is off (no saved nav)', async () => {
     setDefaultToToday(false)
     render(<App />)
-    await waitFor(() => expect(TripTimeline).toHaveBeenCalled())
-    const lastCall = TripTimeline.mock.calls.at(-1)
+    await waitFor(() => expect(TripTimelineMock).toHaveBeenCalled())
+    const lastCall = TripTimelineMock.mock.calls.at(-1)
     expect(lastCall[0]).toEqual(expect.objectContaining({ todayMode: false }))
   })
 
@@ -78,8 +83,8 @@ describe('default-to-today setting vs. restored nav state', () => {
     setDefaultToToday(true)
     saveNav({ tripId: TRIP.id, today: false })
     render(<App />)
-    await waitFor(() => expect(TripTimeline).toHaveBeenCalled())
-    const lastCall = TripTimeline.mock.calls.at(-1)
+    await waitFor(() => expect(TripTimelineMock).toHaveBeenCalled())
+    const lastCall = TripTimelineMock.mock.calls.at(-1)
     expect(lastCall[0]).toEqual(expect.objectContaining({ todayMode: true }))
   })
 
@@ -87,8 +92,8 @@ describe('default-to-today setting vs. restored nav state', () => {
     setDefaultToToday(false)
     saveNav({ tripId: TRIP.id, today: true })
     render(<App />)
-    await waitFor(() => expect(TripTimeline).toHaveBeenCalled())
-    const lastCall = TripTimeline.mock.calls.at(-1)
+    await waitFor(() => expect(TripTimelineMock).toHaveBeenCalled())
+    const lastCall = TripTimelineMock.mock.calls.at(-1)
     expect(lastCall[0]).toEqual(expect.objectContaining({ todayMode: true }))
   })
 })

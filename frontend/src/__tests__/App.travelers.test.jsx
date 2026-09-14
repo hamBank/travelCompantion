@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { forwardRef } from 'react'
 
 /**
  * Travelers menu wiring in App.jsx (plan-17c): the hamburger's Travelers item
@@ -22,8 +23,13 @@ vi.mock('../api.js', async (importOriginal) => {
   }
 })
 
+// forwardRef — see App.calendar.test.jsx's comment on the same mock; App.jsx
+// passes a ref to TripTimeline (plan-18a's seam for 18b).
+const { TripTimelineMock } = vi.hoisted(() => ({
+  TripTimelineMock: vi.fn(() => <div data-testid="timeline" />),
+}))
 vi.mock('../components/TripTimeline.jsx', () => ({
-  default: vi.fn(() => <div data-testid="timeline" />),
+  default: forwardRef((props, ref) => TripTimelineMock(props, ref)),
 }))
 
 vi.mock('../components/TravelersModal.jsx', () => ({
@@ -40,7 +46,6 @@ vi.mock('../offlineQueue.js', () => ({
 }))
 
 import { getTrips } from '../api.js'
-import TripTimeline from '../components/TripTimeline.jsx'
 import TravelersModal from '../components/TravelersModal.jsx'
 import { clearNav } from '../navState.js'
 import App from '../App.jsx'
@@ -60,7 +65,7 @@ describe('Travelers menu item', () => {
   it('opens TravelersModal with the trip and user email, for a non-owner role', async () => {
     render(<App />)
     fireEvent.click(await screen.findByText('Solo Trip'))
-    await waitFor(() => expect(TripTimeline).toHaveBeenCalled())
+    await waitFor(() => expect(TripTimelineMock).toHaveBeenCalled())
 
     fireEvent.click(screen.getByLabelText('Menu'))
     // Share is owner-only and hidden for this viewer trip; Travelers is not.
@@ -72,7 +77,10 @@ describe('Travelers menu item', () => {
     expect(modal.dataset.tripId).toBe('1')
     expect(modal.dataset.userEmail).toBe('dev@local')
 
+    // onClose now goes through historyNav's back() (plan-18a D4) — the
+    // resulting popstate (and so the state change that unmounts the modal)
+    // lands asynchronously, unlike the old direct setShowTravelers(false).
     fireEvent.click(screen.getByText('close-travelers'))
-    expect(screen.queryByTestId('travelers-modal')).toBeNull()
+    await waitFor(() => expect(screen.queryByTestId('travelers-modal')).toBeNull())
   })
 })

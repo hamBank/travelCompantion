@@ -157,6 +157,11 @@ export const createTrip = (data) => req('/trips/', { method: 'POST', body: JSON.
 export const deleteTrip = (id) => req(`/trips/${id}`, { method: 'DELETE' })
 export const updateTrip = (id, data) =>
   req(`/trips/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+// One trip with the caller's role (TripReadWithRole) — used by historyNav's
+// applyNav (App.jsx) to resolve a trip a Back/Forward snapshot names that
+// isn't already held in state (e.g. after a reload, or jumping several
+// entries via the long-press Back menu).
+export const getTrip = (id) => req(`/trips/${id}`)
 
 // ── Packing list ─────────────────────────────────────────────────────────────
 export const getPacking       = (tripId)        => req(`/trips/${tripId}/packing`)

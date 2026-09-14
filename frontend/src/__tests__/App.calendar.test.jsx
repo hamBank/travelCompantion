@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { forwardRef } from 'react'
 
 /**
  * Calendar menu toggle + footer view switcher (plan-16b) wiring in App.jsx:
@@ -22,10 +23,20 @@ vi.mock('../api.js', async (importOriginal) => {
   }
 })
 
-vi.mock('../components/TripTimeline.jsx', () => ({
-  default: vi.fn(({ todayMode, initialDay }) => (
+// App.jsx passes a ref to TripTimeline (plan-18a's seam for 18b) — a plain
+// function mock triggers React's "function components cannot be given
+// refs" warning and an extra no-args render that corrupts
+// `TripTimelineMock.mock.calls.at(-1)` below, so the mock itself must be a
+// forwardRef. vi.hoisted keeps the same vi.fn reachable both inside the
+// factory (wrapped in forwardRef) and from the assertions below (the
+// forwardRef object itself has no `.mock`).
+const { TripTimelineMock } = vi.hoisted(() => ({
+  TripTimelineMock: vi.fn(({ todayMode, initialDay }) => (
     <div data-testid="timeline" data-today={String(todayMode)} data-initial-day={initialDay ?? ''} />
   )),
+}))
+vi.mock('../components/TripTimeline.jsx', () => ({
+  default: forwardRef((props, ref) => TripTimelineMock(props, ref)),
 }))
 
 vi.mock('../components/TripCalendar.jsx', () => ({
@@ -45,7 +56,6 @@ vi.mock('../offlineQueue.js', () => ({
 }))
 
 import { getTrips } from '../api.js'
-import TripTimeline from '../components/TripTimeline.jsx'
 import TripCalendar from '../components/TripCalendar.jsx'
 import { clearNav } from '../navState.js'
 import App from '../App.jsx'
@@ -64,7 +74,7 @@ afterEach(() => { clearNav() })
 async function openTripAndCalendar() {
   render(<App />)
   fireEvent.click(await screen.findByText('Solo Trip'))
-  await waitFor(() => expect(TripTimeline).toHaveBeenCalled())
+  await waitFor(() => expect(TripTimelineMock).toHaveBeenCalled())
   const menuTrigger = screen.getByLabelText('Menu')
   fireEvent.click(menuTrigger)
   fireEvent.click(screen.getByText('Calendar'))
@@ -93,7 +103,7 @@ describe('Calendar menu toggle', () => {
     await waitFor(() => expect(screen.getByTestId('calendar')).toBeTruthy())
     fireEvent.click(screen.getByText('open-day'))
     await waitFor(() => {
-      const last = TripTimeline.mock.calls.at(-1)[0]
+      const last = TripTimelineMock.mock.calls.at(-1)[0]
       expect(last.todayMode).toBe(true)
       expect(last.initialDay).toBe('2026-09-16')
     })
@@ -105,7 +115,7 @@ describe('Calendar menu toggle', () => {
     await waitFor(() => expect(screen.getByTestId('calendar')).toBeTruthy())
     fireEvent.click(screen.getByText('open-item'))
     await waitFor(() => {
-      const last = TripTimeline.mock.calls.at(-1)[0]
+      const last = TripTimelineMock.mock.calls.at(-1)[0]
       expect(last.todayMode).toBe(true)
       expect(last.initialDay).toBe('2026-09-17') // the mocked item's scheduled_at day
     })

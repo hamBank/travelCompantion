@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { getTripTimeline, backfillAccommodations, getDateWarnings, getPending, updateItemStatus, updateStop } from '../api.js'
 import StopCard, { computeCrossStopLayover, itemDateKey, itemOccursOn, isPastPending, DayMap, dayMapPoints } from './StopCard.jsx'
 import FlightDetailModal from './FlightDetailModal.jsx'
@@ -76,7 +76,12 @@ export function clampedShiftDay(dateStr, direction, timeline) {
   return next
 }
 
-export default function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday, importing = false, setImporting = () => {}, initialDay = null }) {
+// forwardRef (plan-18a): a seam for plan-18b's internal Back/Forward layers
+// (Today-mode day, item detail, detail -> edit). App.jsx forwards
+// snapshot.day/snapshot.item to `ref.current.applyNav(snapshot)` on every
+// pop; this is a no-op stub until 18b fills it in.
+const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday, importing = false, setImporting = () => {}, initialDay = null }, ref) {
+  useImperativeHandle(ref, () => ({ applyNav: () => {} }))
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -593,4 +598,6 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
     )}
     </>
   )
-}
+})
+
+export default TripTimeline

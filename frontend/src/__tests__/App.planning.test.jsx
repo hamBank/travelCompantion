@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { forwardRef } from 'react'
 
 /**
  * Planning mode wiring in App.jsx (plan-16d): the Plan/Save/Discard footer
@@ -43,8 +44,9 @@ vi.mock('../online.js', async (importOriginal) => {
   return { ...actual, useOnline: vi.fn(() => true) }
 })
 
+// forwardRef — App.jsx passes a ref to TripTimeline (plan-18a's seam for 18b).
 vi.mock('../components/TripTimeline.jsx', () => ({
-  default: vi.fn(() => <div data-testid="timeline" />),
+  default: forwardRef((props, ref) => <div data-testid="timeline" />),
 }))
 
 vi.mock('../components/TripCalendar.jsx', () => ({
