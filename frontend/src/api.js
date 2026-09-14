@@ -217,10 +217,9 @@ export const getMyDistanceTotals = () => req(`/me/distance-totals`)
 // all keyed on trips the signed-in user is a *traveler* on (D6, plan-17b) —
 // see backend/routers/me.py's GET /me/travel-totals.
 export const getMyTravelTotals = () => req(`/me/travel-totals`)
-// One-liner also added by plan-17c's fuller Travelers section (createTraveler,
-// updateTraveler, ...) — this line is intentionally duplicated there; keep
-// one copy on merge (see docs/plans/plan-17b-personal-totals.md).
-export const getTravelers = (tripId) => req(`/trips/${tripId}/travelers`)
+// getTravelers and the rest of the Travelers CRUD/profile helpers live in
+// the "Travelers" section further down (plan-17c) — kept there as one copy
+// per docs/plans/plan-17b-personal-totals.md's merge note.
 
 // ── Pending changes (review-before-apply imports) ────────────────────────────
 export const getPending     = (tripId) => req(`/pending${tripId != null ? `?trip_id=${tripId}` : ''}`)
@@ -484,3 +483,19 @@ export async function fetchDocumentFileBlob(docId, fileId) {
   })
   return r.ok ? r.blob() : null
 }
+
+// ── Travelers (who is physically going on a trip, plan-17) ──────────────────
+// Clear-field CRUD plus decrypt-on-demand profile — see
+// docs/plans/plan-17-travelers.md (D3/D4) and backend/routers/travelers.py.
+export const getTravelers  = (tripId)       => req(`/trips/${tripId}/travelers`)
+export const createTraveler = (tripId, data) =>
+  req(`/trips/${tripId}/travelers`, { method: 'POST', body: JSON.stringify(data) })
+export const updateTraveler = (tripId, id, data) =>
+  req(`/trips/${tripId}/travelers/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const deleteTraveler = (tripId, id) =>
+  req(`/trips/${tripId}/travelers/${id}`, { method: 'DELETE' })
+export const getTravelerProfile = (tripId, id) => req(`/trips/${tripId}/travelers/${id}/profile`)
+export const putTravelerProfile = (tripId, id, data) =>
+  req(`/trips/${tripId}/travelers/${id}/profile`, { method: 'PUT', body: JSON.stringify(data) })
+export const deleteTravelerProfile = (tripId, id) =>
+  req(`/trips/${tripId}/travelers/${id}/profile`, { method: 'DELETE' })
