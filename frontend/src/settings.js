@@ -72,6 +72,26 @@ export function useDefaultToToday() {
   return useSyncExternalStore(subscribe, getDefaultToToday)
 }
 
+// ── Calendar view (week/month/trip) — persisted across sessions ──────────────
+const CALENDAR_VIEW_KEY = 'tc-calendar-view'
+const CALENDAR_VIEWS = ['week', 'month', 'trip']
+const DEFAULT_CALENDAR_VIEW = 'trip'
+
+export function getCalendarView() {
+  const v = localStorage.getItem(CALENDAR_VIEW_KEY)
+  return CALENDAR_VIEWS.includes(v) ? v : DEFAULT_CALENDAR_VIEW
+}
+
+export function setCalendarView(view) {
+  if (!CALENDAR_VIEWS.includes(view)) return
+  localStorage.setItem(CALENDAR_VIEW_KEY, view)
+  listeners.forEach(l => l())
+}
+
+export function useCalendarView() {
+  return useSyncExternalStore(subscribe, getCalendarView)
+}
+
 // ── Font scale (applied as root font-size; all rem values scale with it) ─────
 const FONT_SCALE_KEY = 'tc-font-scale'
 export const FONT_SCALE_OPTIONS = [

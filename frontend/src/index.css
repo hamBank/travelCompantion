@@ -85,6 +85,19 @@
   --kind-purchase:      #eba0ac;
   --kind-show:          #d8a0f0;
   --kind-hire:          #89b4fa;
+  /* Stop band colours (plan-16b calendar views) — a deterministic palette
+     cycled by each stop's position in timeline order, distinct from the
+     --kind-* set so a band (which stop) and a chip (which kind of item)
+     read as two different visual layers rather than competing for the
+     same colour language. */
+  --stop-1: #f38ba8;
+  --stop-2: #fab387;
+  --stop-3: #f9e2af;
+  --stop-4: #a6e3a1;
+  --stop-5: #94e2d5;
+  --stop-6: #74c7ec;
+  --stop-7: #89b4fa;
+  --stop-8: #cba6f7;
   --input-icon-filter: invert(0.8);
 }
 
@@ -124,6 +137,14 @@
   --kind-purchase:      #e38393;
   --kind-show:          #cba0f0;
   --kind-hire:          #7287fd;
+  --stop-1: #ed8796;
+  --stop-2: #f5a97f;
+  --stop-3: #eed49f;
+  --stop-4: #a6da95;
+  --stop-5: #8bd5ca;
+  --stop-6: #7dc4e4;
+  --stop-7: #8aadf4;
+  --stop-8: #c6a0f6;
   --input-icon-filter: invert(0.8);
 }
 
@@ -163,6 +184,14 @@
   --kind-purchase:      #d20f39;
   --kind-show:          #8839ef;
   --kind-hire:          #1e66f5;
+  --stop-1: #d20f39;
+  --stop-2: #fe640b;
+  --stop-3: #df8e1d;
+  --stop-4: #40a02b;
+  --stop-5: #179299;
+  --stop-6: #209fb5;
+  --stop-7: #1e66f5;
+  --stop-8: #8839ef;
   --input-icon-filter: none;
 }
 
@@ -202,6 +231,14 @@
   --kind-purchase:      #bf616a;
   --kind-show:          #b48ead;
   --kind-hire:          #5b79a8;
+  --stop-1: #bf616a;
+  --stop-2: #d08770;
+  --stop-3: #ebcb8b;
+  --stop-4: #a3be8c;
+  --stop-5: #8fbcbb;
+  --stop-6: #88c0d0;
+  --stop-7: #81a1c1;
+  --stop-8: #b48ead;
   --input-icon-filter: invert(0.8);
 }
 
@@ -241,6 +278,14 @@
   --kind-purchase:      #eb6f92;
   --kind-show:          #c4a7e7;
   --kind-hire:          #7ba4db;
+  --stop-1: #eb6f92;
+  --stop-2: #e99f7a;
+  --stop-3: #f6c177;
+  --stop-4: #ea9a97;
+  --stop-5: #56949f;
+  --stop-6: #9ccfd8;
+  --stop-7: #3e8fb0;
+  --stop-8: #c4a7e7;
   --input-icon-filter: invert(0.8);
 }
 
@@ -280,6 +325,14 @@
   --kind-purchase:      #ff6b6b;
   --kind-show:          #d946ef;
   --kind-hire:          #3b82f6;
+  --stop-1: #ff6b6b;
+  --stop-2: #fb923c;
+  --stop-3: #fcd34d;
+  --stop-4: #4ade80;
+  --stop-5: #22d3ee;
+  --stop-6: #818cf8;
+  --stop-7: #c084fc;
+  --stop-8: #f472b6;
   --input-icon-filter: invert(0.8);
 }
 
@@ -319,6 +372,14 @@
   --kind-purchase:      #8b2635;
   --kind-show:          #7b2d8b;
   --kind-hire:          #1d4ed8;
+  --stop-1: #8b2635;
+  --stop-2: #c2571a;
+  --stop-3: #b37700;
+  --stop-4: #2b7a4b;
+  --stop-5: #1a7a6e;
+  --stop-6: #0e7c9c;
+  --stop-7: #5246c0;
+  --stop-8: #8b44ac;
   --input-icon-filter: none;
 }
 
@@ -358,6 +419,14 @@
   --kind-purchase:      #f07070;
   --kind-show:          #d070e0;
   --kind-hire:          #4a90d9;
+  --stop-1: #f07070;
+  --stop-2: #f0803c;
+  --stop-3: #f0c060;
+  --stop-4: #60d8a8;
+  --stop-5: #4fb0a5;
+  --stop-6: #5dd5e8;
+  --stop-7: #8080f0;
+  --stop-8: #d070e0;
   --input-icon-filter: invert(0.8);
 }
 

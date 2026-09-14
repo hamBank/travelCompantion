@@ -76,7 +76,7 @@ export function clampedShiftDay(dateStr, direction, timeline) {
   return next
 }
 
-export default function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday, importing = false, setImporting = () => {} }) {
+export default function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday, importing = false, setImporting = () => {}, initialDay = null }) {
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -207,12 +207,16 @@ export default function TripTimeline({ tripId, onStats, onStops, todayMode = fal
   // Pick the default day once per todayMode "on" stint (not on every background
   // refresh — timeline gets a new object reference on each poll/save, which
   // would otherwise reset navigation back to the default day mid-browse).
+  // `initialDay` (set by App.jsx when entering Today mode from the calendar's
+  // "open day"/chip tap — plan-16b) wins over pickInitialDay's own guess for
+  // that one "on" stint; a plain Today toggle passes no initialDay and falls
+  // back to pickInitialDay as before.
   useEffect(() => {
     if (!todayMode) { dayInitializedRef.current = false; setSelectedDay(null); return }
     if (dayInitializedRef.current || !timeline) return
     dayInitializedRef.current = true
-    setSelectedDay(pickInitialDay(timeline))
-  }, [todayMode, timeline])
+    setSelectedDay(initialDay || pickInitialDay(timeline))
+  }, [todayMode, timeline, initialDay])
 
   // Surface stop counts to the header (shown in the minimal title bar).
   useEffect(() => {

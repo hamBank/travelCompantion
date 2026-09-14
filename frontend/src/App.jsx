@@ -15,12 +15,16 @@ import BudgetSummary from './components/BudgetSummary.jsx'
 import DistanceSummary from './components/DistanceSummary.jsx'
 import DocumentsModal from './components/DocumentsModal.jsx'
 import MenuDropdown from './components/MenuDropdown.jsx'
+import TripCalendar from './components/TripCalendar.jsx'
+import { itemDateKey } from './components/StopCard.jsx'
+import { shiftPeriod } from './calendarModel.js'
 import { DEFAULT_THEME } from './themes.js'
-import { getAuthConfig, exportTripPdf, getPending, refreshAuthToken, AUTH_EXPIRED_EVENT } from './api.js'
-import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, Plane, Route } from 'lucide-react'
+import { getAuthConfig, exportTripPdf, getPending, getTripTimeline, refreshAuthToken, AUTH_EXPIRED_EVENT } from './api.js'
+import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, CalendarRange, Plane, Route } from 'lucide-react'
 import { canEdit, canManage } from './roles.js'
-import { applyFontScale, KindFilterContext, getDefaultToToday } from './settings.js'
+import { applyFontScale, KindFilterContext, getDefaultToToday, getCalendarView, setCalendarView as persistCalendarView } from './settings.js'
 import { getSavedNav, saveNav, clearNav } from './navState.js'
+import { useSwipeNav } from './swipeNav.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
 import { useOnline } from './online.js'
 import ItemEditModal from './components/ItemEditModal.jsx'
@@ -71,6 +75,13 @@ function AppShell({ user, onLogout }) {
   const [hidePacked, setHidePacked] = useState(false)
   const [packing, setPacking] = useState(false)
   const [today, setToday] = useState(false)
+  const [todayInitialDay, setTodayInitialDay] = useState(null)
+  const [calendar, setCalendar] = useState(false)
+  const [calendarView, setCalendarViewState] = useState(getCalendarView)
+  const [calendarAnchor, setCalendarAnchor] = useState(() => new Date().toLocaleDateString('sv-SE'))
+  const [calendarTimeline, setCalendarTimeline] = useState(null)
+  const [calendarLoading, setCalendarLoading] = useState(false)
+  const [calendarError, setCalendarError] = useState(null)
   const [showBudget, setShowBudget] = useState(false)
   const [showDistance, setShowDistance] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
@@ -98,6 +109,48 @@ function AppShell({ user, onLogout }) {
     finally { setExporting(false) }
   }
 
+  // A plain Today toggle (footer button, or the setting on trip-open) should
+  // fall back to TripTimeline's own pickInitialDay — only a jump FROM the
+  // calendar (onOpenDay/onOpenItem below) should override it. Clearing this
+  // whenever Today turns off, from whatever caused it, keeps a stale day from
+  // a previous calendar jump from silently winning the next plain toggle.
+  useEffect(() => { if (!today) setTodayInitialDay(null) }, [today])
+
+  function setCalendarViewPersisted(view) { persistCalendarView(view); setCalendarViewState(view) }
+
+  // Calendar view fetches its own copy of the timeline — TripTimeline already
+  // owns the fetch/warnings/backfill lifecycle for its own view and doesn't
+  // surface the raw payload upward, so the calendar (a separate, simpler
+  // read-only consumer per plan-16 D1) fetches independently rather than
+  // threading that state through App.
+  useEffect(() => {
+    if (!calendar || !selectedTrip) { setCalendarTimeline(null); setCalendarError(null); return }
+    let cancelled = false
+    setCalendarLoading(true); setCalendarError(null)
+    getTripTimeline(selectedTrip.id)
+      .then(tl => { if (!cancelled) setCalendarTimeline(tl) })
+      .catch(e => { if (!cancelled) { setCalendarTimeline(null); setCalendarError(e.message) } })
+      .finally(() => { if (!cancelled) setCalendarLoading(false) })
+    return () => { cancelled = true }
+  }, [calendar, selectedTrip])
+
+  // Calendar → Today-mode handoff: Day view doesn't exist as its own grid
+  // (plan-16 D9) — it exits into the existing Today-mode day for that date.
+  // A chip tap resolves to its item's placement day (itemDateKey, same rule
+  // TripCalendar itself places chips by) and opens that day; falls back to
+  // the calendar's own anchor day if the item has no placeable date.
+  function handleOpenDay(day) { setCalendar(false); setToday(true); setTodayInitialDay(day) }
+  function handleOpenItem(item) { handleOpenDay(itemDateKey(item) || calendarAnchor) }
+  function shiftCalendar(direction) {
+    setCalendarAnchor(a => shiftPeriod(calendarView, a, direction === 'next' ? 1 : -1))
+  }
+
+  // Swipe navigation for the calendar (the touch analogue of the ‹ › arrows)
+  // — mirrors TripTimeline's own useSwipeNav(navigateDay, todayMode), gated
+  // so only one of the two document-level listeners is ever enabled at once
+  // (todayMode is false while calendar is true, and vice versa).
+  useSwipeNav(shiftCalendar, calendar)
+
   const [userChoseList, setUserChoseList] = useState(false)
 
   // Read once, at boot — whatever was open just before the app was last
@@ -110,8 +163,8 @@ function AppShell({ user, onLogout }) {
   // is otherwise saved on every trip open and would silently pin the app to
   // whatever view mode happened to be active last time, defeating the
   // setting on nearly every subsequent open).
-  function openTrip(trip, todayOverride) { setSelectedTrip(trip); setEditing(false); setPacking(false); setToday(getDefaultToToday() || (todayOverride ?? false)); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
-  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false); clearNav() }
+  function openTrip(trip, todayOverride) { setSelectedTrip(trip); setEditing(false); setPacking(false); setCalendar(false); setToday(getDefaultToToday() || (todayOverride ?? false)); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
+  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setCalendar(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false); clearNav() }
 
   // Keep the last-open trip/view-mode saved so a forced reload can restore
   // it instead of dumping the user back at the trip list.
@@ -194,14 +247,19 @@ function AppShell({ user, onLogout }) {
                 : <span style={{ color: 'var(--text-faint)' }} aria-label="Menu"><Menu size={20} aria-hidden="true" /></span>
             }
           >
-            {selectedTrip && online && !packing && !today && canEdit(selectedTrip.role) && (
+            {selectedTrip && online && !packing && !today && !calendar && canEdit(selectedTrip.role) && (
               <MenuItem onClick={() => setEditing(e => !e)}>
                 {editing ? 'View' : 'Edit'}
               </MenuItem>
             )}
             {selectedTrip && (
-              <MenuItem onClick={() => { setPacking(p => !p); setEditing(false); setToday(false) }}>
+              <MenuItem onClick={() => { setPacking(p => !p); setEditing(false); setToday(false); setCalendar(false) }}>
                 <Backpack size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />{packing ? 'Timeline' : 'Packing'}
+              </MenuItem>
+            )}
+            {selectedTrip && (
+              <MenuItem onClick={() => { setCalendar(c => !c); setPacking(false); setEditing(false); setToday(false) }}>
+                <CalendarRange size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />{calendar ? 'Timeline' : 'Calendar'}
               </MenuItem>
             )}
             {selectedTrip && online && canManage(selectedTrip.role) && (
@@ -275,12 +333,21 @@ function AppShell({ user, onLogout }) {
                   onTripRenamed={name => setSelectedTrip(t => ({ ...t, name }))}
                   onTripUpdated={fields => setSelectedTrip(t => ({ ...t, ...fields }))}
                 />
-              : <TripTimeline
-                  tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
-                  todayMode={today}
-                  onExitToday={() => setToday(false)}
-                  importing={showImportDoc} setImporting={setShowImportDoc}
-                />
+              : calendar
+                ? calendarLoading
+                  ? <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading calendar…</p>
+                  : calendarError
+                    ? <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{calendarError}</p>
+                    : <TripCalendar
+                        timeline={calendarTimeline} view={calendarView} anchorDay={calendarAnchor}
+                        onOpenDay={handleOpenDay} onOpenItem={handleOpenItem}
+                      />
+                : <TripTimeline
+                    tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
+                    todayMode={today} initialDay={todayInitialDay}
+                    onExitToday={() => setToday(false)}
+                    importing={showImportDoc} setImporting={setShowImportDoc}
+                  />
           : <TripList onOpen={openTrip} skipAutoOpen={userChoseList}
               restoreTripId={savedNavRef.current?.tripId ?? null}
               restoreToday={savedNavRef.current?.today ?? false} />
@@ -290,9 +357,9 @@ function AppShell({ user, onLogout }) {
 
       <footer className="w-full px-4 sm:px-8 lg:px-16 pb-8 pt-4 flex flex-col items-center gap-4">
         <div className="flex items-center gap-3 flex-wrap justify-center">
-          {selectedTrip && online && !packing && (
+          {selectedTrip && online && !packing && !calendar && (
             <button
-              onClick={() => { setToday(t => !t); setEditing(false) }}
+              onClick={() => { setToday(t => !t); setEditing(false); setCalendar(false) }}
               style={{
                 background: today ? 'var(--accent)' : 'transparent',
                 color: today ? 'var(--accent-fg)' : 'var(--text-muted)',
@@ -303,6 +370,52 @@ function AppShell({ user, onLogout }) {
             >
               <CalendarDays size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />{today ? 'All days' : 'Today'}
             </button>
+          )}
+          {selectedTrip && calendar && (
+            <div className="flex items-center gap-1.5">
+              <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                <button
+                  onClick={() => handleOpenDay(calendarAnchor)}
+                  style={{ background: 'transparent', color: 'var(--text-muted)' }}
+                  className="px-2.5 py-1.5 text-xs font-medium hover:opacity-80 transition-opacity"
+                >
+                  Day
+                </button>
+                {[['week', 'Week'], ['month', 'Month'], ['trip', 'Trip']].map(([v, label]) => (
+                  <button
+                    key={v}
+                    onClick={() => setCalendarViewPersisted(v)}
+                    style={{
+                      background: calendarView === v ? 'var(--accent)' : 'transparent',
+                      color: calendarView === v ? 'var(--accent-fg)' : 'var(--text-muted)',
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-medium hover:opacity-80 transition-opacity"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => shiftCalendar('prev')}
+                disabled={calendarView === 'trip'}
+                aria-label="Previous period"
+                style={{ color: 'var(--text-muted)' }}
+                className="text-sm px-1.5 hover:opacity-70 transition-opacity disabled:opacity-30"
+              >
+                ‹
+              </button>
+              <button
+                onClick={() => shiftCalendar('next')}
+                disabled={calendarView === 'trip'}
+                aria-label="Next period"
+                style={{ color: 'var(--text-muted)' }}
+                className="text-sm px-1.5 hover:opacity-70 transition-opacity disabled:opacity-30"
+              >
+                ›
+              </button>
+              {/* Seam for plan-16c's Print button and plan-16d's Plan button
+                  (editors, online only) — neither is implemented in 16b. */}
+            </div>
           )}
           {selectedTrip && !editing && !packing && (
             <select
@@ -341,7 +454,7 @@ function AppShell({ user, onLogout }) {
               <option value="hide" style={{ background: 'var(--modal-bg)', color: 'var(--text)' }}>Hide packed</option>
             </select>
           )}
-          {selectedTrip && !editing && !packing && online && canEdit(selectedTrip.role) && (
+          {selectedTrip && !editing && !packing && !calendar && online && canEdit(selectedTrip.role) && (
             <button
               onClick={() => setShowImportDoc(true)}
               style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
@@ -350,7 +463,7 @@ function AppShell({ user, onLogout }) {
               ⇪ Import from document
             </button>
           )}
-          {selectedTrip && !editing && online && canEdit(selectedTrip.role) && tripStops.length > 0 && (
+          {selectedTrip && !editing && !calendar && online && canEdit(selectedTrip.role) && tripStops.length > 0 && (
             <button
               onClick={() => setShowQuickAdd(true)}
               style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
