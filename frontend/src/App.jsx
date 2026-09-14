@@ -22,7 +22,7 @@ import { shiftPeriod, emptyDraft, draftChangeCount, draftToRequest } from './cal
 import { DEFAULT_THEME } from './themes.js'
 import {
   getAuthConfig, exportTripPdf, getPending, getTripTimeline, refreshAuthToken, AUTH_EXPIRED_EVENT,
-  rescheduleTrip, getDateWarnings,
+  rescheduleTrip, getDateWarnings, getTrip,
 } from './api.js'
 import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, CalendarRange, Plane, Route, Printer, Users } from 'lucide-react'
 import { canEdit, canManage } from './roles.js'
@@ -32,6 +32,7 @@ import { useSwipeNav } from './swipeNav.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
 import { useOnline } from './online.js'
 import ItemEditModal from './components/ItemEditModal.jsx'
+import { rootSnapshot, pushNav, replaceNav, back, onPopNav, registerNavGuard } from './historyNav.js'
 
 // Apply saved font scale before first render
 applyFontScale()
@@ -61,6 +62,47 @@ function MenuItem({ onClick, disabled, children }) {
       {children}
     </button>
   )
+}
+
+// Every overlay's `show*` flag, keyed to the snapshot `overlay.kind` it
+// corresponds to (plan-18 D2). snapshotFromState below reads this list
+// instead of a hand-written if/else chain specifically so a new overlay
+// flag can't be added to AppShell's state without also appearing here —
+// App.history.test.jsx asserts every flag in this object round-trips.
+export const OVERLAY_KINDS = {
+  showSettings: 'settings',
+  showShare: 'share',
+  showBudget: 'budget',
+  showDistance: 'distance',
+  showDocuments: 'documents',
+  showTravelers: 'travelers',
+  showImports: 'imports',
+  showQuickAdd: 'quickAdd',
+  showImportDoc: 'importDoc',
+}
+
+// Pure derivation of "what's on screen" (plan-18 D2) from AppShell's state —
+// kept free of React so it's trivial to unit-test. Mode precedence mirrors
+// how the JSX below picks a view: edit > packing > calendar > today >
+// timeline. `day`/`item` stay null here — TripTimeline owns those (18b);
+// App only forwards a popped snapshot's day/item to it (applyNav below).
+export function snapshotFromState(state) {
+  const { selectedTrip, editing, packing, today, calendar, calendarView, planning } = state
+  const mode = editing ? 'edit' : packing ? 'packing' : calendar ? 'calendar' : today ? 'today' : 'timeline'
+  let overlay = null
+  for (const flag of Object.keys(OVERLAY_KINDS)) {
+    if (state[flag]) { overlay = { kind: OVERLAY_KINDS[flag] }; break }
+  }
+  return {
+    v: 1,
+    tripId: selectedTrip?.id ?? null,
+    mode,
+    day: null,
+    calView: calendar ? (calendarView ?? null) : null,
+    planning: !!planning,
+    overlay,
+    item: null,
+  }
 }
 
 function AppShell({ user, onLogout }) {
@@ -105,6 +147,20 @@ function AppShell({ user, onLogout }) {
   const [undo, setUndo] = useState(null) // {inverse, lossy} while the ~10s Undo toast is up
   const online = useOnline()
 
+  // History (plan-18a): timelineRef is the seam for 18b's internal layers
+  // (day/item/edit) — App forwards a popped snapshot to it and it's a no-op
+  // until 18b fills it in. applyingRef is set while applyNav (below) is
+  // running a popped snapshot's state changes, so the explicit push/replace
+  // calls at each action site (openTrip, mode toggles, etc.) can't fire
+  // again in response to state a pop already caused — those calls are all
+  // driven directly by user actions, never by a generic effect watching
+  // state, but this is a cheap belt-and-braces guard against that pattern
+  // creeping back in later. tripNavLoading covers the gap while applyNav
+  // fetches a trip a snapshot names that isn't already held in state.
+  const timelineRef = useRef(null)
+  const applyingRef = useRef(false)
+  const [tripNavLoading, setTripNavLoading] = useState(false)
+
   function refreshPending() {
     if (online) getPending().then(p => setPendingCount(p.length)).catch(() => {})
   }
@@ -133,7 +189,10 @@ function AppShell({ user, onLogout }) {
   // a previous calendar jump from silently winning the next plain toggle.
   useEffect(() => { if (!today) setTodayInitialDay(null) }, [today])
 
-  function setCalendarViewPersisted(view) { persistCalendarView(view); setCalendarViewState(view) }
+  function setCalendarViewPersisted(view) {
+    persistCalendarView(view); setCalendarViewState(view)
+    replaceSnapshot({ calendarView: view }) // cycling the view replaces, doesn't stack (D3)
+  }
 
   // Calendar view fetches its own copy of the timeline — TripTimeline already
   // owns the fetch/warnings/backfill lifecycle for its own view and doesn't
@@ -156,7 +215,18 @@ function AppShell({ user, onLogout }) {
   // A chip tap resolves to its item's placement day (itemDateKey, same rule
   // TripCalendar itself places chips by) and opens that day; falls back to
   // the calendar's own anchor day if the item has no placeable date.
-  function handleOpenDay(day) { guardLeavePlanning(() => { setCalendar(false); setToday(true); setTodayInitialDay(day) }) }
+  function handleOpenDay(day) { guardLeavePlanning(() => {
+    const wasPlanning = planning
+    setCalendar(false); setToday(true); setTodayInitialDay(day)
+    const overrides = { calendar: false, today: true, planning: false }
+    // Leaving Calendar+Planning in one click closes two push layers at once
+    // (D3: mode and planning are separate layers) — replaceNav collapses
+    // them into the new one in place rather than needing an async
+    // history.go(-2) (see historyNav.js's layerDepth for the general case);
+    // Back from Today then lands on the Calendar entry underneath, which is
+    // still a perfectly valid prior state to land on.
+    if (wasPlanning) replaceSnapshot(overrides); else pushSnapshot(overrides)
+  }) }
   function handleOpenItem(item) { handleOpenDay(itemDateKey(item) || calendarAnchor) }
   function shiftCalendar(direction) {
     setCalendarAnchor(a => shiftPeriod(calendarView, a, direction === 'next' ? 1 : -1))
@@ -209,6 +279,134 @@ function AppShell({ user, onLogout }) {
     action()
   }
 
+  // Same guard, reused on the Back path (plan-18 D5): registered only while
+  // there's actually something to lose, so a plain Back with nothing
+  // pending never hits a confirm. Re-registers whenever planning/changeCount
+  // change so the message always has the current count.
+  useEffect(() => {
+    if (!planning || changeCount === 0) return
+    return registerNavGuard(() =>
+      changeCount === 0 || window.confirm(`Discard ${changeCount} unsaved planning change${changeCount > 1 ? 's' : ''}?`)
+    )
+  }, [planning, changeCount])
+
+  // --- History wiring (plan-18a) --------------------------------------------
+  // snapshotFromState needs the full bag of state it derives a snapshot
+  // from; pushSnapshot/replaceSnapshot apply `overrides` on top of the
+  // *current* values (read directly from the render closure, not from a
+  // setState callback) since the action sites below call these in the same
+  // synchronous block as the setState calls that will produce that state —
+  // by the time a pop could re-render with it, applyingRef is what stops a
+  // second push/replace, not a dependency on the new state having committed.
+  function currentStateBag() {
+    return {
+      selectedTrip, editing, packing, today, calendar, calendarView, planning,
+      showSettings, showShare, showBudget, showDistance, showDocuments,
+      showTravelers, showImports, showQuickAdd, showImportDoc,
+    }
+  }
+  function pushSnapshot(overrides) {
+    if (applyingRef.current) return
+    pushNav(snapshotFromState({ ...currentStateBag(), ...overrides }))
+  }
+  function replaceSnapshot(overrides) {
+    if (applyingRef.current) return
+    replaceNav(snapshotFromState({ ...currentStateBag(), ...overrides }))
+  }
+
+  function applyOverlay(kind) {
+    setShowSettings(kind === 'settings')
+    setShowShare(kind === 'share')
+    setShowBudget(kind === 'budget')
+    setShowDistance(kind === 'distance')
+    setShowDocuments(kind === 'documents')
+    setShowTravelers(kind === 'travelers')
+    setShowImports(kind === 'imports')
+    setShowQuickAdd(kind === 'quickAdd')
+    setShowImportDoc(kind === 'importDoc')
+  }
+
+  // The root (tripId: null) branch of applyNav below — also reachable if a
+  // trip a snapshot names 404s (the trip was deleted/unshared since this
+  // entry was pushed). Mirrors the old goBack()'s state reset; overlay is
+  // still taken from the snapshot since Settings/Documents are reachable
+  // from the trip list too (D2's overlay isn't trip-scoped).
+  function applyRootState(snapshot) {
+    setSelectedTrip(null); setEditing(false); setPacking(false); setCalendar(false); setToday(false)
+    setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false)
+    setPlanning(false); setDraft(emptyDraft()); setSaveConflict(null)
+    applyOverlay(snapshot.overlay?.kind ?? null)
+    clearNav()
+  }
+
+  // Applies a popped (or restored) snapshot's full state in one batch (D1).
+  // Never called from a user action directly — only from the popstate
+  // subscription below — so it never pushes/replaces itself; it just sets
+  // state to match what history already says is current.
+  async function applyNav(snapshot) {
+    applyingRef.current = true
+    try {
+      if (snapshot.tripId == null) {
+        applyRootState(snapshot)
+        timelineRef.current?.applyNav(snapshot)
+        return
+      }
+      if (!selectedTrip || selectedTrip.id !== snapshot.tripId) {
+        setTripNavLoading(true)
+        let trip
+        try {
+          trip = await getTrip(snapshot.tripId)
+        } catch {
+          // The trip this entry names is gone (deleted, unshared) or
+          // unreachable — fall back to the root rather than get stuck on a
+          // spinner for a trip that will never load.
+          setTripNavLoading(false)
+          const root = rootSnapshot()
+          replaceNav(root)
+          applyRootState(root)
+          timelineRef.current?.applyNav(root)
+          return
+        }
+        setTripNavLoading(false)
+        setSelectedTrip(trip)
+      }
+      setEditing(snapshot.mode === 'edit')
+      setPacking(snapshot.mode === 'packing')
+      setCalendar(snapshot.mode === 'calendar')
+      setToday(snapshot.mode === 'today')
+      setPlanning(!!snapshot.planning)
+      // Leaving planning (via Back, or Forward landing somewhere that isn't
+      // planning) discards the draft — same as guardLeavePlanning's direct
+      // paths; the confirm already happened (the registered guard above, or
+      // this pop wouldn't have been allowed through).
+      if (!snapshot.planning) { setDraft(emptyDraft()); setSaveConflict(null) }
+      applyOverlay(snapshot.overlay?.kind ?? null)
+      if (snapshot.calView) setCalendarViewState(snapshot.calView)
+      timelineRef.current?.applyNav(snapshot)
+    } finally {
+      applyingRef.current = false
+    }
+  }
+
+  // applyNav is recreated every render (it closes over selectedTrip etc.) —
+  // keep a ref to the latest one so the popstate subscription (registered
+  // once) never calls a stale closure.
+  const applyNavRef = useRef(() => {})
+  useEffect(() => { applyNavRef.current = applyNav })
+
+  // Boot: claim the entry we start on as ours (D6) before anything else can
+  // push. TripList's auto-open / navState.js's restore both go through
+  // openTrip below, which pushes — so the list stays underneath even on a
+  // restored reload (D7).
+  useEffect(() => { replaceNav(rootSnapshot()) }, [])
+
+  useEffect(() => {
+    return onPopNav(snapshot => {
+      if (!snapshot) return // foreign entry (pre-app history) — let the browser leave
+      applyNavRef.current(snapshot)
+    })
+  }, [])
+
   function refreshCalendarTimeline() {
     if (!selectedTrip) return Promise.resolve()
     return getTripTimeline(selectedTrip.id)
@@ -224,6 +422,7 @@ function AppShell({ user, onLogout }) {
       const response = await rescheduleTrip(selectedTrip.id, request)
       setPlanning(false)
       setDraft(emptyDraft())
+      back() // planning's push layer is closing either way (D4) — same as Discard/a popped Back
       await refreshCalendarTimeline()
       try {
         const w = await getDateWarnings(selectedTrip.id)
@@ -242,6 +441,7 @@ function AppShell({ user, onLogout }) {
   function handleDiscardPlan() {
     if (changeCount > 0 && !window.confirm(`Discard ${changeCount} unsaved planning change${changeCount > 1 ? 's' : ''}?`)) return
     setPlanning(false); setDraft(emptyDraft()); setSaveConflict(null)
+    back() // this button IS the "close the planning layer" affordance (D4)
   }
 
   async function handleUndoPlan() {
@@ -269,10 +469,16 @@ function AppShell({ user, onLogout }) {
   // whatever view mode happened to be active last time, defeating the
   // setting on nearly every subsequent open).
   function openTrip(trip, todayOverride) { guardLeavePlanning(() => {
-    setSelectedTrip(trip); setEditing(false); setPacking(false); setCalendar(false); setToday(getDefaultToToday() || (todayOverride ?? false)); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false)
-  }) }
-  function goBack() { guardLeavePlanning(() => {
-    setSelectedTrip(null); setEditing(false); setPacking(false); setCalendar(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false); clearNav()
+    const todayValue = getDefaultToToday() || (todayOverride ?? false)
+    const wasPlanning = planning
+    setSelectedTrip(trip); setEditing(false); setPacking(false); setCalendar(false); setToday(todayValue); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false)
+    // Opening a trip is always a push (D3/D6) — TripList's auto-open and
+    // navState.js's restore both call this too, so the list is always
+    // underneath. If planning was dirty (switching trips out from under an
+    // unsaved draft), collapse rather than stack a redundant layer — same
+    // reasoning as handleOpenDay above.
+    const overrides = { selectedTrip: trip, editing: false, packing: false, calendar: false, today: todayValue, planning: false }
+    if (wasPlanning) replaceSnapshot(overrides); else pushSnapshot(overrides)
   }) }
 
   // Keep the last-open trip/view-mode saved so a forced reload can restore
@@ -327,7 +533,7 @@ function AppShell({ user, onLogout }) {
         {selectedTrip ? (
           <>
             <button
-              onClick={goBack}
+              onClick={back}
               aria-label="Back to trip list"
               style={{ color: 'var(--text-faint)' }}
               className="text-sm hover:opacity-70 transition-opacity shrink-0 -my-2 py-2 pr-2"
@@ -360,25 +566,41 @@ function AppShell({ user, onLogout }) {
             }
           >
             {selectedTrip && online && !packing && !today && !calendar && canEdit(selectedTrip.role) && (
-              <MenuItem onClick={() => setEditing(e => !e)}>
+              <MenuItem onClick={() => {
+                if (editing) { back(); return } // Edit -> View closes the Edit layer (D4)
+                setEditing(true)
+                pushSnapshot({ editing: true })
+              }}>
                 {editing ? 'View' : 'Edit'}
               </MenuItem>
             )}
             {selectedTrip && (
-              <MenuItem onClick={() => guardLeavePlanning(() => { setPacking(p => !p); setEditing(false); setToday(false); setCalendar(false) })}>
+              <MenuItem onClick={() => {
+                if (packing) { back(); return } // Packing -> Timeline closes the Packing layer (D4)
+                guardLeavePlanning(() => {
+                  setPacking(true); setEditing(false); setToday(false); setCalendar(false)
+                  pushSnapshot({ packing: true, editing: false, today: false, calendar: false, planning: false })
+                })
+              }}>
                 <Backpack size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />{packing ? 'Timeline' : 'Packing'}
               </MenuItem>
             )}
             {selectedTrip && (
-              <MenuItem onClick={() => guardLeavePlanning(() => { setCalendar(c => !c); setPacking(false); setEditing(false); setToday(false) })}>
+              <MenuItem onClick={() => {
+                if (calendar) { back(); return } // Calendar -> Timeline closes the Calendar layer (D4)
+                guardLeavePlanning(() => {
+                  setCalendar(true); setPacking(false); setEditing(false); setToday(false)
+                  pushSnapshot({ calendar: true, packing: false, editing: false, today: false, planning: false })
+                })
+              }}>
                 <CalendarRange size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />{calendar ? 'Timeline' : 'Calendar'}
               </MenuItem>
             )}
             {selectedTrip && online && canManage(selectedTrip.role) && (
-              <MenuItem onClick={() => setShowShare(true)}>Share</MenuItem>
+              <MenuItem onClick={() => { setShowShare(true); pushSnapshot({ showShare: true }) }}>Share</MenuItem>
             )}
             {selectedTrip && (
-              <MenuItem onClick={() => setShowTravelers(true)}>
+              <MenuItem onClick={() => { setShowTravelers(true); pushSnapshot({ showTravelers: true }) }}>
                 <Users size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Travelers
               </MenuItem>
             )}
@@ -388,18 +610,18 @@ function AppShell({ user, onLogout }) {
               </MenuItem>
             )}
             {selectedTrip && online && !packing && (
-              <MenuItem onClick={() => setShowBudget(true)}><Wallet size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Budget</MenuItem>
+              <MenuItem onClick={() => { setShowBudget(true); pushSnapshot({ showBudget: true }) }}><Wallet size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Budget</MenuItem>
             )}
             {selectedTrip && online && !packing && (
-              <MenuItem onClick={() => setShowDistance(true)}><Route size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Distance</MenuItem>
+              <MenuItem onClick={() => { setShowDistance(true); pushSnapshot({ showDistance: true }) }}><Route size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Distance</MenuItem>
             )}
             {online && pendingCount > 0 && (
-              <MenuItem onClick={() => setShowImports(true)}>
+              <MenuItem onClick={() => { setShowImports(true); pushSnapshot({ showImports: true }) }}>
                 <span style={{ color: 'var(--warning)' }}><Inbox size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Imports ({pendingCount})</span>
               </MenuItem>
             )}
-            <MenuItem onClick={() => setShowDocuments(true)}><FileText size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Documents</MenuItem>
-            <MenuItem onClick={() => setShowSettings(true)}><Settings size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Settings</MenuItem>
+            <MenuItem onClick={() => { setShowDocuments(true); pushSnapshot({ showDocuments: true }) }}><FileText size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Documents</MenuItem>
+            <MenuItem onClick={() => { setShowSettings(true); pushSnapshot({ showSettings: true }) }}><Settings size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Settings</MenuItem>
             <div className="px-4 py-2 flex flex-col gap-1.5 items-start">
               <span style={{ color: 'var(--text-muted)' }} className="text-sm">Theme</span>
               <ThemePicker current={theme} onChange={setTheme} />
@@ -413,26 +635,26 @@ function AppShell({ user, onLogout }) {
         )}
       </header>
 
-      {showSettings && <UserSettings onClose={() => setShowSettings(false)} />}
-      {showDocuments && <DocumentsModal onClose={() => setShowDocuments(false)} />}
-      {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={() => setShowShare(false)} />}
+      {showSettings && <UserSettings onClose={back} />}
+      {showDocuments && <DocumentsModal onClose={back} />}
+      {showShare && selectedTrip && <ShareModal trip={selectedTrip} onClose={back} />}
       {showTravelers && selectedTrip && (
-        <TravelersModal trip={selectedTrip} userEmail={user?.email} onClose={() => setShowTravelers(false)} />
+        <TravelersModal trip={selectedTrip} userEmail={user?.email} onClose={back} />
       )}
 
       {showBudget && selectedTrip && (
         <BudgetSummary
           trip={selectedTrip} stops={tripStops}
           canEdit={online && canEdit(selectedTrip.role)}
-          onClose={() => setShowBudget(false)}
+          onClose={back}
         />
       )}
       {showDistance && selectedTrip && (
-        <DistanceSummary trip={selectedTrip} onClose={() => setShowDistance(false)} />
+        <DistanceSummary trip={selectedTrip} onClose={back} />
       )}
       {showImports && (
         <PendingReview
-          onClose={() => { setShowImports(false); refreshPending() }}
+          onClose={() => { back(); refreshPending() }}
           onChanged={refreshPending}
         />
       )}
@@ -464,14 +686,21 @@ function AppShell({ user, onLogout }) {
                         planning={planning} draft={draft} onDraftChange={setDraft}
                       />
                 : <TripTimeline
+                    ref={timelineRef}
                     tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
                     todayMode={today} initialDay={todayInitialDay}
                     onExitToday={() => setToday(false)}
-                    importing={showImportDoc} setImporting={setShowImportDoc}
+                    importing={showImportDoc} setImporting={back}
                   />
-          : <TripList onOpen={openTrip} skipAutoOpen={userChoseList}
-              restoreTripId={savedNavRef.current?.tripId ?? null}
-              restoreToday={savedNavRef.current?.today ?? false} />
+          : tripNavLoading
+            // A Back/Forward/reload-restore names a trip not already held in
+            // state (applyNav, above) — show a spinner rather than let
+            // TripList transiently mount and run its own auto-open (it
+            // would race the fetch this is waiting on).
+            ? <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading…</p>
+            : <TripList onOpen={openTrip} skipAutoOpen={userChoseList}
+                restoreTripId={savedNavRef.current?.tripId ?? null}
+                restoreToday={savedNavRef.current?.today ?? false} />
         }
       </main>
       </KindFilterContext.Provider>
@@ -521,7 +750,11 @@ function AppShell({ user, onLogout }) {
         <div className="flex items-center gap-3 flex-wrap justify-center">
           {selectedTrip && online && !packing && !calendar && (
             <button
-              onClick={() => { setToday(t => !t); setEditing(false); setCalendar(false) }}
+              onClick={() => {
+                if (today) { back(); return } // "All days" closes the Today layer (D4)
+                setToday(true); setEditing(false); setCalendar(false)
+                pushSnapshot({ today: true, editing: false, calendar: false })
+              }}
               style={{
                 background: today ? 'var(--accent)' : 'transparent',
                 color: today ? 'var(--accent-fg)' : 'var(--text-muted)',
@@ -610,7 +843,10 @@ function AppShell({ user, onLogout }) {
                   </div>
                 ) : (
                   <button
-                    onClick={() => { setPlanning(true); setDraft(emptyDraft()); setSaveConflict(null); setDateWarnings(null) }}
+                    onClick={() => {
+                      setPlanning(true); setDraft(emptyDraft()); setSaveConflict(null); setDateWarnings(null)
+                      pushSnapshot({ planning: true }) // entering planning is its own layer (D3)
+                    }}
                     style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
                     className="px-2.5 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
                   >
@@ -659,7 +895,7 @@ function AppShell({ user, onLogout }) {
           )}
           {selectedTrip && !editing && !packing && !calendar && online && canEdit(selectedTrip.role) && (
             <button
-              onClick={() => setShowImportDoc(true)}
+              onClick={() => { setShowImportDoc(true); pushSnapshot({ showImportDoc: true }) }}
               style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
               className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
             >
@@ -668,7 +904,7 @@ function AppShell({ user, onLogout }) {
           )}
           {selectedTrip && !editing && !calendar && online && canEdit(selectedTrip.role) && tripStops.length > 0 && (
             <button
-              onClick={() => setShowQuickAdd(true)}
+              onClick={() => { setShowQuickAdd(true); pushSnapshot({ showQuickAdd: true }) }}
               style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
               className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
             >
@@ -693,8 +929,8 @@ function AppShell({ user, onLogout }) {
           item={{ stop_id: tripStops[0]?.id, kind: 'activity', name: '', status: 'pending', details: {} }}
           isNew
           stops={tripStops}
-          onSave={() => setShowQuickAdd(false)}
-          onClose={() => setShowQuickAdd(false)}
+          onSave={back}
+          onClose={back}
         />
       )}
     </div>
