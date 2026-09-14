@@ -111,3 +111,52 @@ describe('Calendar menu toggle', () => {
     })
   })
 })
+
+/**
+ * Print button (plan-16c): footer seam in calendar mode, landscape class
+ * toggled on <html> for Week/Trip (not Month) around window.print(), and
+ * removed again on `afterprint` (fired whether the dialog was completed or
+ * cancelled — the only reliable cleanup hook, see App.jsx's handlePrintCalendar).
+ */
+describe('Calendar Print button', () => {
+  beforeEach(() => {
+    document.documentElement.classList.remove('print-landscape')
+  })
+
+  it('calls window.print and does not leave the landscape class on afterward', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    await openTripAndCalendar()
+    await waitFor(() => expect(screen.getByTestId('calendar')).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('Print calendar'))
+    expect(printSpy).toHaveBeenCalledTimes(1)
+    // Default calendarView on first open is 'trip' (getCalendarView's
+    // default) — a landscape view — so the class goes on before print()...
+    expect(document.documentElement.classList.contains('print-landscape')).toBe(true)
+    fireEvent(window, new Event('afterprint'))
+    // ...and comes back off afterward, leaving the on-screen view unchanged.
+    expect(document.documentElement.classList.contains('print-landscape')).toBe(false)
+    printSpy.mockRestore()
+  })
+
+  it('does not add the landscape class for Month view', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    await openTripAndCalendar()
+    await waitFor(() => expect(screen.getByTestId('calendar')).toBeTruthy())
+    fireEvent.click(screen.getByText('Month'))
+    fireEvent.click(screen.getByLabelText('Print calendar'))
+    expect(printSpy).toHaveBeenCalledTimes(1)
+    expect(document.documentElement.classList.contains('print-landscape')).toBe(false)
+    printSpy.mockRestore()
+  })
+
+  it('adds the landscape class for Trip view', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    await openTripAndCalendar()
+    await waitFor(() => expect(screen.getByTestId('calendar')).toBeTruthy())
+    fireEvent.click(screen.getByText('Trip'))
+    fireEvent.click(screen.getByLabelText('Print calendar'))
+    expect(document.documentElement.classList.contains('print-landscape')).toBe(true)
+    printSpy.mockRestore()
+    document.documentElement.classList.remove('print-landscape')
+  })
+})
