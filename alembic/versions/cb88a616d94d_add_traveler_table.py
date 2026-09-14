@@ -58,10 +58,16 @@ def backfill_travelers(conn) -> None:
     now = datetime.utcnow()
     for trip_id, email in rows:
         display_name = (email or "").split("@")[0] or email
+        # CAST the two string binds in the SELECT list: Postgres infers a bare
+        # string bind there as `text`, then sees :e compared against the
+        # varchar column in the NOT EXISTS and rejects the statement with
+        # "inconsistent types deduced for parameter" (SQLite is untyped and
+        # never noticed). Only the strings — casting :now AS TIMESTAMP gives
+        # it numeric affinity on SQLite and mangles the datetime.
         conn.execute(
             sa.text(
                 "INSERT INTO traveler (trip_id, user_email, display_name, created_at, updated_at) "
-                "SELECT :t, :e, :n, :now, :now WHERE NOT EXISTS "
+                "SELECT :t, CAST(:e AS VARCHAR), CAST(:n AS VARCHAR), :now, :now WHERE NOT EXISTS "
                 "(SELECT 1 FROM traveler WHERE trip_id = :t AND user_email = :e)"
             ),
             {"t": trip_id, "e": email, "n": display_name, "now": now},
