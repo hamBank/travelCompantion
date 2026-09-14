@@ -17,9 +17,12 @@ import DocumentsModal from './components/DocumentsModal.jsx'
 import MenuDropdown from './components/MenuDropdown.jsx'
 import TripCalendar from './components/TripCalendar.jsx'
 import { itemDateKey } from './components/StopCard.jsx'
-import { shiftPeriod } from './calendarModel.js'
+import { shiftPeriod, emptyDraft, draftChangeCount, draftToRequest } from './calendarModel.js'
 import { DEFAULT_THEME } from './themes.js'
-import { getAuthConfig, exportTripPdf, getPending, getTripTimeline, refreshAuthToken, AUTH_EXPIRED_EVENT } from './api.js'
+import {
+  getAuthConfig, exportTripPdf, getPending, getTripTimeline, refreshAuthToken, AUTH_EXPIRED_EVENT,
+  rescheduleTrip, getDateWarnings,
+} from './api.js'
 import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, CalendarRange, Plane, Route, Printer } from 'lucide-react'
 import { canEdit, canManage } from './roles.js'
 import { applyFontScale, KindFilterContext, getDefaultToToday, getCalendarView, setCalendarView as persistCalendarView } from './settings.js'
@@ -86,6 +89,18 @@ function AppShell({ user, onLogout }) {
   const [showDistance, setShowDistance] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
   const [showImportDoc, setShowImportDoc] = useState(false)
+  // Planning mode (plan-16d): `planning` gates the calendar into editable
+  // bands; `draft` accumulates unsaved moves/creates/deletes (calendarModel.js
+  // — nothing here ever hits the network until Save, plan-16 D10). `saving`/
+  // `saveConflict` cover the reschedule POST's in-flight/409 states;
+  // `dateWarnings`/`undo` are post-Save UI (the warnings panel and the
+  // one-shot Undo toast).
+  const [planning, setPlanning] = useState(false)
+  const [draft, setDraft] = useState(emptyDraft)
+  const [saving, setSaving] = useState(false)
+  const [saveConflict, setSaveConflict] = useState(null) // {conflicts, current} from a 409
+  const [dateWarnings, setDateWarnings] = useState(null) // {warnings:[...]} shown after a successful Save
+  const [undo, setUndo] = useState(null) // {inverse, lossy} while the ~10s Undo toast is up
   const online = useOnline()
 
   function refreshPending() {
@@ -139,7 +154,7 @@ function AppShell({ user, onLogout }) {
   // A chip tap resolves to its item's placement day (itemDateKey, same rule
   // TripCalendar itself places chips by) and opens that day; falls back to
   // the calendar's own anchor day if the item has no placeable date.
-  function handleOpenDay(day) { setCalendar(false); setToday(true); setTodayInitialDay(day) }
+  function handleOpenDay(day) { guardLeavePlanning(() => { setCalendar(false); setToday(true); setTodayInitialDay(day) }) }
   function handleOpenItem(item) { handleOpenDay(itemDateKey(item) || calendarAnchor) }
   function shiftCalendar(direction) {
     setCalendarAnchor(a => shiftPeriod(calendarView, a, direction === 'next' ? 1 : -1))
@@ -170,6 +185,75 @@ function AppShell({ user, onLogout }) {
   // (todayMode is false while calendar is true, and vice versa).
   useSwipeNav(shiftCalendar, calendar)
 
+  // Unsaved-draft guard (plan-16d): a non-empty draft must not be silently
+  // discarded by navigating away or closing the tab. `beforeunload` covers
+  // the tab-close/reload case; `guardLeavePlanning` covers every in-app exit
+  // (leaving calendar mode, switching trips, going back to the trip list) —
+  // wrap the specific state-changing action in it rather than trying to gate
+  // every possible `setCalendar`/`setSelectedTrip` call site.
+  const changeCount = draftChangeCount(draft)
+  useEffect(() => {
+    if (!planning || changeCount === 0) return
+    function onBeforeUnload(e) { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [planning, changeCount])
+
+  function guardLeavePlanning(action) {
+    if (planning && changeCount > 0) {
+      if (!window.confirm(`Discard ${changeCount} unsaved planning change${changeCount > 1 ? 's' : ''}?`)) return
+    }
+    if (planning) { setPlanning(false); setDraft(emptyDraft()) }
+    action()
+  }
+
+  function refreshCalendarTimeline() {
+    if (!selectedTrip) return Promise.resolve()
+    return getTripTimeline(selectedTrip.id)
+      .then(tl => setCalendarTimeline(tl))
+      .catch(e => setCalendarError(e.message))
+  }
+
+  async function handleSavePlan() {
+    if (!selectedTrip || saving) return
+    setSaving(true); setSaveConflict(null)
+    const request = draftToRequest(draft, calendarTimeline?.stops || [])
+    try {
+      const response = await rescheduleTrip(selectedTrip.id, request)
+      setPlanning(false)
+      setDraft(emptyDraft())
+      await refreshCalendarTimeline()
+      try {
+        const w = await getDateWarnings(selectedTrip.id)
+        if (w?.warnings?.length) setDateWarnings(w)
+      } catch { /* non-fatal — Save already succeeded */ }
+      setUndo({ inverse: response.inverse, lossy: response.undo_lossy })
+      setTimeout(() => setUndo(u => (u?.inverse === response.inverse ? null : u)), 10_000)
+    } catch (e) {
+      if (e.status === 409 && e.detail?.conflicts) setSaveConflict(e.detail)
+      else alert(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleDiscardPlan() {
+    if (changeCount > 0 && !window.confirm(`Discard ${changeCount} unsaved planning change${changeCount > 1 ? 's' : ''}?`)) return
+    setPlanning(false); setDraft(emptyDraft()); setSaveConflict(null)
+  }
+
+  async function handleUndoPlan() {
+    if (!selectedTrip || !undo) return
+    const { inverse } = undo
+    setUndo(null)
+    try {
+      await rescheduleTrip(selectedTrip.id, inverse)
+      await refreshCalendarTimeline()
+    } catch (e) {
+      alert(`Undo failed: ${e.message}`)
+    }
+  }
+
   const [userChoseList, setUserChoseList] = useState(false)
 
   // Read once, at boot — whatever was open just before the app was last
@@ -182,8 +266,12 @@ function AppShell({ user, onLogout }) {
   // is otherwise saved on every trip open and would silently pin the app to
   // whatever view mode happened to be active last time, defeating the
   // setting on nearly every subsequent open).
-  function openTrip(trip, todayOverride) { setSelectedTrip(trip); setEditing(false); setPacking(false); setCalendar(false); setToday(getDefaultToToday() || (todayOverride ?? false)); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false) }
-  function goBack() { setSelectedTrip(null); setEditing(false); setPacking(false); setCalendar(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false); clearNav() }
+  function openTrip(trip, todayOverride) { guardLeavePlanning(() => {
+    setSelectedTrip(trip); setEditing(false); setPacking(false); setCalendar(false); setToday(getDefaultToToday() || (todayOverride ?? false)); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false)
+  }) }
+  function goBack() { guardLeavePlanning(() => {
+    setSelectedTrip(null); setEditing(false); setPacking(false); setCalendar(false); setToday(false); setStats(null); setUserChoseList(true); setTripStops([]); setKindFilter(''); setHidePacked(false); clearNav()
+  }) }
 
   // Keep the last-open trip/view-mode saved so a forced reload can restore
   // it instead of dumping the user back at the trip list.
@@ -275,12 +363,12 @@ function AppShell({ user, onLogout }) {
               </MenuItem>
             )}
             {selectedTrip && (
-              <MenuItem onClick={() => { setPacking(p => !p); setEditing(false); setToday(false); setCalendar(false) }}>
+              <MenuItem onClick={() => guardLeavePlanning(() => { setPacking(p => !p); setEditing(false); setToday(false); setCalendar(false) })}>
                 <Backpack size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />{packing ? 'Timeline' : 'Packing'}
               </MenuItem>
             )}
             {selectedTrip && (
-              <MenuItem onClick={() => { setCalendar(c => !c); setPacking(false); setEditing(false); setToday(false) }}>
+              <MenuItem onClick={() => guardLeavePlanning(() => { setCalendar(c => !c); setPacking(false); setEditing(false); setToday(false) })}>
                 <CalendarRange size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />{calendar ? 'Timeline' : 'Calendar'}
               </MenuItem>
             )}
@@ -363,6 +451,7 @@ function AppShell({ user, onLogout }) {
                     : <TripCalendar
                         timeline={calendarTimeline} view={calendarView} anchorDay={calendarAnchor}
                         onOpenDay={handleOpenDay} onOpenItem={handleOpenItem}
+                        planning={planning} draft={draft} onDraftChange={setDraft}
                       />
                 : <TripTimeline
                     tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
@@ -376,6 +465,47 @@ function AppShell({ user, onLogout }) {
         }
       </main>
       </KindFilterContext.Provider>
+
+      {selectedTrip && calendar && saveConflict && (
+        <div className="w-full px-4 sm:px-8 lg:px-16 py-2 text-xs" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--warning)' }}>
+          <p style={{ color: 'var(--warning)' }} className="font-medium mb-1">
+            Couldn't save — someone else changed "{saveConflict.current?.location ?? `stop #${saveConflict.current?.id}`}" at the same time. Your draft is kept — Discard and re-open Calendar to see the latest dates, then redo your changes.
+          </p>
+          <ul className="space-y-0.5">
+            {(saveConflict.conflicts || []).map((f, i) => (
+              <li key={i} style={{ color: 'var(--text-muted)' }}>
+                {f.field}: yours "{f.mine}" vs. theirs "{f.server}"
+              </li>
+            ))}
+          </ul>
+          <button onClick={() => setSaveConflict(null)} style={{ color: 'var(--accent)' }} className="mt-1">Dismiss</button>
+        </div>
+      )}
+
+      {selectedTrip && calendar && dateWarnings && (
+        <div className="w-full px-4 sm:px-8 lg:px-16 py-2 text-xs" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border)' }}>
+          <p style={{ color: 'var(--text-muted)' }} className="font-medium mb-1">
+            {dateWarnings.warnings.length} warning{dateWarnings.warnings.length > 1 ? 's' : ''} after this change
+          </p>
+          <ul className="space-y-0.5">
+            {dateWarnings.warnings.map((w, i) => (
+              <li key={i} style={{ color: 'var(--text-faint)' }}>{typeof w === 'string' ? w : w.message}</li>
+            ))}
+          </ul>
+          <button onClick={() => setDateWarnings(null)} style={{ color: 'var(--accent)' }} className="mt-1">Dismiss</button>
+        </div>
+      )}
+
+      {undo && (
+        <div className="w-full px-4 sm:px-8 lg:px-16 py-2 text-xs flex items-center gap-3 justify-center" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--border)' }}>
+          <span style={{ color: 'var(--text-muted)' }}>
+            Plan saved{undo.lossy ? ' — deleted stops can\'t be restored' : ''}.
+          </span>
+          <button onClick={handleUndoPlan} style={{ color: 'var(--accent)' }} className="font-medium">
+            Undo
+          </button>
+        </div>
+      )}
 
       <footer className="w-full px-4 sm:px-8 lg:px-16 pb-8 pt-4 flex flex-col items-center gap-4">
         <div className="flex items-center gap-3 flex-wrap justify-center">
@@ -435,16 +565,49 @@ function AppShell({ user, onLogout }) {
               >
                 ›
               </button>
-              <button
-                onClick={handlePrintCalendar}
-                aria-label="Print calendar"
-                style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
-              >
-                <Printer size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Print
-              </button>
-              {/* Seam for plan-16d's Plan button (editors, online only) —
-                  not implemented in 16b/16c. */}
+              {!planning && (
+                <button
+                  onClick={handlePrintCalendar}
+                  aria-label="Print calendar"
+                  style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+                >
+                  <Printer size={14} aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-0.125em', marginRight: '0.35em' }} />Print
+                </button>
+              )}
+              {selectedTrip && online && canEdit(selectedTrip.role) && (
+                planning ? (
+                  <div className="flex items-center gap-1.5">
+                    <span style={{ color: 'var(--text-faint)' }} className="text-xs px-1">
+                      {changeCount} change{changeCount === 1 ? '' : 's'}
+                    </span>
+                    <button
+                      onClick={handleDiscardPlan}
+                      disabled={saving}
+                      style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
+                    >
+                      Discard
+                    </button>
+                    <button
+                      onClick={handleSavePlan}
+                      disabled={saving}
+                      style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                    >
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setPlanning(true); setDraft(emptyDraft()); setSaveConflict(null); setDateWarnings(null) }}
+                    style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity"
+                  >
+                    Plan
+                  </button>
+                )
+              )}
             </div>
           )}
           {selectedTrip && !editing && !packing && (
