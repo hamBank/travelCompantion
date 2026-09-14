@@ -206,6 +206,64 @@ class ItemRead(ItemBase):
     details: Optional[dict] = None
 
 
+# ── Reschedule (plan 16a) ───────────────────────────────────────────────────────
+# POST /trips/{trip_id}/reschedule — one atomic batch of stop moves/creates/
+# deletes, shifting each moved stop's items by the stop's whole-day delta
+# (backend/reschedule.py). See docs/plans/plan-16-calendar.md D3-D6 and
+# docs/plans/plan-16a-reschedule-api.md for the full contract.
+
+class RescheduleMove(SQLModel):
+    stop_id: int
+    # The FULL new values (not a partial patch) — either may be null to
+    # clear the stop's date. Local wall-clock, no timezone, same convention
+    # as Stop.arrive/depart everywhere else.
+    arrive: Optional[datetime] = None
+    depart: Optional[datetime] = None
+    # Offline/compare-and-set (plan 11 pattern, see backend/compare_and_set.py):
+    # the {"arrive":..., "depart":...} values the client last saw for this
+    # stop. Optional — omit for a straight overwrite.
+    base: Optional[dict] = None
+
+
+class RescheduleCreate(StopCreate):
+    # Echoed back in the response's `created` list so the caller can map a
+    # temporary client-side id to the real, server-assigned one.
+    client_ref: Optional[str] = None
+
+
+class RescheduleRequest(SQLModel):
+    moves: List[RescheduleMove] = []
+    creates: List[RescheduleCreate] = []
+    deletes: List[int] = []
+
+
+class RescheduleCreated(SQLModel):
+    client_ref: Optional[str] = None
+    id: int
+
+
+class ShiftedItemOut(SQLModel):
+    item_id: int
+    stop_id: int
+    delta_days: int
+
+
+class RescheduleResponse(SQLModel):
+    stops: List[StopRead] = []
+    created: List[RescheduleCreated] = []
+    shifted_items: List[ShiftedItemOut] = []
+    # A request body that undoes this call — same shape as RescheduleRequest
+    # so it can be POSTed straight back to this endpoint for one-shot Undo
+    # (16d). `inverse.creates` is always [] — a deleted stop's items are
+    # gone, so "un-deleting" it can't be expressed as a create; see
+    # `undo_lossy` below.
+    inverse: RescheduleRequest
+    # True iff this call's `deletes` was non-empty, i.e. `inverse` cannot
+    # fully restore prior state (the deleted stop(s) and their items are
+    # gone for good — inverse only re-creates what moves/creates changed).
+    undo_lossy: bool = False
+
+
 # ── PendingChange (review-before-apply staging for imports) ────────────────────
 
 class PendingStatus(str, Enum):

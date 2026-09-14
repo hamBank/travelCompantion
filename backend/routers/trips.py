@@ -1,5 +1,6 @@
 import re
 import secrets
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import Session, select
 from sqlalchemy import nullslast, func
@@ -12,8 +13,14 @@ from ..models import (
     Stop, StopRead,
     ItineraryItem, ItemRead, ItemKind, ItemStatus, ItemAttachment,
     TripMembership, TripRole, MembershipRead, MembershipCreate,
-    Bag, PackingItem, Expense,
+    Bag, PackingItem, Expense, NotificationLog,
+    RescheduleRequest, RescheduleResponse, RescheduleCreated, ShiftedItemOut,
+    RescheduleMove,
 )
+from ..compare_and_set import resolve_fields
+from ..reschedule import shift_item, stop_delta_days, item_primary_dt
+from .stops import _stop_snapshot, _delete_stop_cascade
+from .items import record_item_history, _item_snapshot
 
 router = APIRouter()
 
@@ -238,6 +245,141 @@ def trip_date_warnings(trip_id: int, session: Session = Depends(get_session), us
     require_trip_role(session, user, trip_id, TripRole.viewer)
     from ..validation import date_warnings
     return {"warnings": date_warnings(session, trip_id)}
+
+
+@router.post("/{trip_id}/reschedule", response_model=RescheduleResponse)
+def reschedule_trip(trip_id: int, req: RescheduleRequest, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Atomically create/move/delete this trip's stops in one transaction,
+    shifting every date-bearing field (docs/plans/plan-16-calendar.md D3) of
+    every item inside a moved stop by the stop's whole-day delta (D4) — see
+    docs/plans/plan-16a-reschedule-api.md for the full contract. Editor role
+    (D6); everything is validated (stop ownership, compare-and-set base
+    conflicts) BEFORE anything is mutated, so a batch that fails partway
+    through validation leaves the trip completely untouched, and the whole
+    apply phase (creates → moves+shifts → deletes) shares one commit() at
+    the end.
+
+    Side-effects (docs/plans/plan-16a-reschedule-api.md "Side-effects to
+    handle"):
+    - NotificationLog rows (kept for idempotency, keyed (item_id, kind)) are
+      deleted for every shifted item whose new primary date (D3 priority,
+      backend/reschedule.py::item_primary_dt) is now in the future — a
+      reminder already sent for the OLD date would otherwise suppress the
+      one for the new date.
+    - Flight alert subscriptions (backend/flight_alert_subscriptions.py):
+      reconcile_subscriptions() derives its desired-subscription set fresh
+      from each flight item's current details.depart_time on every run (the
+      dedicated 4-hourly cron, scripts/reconcile_flight_alerts.py — see
+      CLAUDE.md's metered-API budget note) — it doesn't key off a stored
+      date snapshot. A flight moved by this endpoint is therefore
+      automatically re-subscribed/unsubscribed on that cron's next tick with
+      NO action needed here. This endpoint never calls AeroDataBox directly
+      (README convention 7 / CLAUDE.md's metered-API note).
+    - WeatherCache is keyed by (rounded coords, date range), not by stop id
+      — moving a stop doesn't change its location, so there's nothing to
+      invalidate here.
+    """
+    require_trip_role(session, user, trip_id, TripRole.editor)
+
+    move_ids = {m.stop_id for m in req.moves}
+    delete_ids = set(req.deletes)
+    overlap = move_ids & delete_ids
+    if overlap:
+        raise HTTPException(status_code=422, detail=f"Stop id(s) {sorted(overlap)} appear in both moves and deletes")
+
+    # ── Validate everything first (D6 atomicity) — nothing below this point
+    # mutates the session, so a 404/409/422 here leaves the trip untouched. ──
+    move_stops: dict[int, Stop] = {}
+    for move in req.moves:
+        stop = session.get(Stop, move.stop_id)
+        if not stop or stop.trip_id != trip_id:
+            raise HTTPException(status_code=404, detail=f"Stop {move.stop_id} not found")
+        move_stops[move.stop_id] = stop
+
+    delete_stops: dict[int, Stop] = {}
+    for stop_id in delete_ids:
+        stop = session.get(Stop, stop_id)
+        if not stop or stop.trip_id != trip_id:
+            raise HTTPException(status_code=404, detail=f"Stop {stop_id} not found")
+        delete_stops[stop_id] = stop
+
+    for move in req.moves:
+        if move.base is None:
+            continue
+        stop = move_stops[move.stop_id]
+        current = _stop_snapshot(stop)
+        changes = {
+            "arrive": move.arrive.isoformat() if move.arrive else None,
+            "depart": move.depart.isoformat() if move.depart else None,
+        }
+        _, conflicts = resolve_fields(current, move.base, changes)
+        if conflicts:
+            raise HTTPException(status_code=409, detail={
+                "conflicts": conflicts,
+                "current": {**current, "id": stop.id, "trip_id": stop.trip_id},
+            })
+
+    # ── Apply: creates → moves (+ item shifts + history) → deletes ──
+    created: List[dict] = []
+    for c in req.creates:
+        data = c.model_dump(exclude={"client_ref"})
+        stop = Stop(**data, trip_id=trip_id)
+        session.add(stop)
+        session.flush()  # need stop.id for the client_ref mapping below
+        created.append({"client_ref": c.client_ref, "id": stop.id})
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    shifted_items: List[dict] = []
+    inverse_moves: List[dict] = []
+    for move in req.moves:
+        stop = move_stops[move.stop_id]
+        old_arrive, old_depart = stop.arrive, stop.depart
+        inverse_moves.append({"stop_id": stop.id, "arrive": old_arrive, "depart": old_depart})
+
+        delta = stop_delta_days(old_arrive, old_depart, move.arrive, move.depart)
+        stop.arrive = move.arrive
+        stop.depart = move.depart
+        session.add(stop)
+
+        if delta == 0:
+            continue
+        items = session.exec(select(ItineraryItem).where(ItineraryItem.stop_id == stop.id)).all()
+        for item in items:
+            before = _item_snapshot(item)
+            if not shift_item(item, delta):
+                continue
+            session.add(item)
+            record_item_history(session, item, "update", user["email"], before=before, source="reschedule")
+            shifted_items.append({"item_id": item.id, "stop_id": stop.id, "delta_days": delta})
+
+            # Side-effect 1: stale NotificationLog rows (see docstring above).
+            new_primary = item_primary_dt(item)
+            if new_primary is not None and new_primary > now:
+                for log in session.exec(select(NotificationLog).where(NotificationLog.item_id == item.id)).all():
+                    session.delete(log)
+
+    for stop in delete_stops.values():
+        _delete_stop_cascade(session, stop)
+
+    session.commit()
+
+    stops = session.exec(
+        select(Stop)
+        .where(Stop.trip_id == trip_id)
+        .order_by(nullslast(func.date(Stop.arrive)), nullslast(func.date(Stop.depart)), Stop.sort_order)
+    ).all()
+
+    return RescheduleResponse(
+        stops=stops,
+        created=[RescheduleCreated(**c) for c in created],
+        shifted_items=[ShiftedItemOut(**s) for s in shifted_items],
+        inverse=RescheduleRequest(
+            moves=[RescheduleMove(**m) for m in inverse_moves],
+            creates=[],
+            deletes=[c["id"] for c in created],
+        ),
+        undo_lossy=bool(req.deletes),
+    )
 
 
 @router.get("/{trip_id}/distance")
