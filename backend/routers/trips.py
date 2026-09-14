@@ -13,7 +13,7 @@ from ..models import (
     Stop, StopRead,
     ItineraryItem, ItemRead, ItemKind, ItemStatus, ItemAttachment,
     TripMembership, TripRole, MembershipRead, MembershipCreate,
-    Bag, PackingItem, Expense, NotificationLog,
+    Bag, PackingItem, Expense, NotificationLog, Traveler,
     RescheduleRequest, RescheduleResponse, RescheduleCreated, ShiftedItemOut,
     RescheduleMove,
 )
@@ -78,8 +78,8 @@ def update_trip(trip_id: int, trip_in: TripUpdate, session: Session = Depends(ge
 def delete_trip(trip_id: int, session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
     """Deletes a trip and every row that FK-references it, explicitly and in
     dependency order — rather than relying on SQLAlchemy to infer it.
-    TripMembership/Bag/PackingItem/ItemAttachment all have a real `trip_id`/
-    `item_id` FK but no ORM Relationship() linking them back to Trip/
+    TripMembership/Traveler/Bag/PackingItem/ItemAttachment all have a real
+    `trip_id`/`item_id` FK but no ORM Relationship() linking them back to Trip/
     ItineraryItem, so the unit-of-work has no dependency information to order
     their deletes against the parent row's delete. Without an explicit
     session.flush() per stage, this silently worked on SQLite (which doesn't
@@ -108,6 +108,12 @@ def delete_trip(trip_id: int, session: Session = Depends(get_session), user: dic
 
     for m in session.exec(select(TripMembership).where(TripMembership.trip_id == trip_id)).all():
         session.delete(m)
+    session.flush()
+
+    # Travelers (D9, plan 17) are trip data — same FK-but-no-Relationship()
+    # shape as TripMembership above, so the same explicit-flush treatment.
+    for t in session.exec(select(Traveler).where(Traveler.trip_id == trip_id)).all():
+        session.delete(t)
     session.flush()
 
     # Packing items reference bags (bag_id); bags can nest via parent_id —

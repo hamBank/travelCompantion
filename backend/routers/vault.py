@@ -30,8 +30,10 @@ def _require_vault_configured():
     # Every vault route that could touch encrypt/decrypt 503s uniformly when
     # the key is unset, rather than only the specific field/route that would
     # have needed it — simpler to reason about than a partial-503 surface.
-    if not document_crypto.DOCUMENT_ENCRYPTION_KEY:
-        raise HTTPException(status_code=503, detail="Document vault not configured (set DOCUMENT_ENCRYPTION_KEY)")
+    # Shared with backend/routers/travelers.py via document_crypto.require_configured;
+    # kept as a thin wrapper here so every existing call site/import in this
+    # file is unaffected.
+    document_crypto.require_configured("Document vault")
 
 
 def _owned_document(session: Session, user: dict, doc_id: int) -> UserDocument:

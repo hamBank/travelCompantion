@@ -334,7 +334,79 @@ can't be expressed as a create, and `inverse.creates` is always `[]`.
 
 ---
 
-## 7. Notes & caveats
+## 7. Travelers
+
+`Traveler` rows record who is *physically going* on a trip — separate from
+`TripMembership` (who may view/edit it, §2-§6). A traveler may have no
+account at all (a child, a partner who doesn't use the app); a member may
+not be traveling. Creating a trip does **not** auto-add you as a traveler —
+`POST` yourself explicitly if you're going.
+
+```
+GET    /trips/{trip_id}/travelers                     → list (clear fields only)
+POST   /trips/{trip_id}/travelers                      → create
+PATCH  /trips/{trip_id}/travelers/{id}                 → update display_name / user_email
+DELETE /trips/{trip_id}/travelers/{id}                 → 204
+GET    /trips/{trip_id}/travelers/{id}/profile         → decrypt-on-demand booking profile
+PUT    /trips/{trip_id}/travelers/{id}/profile         → merge-update the booking profile
+DELETE /trips/{trip_id}/travelers/{id}/profile         → clear the profile (keeps the traveler row)
+```
+
+### Permission matrix
+
+| actor | list | read profile | create | update | delete |
+|---|---|---|---|---|---|
+| owner | any | any traveler | any | any | any |
+| editor | any | **own** entry only | own only (`user_email` forced to self) | own only | own only |
+| viewer | any | own entry only | ✗ (`403`) | ✗ (`403`) | ✗ (`403`) |
+| no access to the trip | `404` | | | | |
+
+"Own entry" = the traveler row whose `user_email` matches your token's
+identity. Only the trip **owner** may set or change a row's `user_email`
+(linking a traveler to a different account) — an editor's create/update is
+silently forced to their own email. A profile read that's neither yours nor
+owner-accessed is `403` (the row is already visible in the list, so `404`
+would be a lie); a traveler id belonging to a different trip is `404` on
+every route.
+
+### Clear vs. encrypted fields
+
+`GET`/list responses only ever include the clear columns: `id`, `trip_id`,
+`user_email`, `display_name`, `age_band` (`infant`/`child`/`adult`, derived),
+`passport_expiry`, `has_profile` (bool), `created_at`, `updated_at`.
+Everything booking-relevant lives in the encrypted profile, decrypted only by
+`GET`/`PUT .../profile`: `full_name`, `date_of_birth` (`YYYY-MM-DD`), `sex`,
+`nationality`, `passport_number`, `passport_issuing_country`, `email`,
+`phone`, `frequent_flyer` (`[{airline, number}]`), `meal_preference`,
+`seat_preference`, `notes` — plus `passport_expiry` (accepted/returned here
+too since it's part of the same passport form, but actually stored in the
+clear column above) and the derived, never-stored `age_at_trip_start`
+(computed against the trip's `start_date`, or today if the trip is undated).
+
+**Any route that touches the encrypted profile (`PUT`/`GET .../profile`)
+returns `503` if the server has no `DOCUMENT_ENCRYPTION_KEY` configured** —
+the same key (and requirement) as the document vault. List/create/patch/
+delete never need the key and work regardless.
+
+```bash
+# Create a traveler, then fill in their passport details.
+traveler_id=$(curl -s -X POST "$BASE/trips/$trip_id/travelers" -H "$AUTH" -H "$JSON" \
+  -d '{"display_name": "Jamie Smith"}' | jq -r .id)
+
+curl -s -X PUT "$BASE/trips/$trip_id/travelers/$traveler_id/profile" -H "$AUTH" -H "$JSON" -d '{
+  "full_name": "JAMIE ANN SMITH", "date_of_birth": "1990-04-02",
+  "nationality": "AUS", "passport_number": "PA1234567",
+  "passport_issuing_country": "AUS", "passport_expiry": "2030-04-02T00:00:00"
+}'
+```
+
+A passport expiring less than 6 months after the trip's last day (a common
+entry rule) surfaces as a `passport_expiry` warning in the existing
+`GET /trips/{trip_id}/date-warnings` endpoint — no separate polling needed.
+
+---
+
+## 8. Notes & caveats
 
 - **No idempotency.** Re-running the same POSTs creates duplicate rows. If a run
   might be retried, capture the returned `id`s and don't blindly re-POST.

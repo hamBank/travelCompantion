@@ -11,6 +11,7 @@ before first use, and back it up outside the server — see .env.example.
 import os
 
 from cryptography.fernet import Fernet, InvalidToken  # noqa: F401  (re-exported for callers)
+from fastapi import HTTPException
 
 DOCUMENT_ENCRYPTION_KEY = os.environ.get("DOCUMENT_ENCRYPTION_KEY", "")
 
@@ -19,6 +20,18 @@ class DocumentVaultNotConfigured(Exception):
     """Raised by encrypt/decrypt when DOCUMENT_ENCRYPTION_KEY is unset —
     callers (backend/routers/vault.py) translate this into a 503, never a
     fallback key."""
+
+
+def require_configured(feature: str = "Document vault") -> None:
+    """HTTP-layer convenience shared by every router that touches
+    encrypt_bytes/decrypt_bytes (backend/routers/vault.py,
+    backend/routers/travelers.py) — 503s uniformly, before any encrypt/
+    decrypt is attempted, rather than letting DocumentVaultNotConfigured
+    surface as an unhandled 500. `feature` only changes the wording; the
+    underlying key (and the fact that a single key configures both the
+    document vault and traveler profiles) is the same either way."""
+    if not DOCUMENT_ENCRYPTION_KEY:
+        raise HTTPException(status_code=503, detail=f"{feature} not configured (set DOCUMENT_ENCRYPTION_KEY)")
 
 
 def _fernet() -> Fernet:

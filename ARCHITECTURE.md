@@ -151,6 +151,25 @@ Core hierarchy: **Trip** 1─∞ **Stop** 1─∞ **ItineraryItem**. Everything 
 `id, trip_id, user_email (lowercased), role (viewer|editor|owner), created_at`
 — one row per user-per-trip. See **PERMISSIONS.md** for the full role model.
 
+### Traveler (plan 17)
+`id, trip_id, user_email? (lowercased, nullable), display_name, age_band?
+(infant|child|adult, derived), passport_expiry? (clear), profile_encrypted?
+(Fernet JSON blob), created_at, updated_at` — who is *physically going* on a
+trip, independent of `TripMembership` (who may view/edit it). Neither implies
+the other: a traveler may have no account (a child, a partner who doesn't use
+the app) and a member may not be traveling; creating a trip does not
+auto-add its creator as a traveler. `profile_encrypted` holds the booking-
+relevant PII (full name as on passport, date of birth, sex, nationality,
+passport number/issuing country, email, phone, frequent-flyer numbers, meal/
+seat preference, notes) — same `document_crypto.py` Fernet machinery as the
+document vault below, decrypted on demand only by `GET/PUT
+.../travelers/{id}/profile` (`backend/travelers.py`), never present in any
+list/detail response. `age_band`/`passport_expiry` stay in the clear so the
+list and the `passport_expiry` date warning (see "Auth & permissions" and
+`backend/validation.py`) don't need a decrypt round-trip. See
+`docs/plans/plan-17-travelers.md` for the full design and
+`docs/programmatic-api.md`'s Travelers section for the API.
+
 ### Stop
 `id, trip_id, location, country, arrive?, depart?, timezone="0", lat, lng,
 sort_order, status`
@@ -283,6 +302,22 @@ plus a public no-login `share_token` link (`shared.py` router / `SharedTripView.
 - The document vault (`UserDocument`) is **not** trip-scoped or role-gated —
   it's owner-only-by-`user_email`, same identity as everything else, but
   outside the `TripMembership` model entirely.
+- **Travelers** (plan 17) reuse `TripMembership` roles but apply a narrower
+  matrix (`backend/permissions.py:require_traveler_access`), since a
+  traveler's own PII is at stake:
+
+  | actor | list (clear fields) | read profile | create | update | delete |
+  |---|---|---|---|---|---|
+  | owner | any | any traveler | any | any | any |
+  | editor | any | **own** entry only | own only (`user_email` forced to self) | own only | own only |
+  | viewer | any | own entry only | ✗ | ✗ | ✗ |
+  | no membership | 404 | | | | |
+
+  "Own entry" = the traveler row whose `user_email` matches the caller's.
+  Only the owner may set/change a row's `user_email` to link it to another
+  account. A not-owned/not-permitted profile read is `403` (the row is
+  already visible in the list, so `404` would be a lie); a traveler id from
+  another trip is `404`, same existence-hiding rule as everywhere else.
 
 ## Offline support
 
