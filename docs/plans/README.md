@@ -32,6 +32,9 @@ assigned plan.** Each plan is one PR-sized unit of work.
 | [plan-17a-traveler-model-api.md](plan-17a-traveler-model-api.md) | Backend: `Traveler` table + migration with member backfill, encrypted profile, CRUD API with owner/editor/viewer matrix, passport-expiry warning | M | plan-17 |
 | [plan-17b-personal-totals.md](plan-17b-personal-totals.md) | Personal totals key on traveling not membership; `GET /me/travel-totals` (distance + trips + days + countries) | S–M | 17a |
 | [plan-17c-travelers-ui.md](plan-17c-travelers-ui.md) | Frontend Travelers modal: list, owner add/edit/remove, "Add me" for editors, decrypt-on-open profile, "Fill from my vault", age + expiry chips | M–L | 17a |
+| [plan-18-browser-history.md](plan-18-browser-history.md) | **Parent:** browser Back/Forward work inside the app (history mirrors React state; no router) — shared decisions, read before any 18x | — | — |
+| [plan-18a-history-shell.md](plan-18a-history-shell.md) | `historyNav.js` + App-shell layers (list → trip → mode → overlay) as history entries; header ← and modal closes via `history.back()`; planning-draft guard on Back | M | plan-18 |
+| [plan-18b-history-timeline.md](plan-18b-history-timeline.md) | Inside `TripTimeline`: Today-mode day, item detail, detail → edit as layers; `ItemEditModal` unsaved guard on Back | M | 18a |
 
 If implementing both plan-2 and plan-10, do plan-2 first — it extracts the
 AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
