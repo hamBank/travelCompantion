@@ -23,6 +23,11 @@ assigned plan.** Each plan is one PR-sized unit of work.
 | [plan-15b-detail-modal-purchase-food.md](plan-15b-detail-modal-purchase-food.md) | Detail modals for Purchase and Food & Drink (currently have none — notes/attachments/history inaccessible) | S | — (trivial merge overlap with 15a) |
 | [plan-15c-flight-rail-modal-parity.md](plan-15c-flight-rail-modal-parity.md) | Flight/Rail modals: attachments section + needs-booking chip | S | — |
 | [plan-15d-opening-hours-and-polish.md](plan-15d-opening-hours-and-polish.md) | Display stored opening_hours in detail modals; note Important badge | S | 15a (TourBody mount only — skippable) |
+| [plan-16-calendar.md](plan-16-calendar.md) | **Parent:** trip calendar (day/week/month/trip), print, drag-and-drop planning mode — shared decisions, read before any 16x | — | — |
+| [plan-16a-reschedule-api.md](plan-16a-reschedule-api.md) | Backend: atomic `POST /trips/{id}/reschedule` — move/create/delete stops, shift their items by the same days, history, inverse for undo | M | plan-16 |
+| [plan-16b-calendar-views.md](plan-16b-calendar-views.md) | Frontend: read-only calendar views + menu/footer wiring + swipe | M–L | plan-16 |
+| [plan-16c-calendar-print.md](plan-16c-calendar-print.md) | Print stylesheet + Print button for the calendar | S | 16b |
+| [plan-16d-planning-mode.md](plan-16d-planning-mode.md) | Planning mode: pointer-event drag/resize/create of stop bands, draft → Save via 16a, warnings, Undo | L | 16a, 16b |
 
 If implementing both plan-2 and plan-10, do plan-2 first — it extracts the
 AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
