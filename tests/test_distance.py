@@ -4,18 +4,23 @@ from sqlmodel import Session, select
 
 from backend import distance as dist
 from backend.models import (
-    ItineraryItem, LocationCoords, Stop, Trip, TripMembership, UserDistanceTotal,
+    ItineraryItem, LocationCoords, Stop, Traveler, Trip, TripMembership, UserDistanceTotal,
 )
 
 
 def _trip_stop(session: Session, member_email="a@x.com") -> tuple:
+    """A trip with one stop, and `member_email` recorded as a **traveler**
+    on it (D6, docs/plans/plan-17-travelers.md — compute_user_distance_totals
+    keys on Traveler rows, not TripMembership; the name is kept for the
+    existing tests below, which are really exercising "is this trip in the
+    user's totals")."""
     trip = Trip(name="Test Trip")
     session.add(trip)
     session.commit()
     session.refresh(trip)
     stop = Stop(trip_id=trip.id, location="Anywhere", status="planned")
     session.add(stop)
-    session.add(TripMembership(trip_id=trip.id, user_email=member_email, role="owner"))
+    session.add(Traveler(trip_id=trip.id, user_email=member_email, display_name=member_email))
     session.commit()
     session.refresh(stop)
     return trip, stop
@@ -228,7 +233,7 @@ def test_compute_user_distance_totals_sums_across_trips(session: Session):
     session.refresh(trip2)
     stop2 = Stop(trip_id=trip2.id, location="Elsewhere", status="planned")
     session.add(stop2)
-    session.add(TripMembership(trip_id=trip2.id, user_email="me@x.com", role="editor"))
+    session.add(Traveler(trip_id=trip2.id, user_email="me@x.com", display_name="me@x.com"))
     session.commit()
     session.refresh(stop2)
     _item(session, stop2.id, "cycling", {"gpx_distance_m": 5000})
@@ -267,3 +272,21 @@ def test_compute_user_distance_totals_case_insensitive_email(session: Session):
     _item(session, stop.id, "cycling", {"gpx_distance_m": 10000})
     totals = dist.compute_user_distance_totals(session, "ME@X.COM")
     assert totals == {"bike": 10.0}
+
+
+def test_compute_user_distance_totals_membership_alone_does_not_count(session: Session):
+    """D6 (docs/plans/plan-17-travelers.md): a TripMembership with no
+    matching Traveler row must NOT contribute — owning/editing a trip is no
+    longer enough, only actually being a traveler on it is."""
+    trip = Trip(name="Owner Only Trip")
+    session.add(trip)
+    session.commit()
+    session.refresh(trip)
+    stop = Stop(trip_id=trip.id, location="Anywhere", status="planned")
+    session.add(stop)
+    session.add(TripMembership(trip_id=trip.id, user_email="me@x.com", role="owner"))
+    session.commit()
+    session.refresh(stop)
+    _item(session, stop.id, "cycling", {"gpx_distance_m": 10000})
+
+    assert dist.compute_user_distance_totals(session, "me@x.com") == {}

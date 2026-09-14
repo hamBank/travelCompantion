@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getTripDistance, getMyDistanceTotals } from '../api.js'
+import { getTripDistance, getMyTravelTotals, getTravelers, getCurrentUser } from '../api.js'
 
 // Mirrors backend/distance.py's TRANSPORT_MODE values.
 const MODE_LABEL = { air: 'Air', rail: 'Rail', road: 'Road', bike: 'Bike', walking: 'Walking', boat: 'Boat' }
@@ -44,10 +44,27 @@ export default function DistanceSummary({ trip, onClose }) {
   const [tripData, setTripData] = useState(null)
   const [meData, setMeData] = useState(null)
   const [error, setError] = useState(null)
+  // Whether the signed-in user is a traveler on the currently-open trip
+  // (D6, docs/plans/plan-17-travelers.md) — null while unknown/loading, so
+  // the "not a traveler" hint only ever renders once we actually know.
+  const [isTravelerHere, setIsTravelerHere] = useState(null)
 
   useEffect(() => {
     if (trip?.id) getTripDistance(trip.id).then(setTripData).catch(e => setError(e.message))
-    getMyDistanceTotals().then(setMeData).catch(() => {})
+    getMyTravelTotals().then(setMeData).catch(() => {})
+  }, [trip?.id])
+
+  useEffect(() => {
+    if (!trip?.id) { setIsTravelerHere(null); return }
+    let cancelled = false
+    Promise.all([getTravelers(trip.id), getCurrentUser()])
+      .then(([travelers, me]) => {
+        if (cancelled) return
+        const email = (me?.email || '').toLowerCase()
+        setIsTravelerHere(travelers.some(t => t.user_email && t.user_email === email))
+      })
+      .catch(() => { if (!cancelled) setIsTravelerHere(null) })
+    return () => { cancelled = true }
   }, [trip?.id])
 
   return (
@@ -77,11 +94,26 @@ export default function DistanceSummary({ trip, onClose }) {
 
           <div style={{ borderTop: '1px solid var(--border)' }} className="pt-3">
             <div className="flex items-baseline justify-between mb-1.5">
-              <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Lifetime (all your trips)</span>
-              {meData && <span style={{ color: 'var(--text)' }} className="text-sm font-semibold">{fmtKm(meData.total_km)}</span>}
+              <span style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">My totals</span>
+              {meData && <span style={{ color: 'var(--text)' }} className="text-sm font-semibold">{fmtKm(meData.distance.total_km)}</span>}
             </div>
-            {meData ? <ModeTable byMode={meData.by_mode} /> : (
+            {meData ? (
+              <>
+                <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-1.5">
+                  across {meData.trips} {meData.trips === 1 ? 'trip' : 'trips'} you're traveling on
+                  {' · '}{meData.days} {meData.days === 1 ? 'day' : 'days'}
+                  {' · '}{meData.countries.length} {meData.countries.length === 1 ? 'country' : 'countries'}
+                </p>
+                <ModeTable byMode={meData.distance.by_mode} />
+              </>
+            ) : (
               <p style={{ color: 'var(--text-faint)' }} className="text-xs">Loading…</p>
+            )}
+            {isTravelerHere === false && (
+              <p style={{ color: 'var(--warning)' }} className="text-xs mt-2">
+                You're not listed as a traveler on this trip, so it isn't in your totals — add
+                yourself under Travelers.
+              </p>
             )}
           </div>
 
