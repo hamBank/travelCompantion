@@ -89,10 +89,29 @@ export function replaceNav(snapshot) {
 
 // Every UI close/back affordance goes through this (D4) — never set state
 // directly for a "close", or the popstate this triggers ends up fighting a
-// dead entry left behind by doing both.
+// dead entry left behind by doing both. Deliberately zero-arg: this is
+// passed straight as `onClose={back}`/`onClick={back}` all over the app, so
+// it must never do anything with a caller's argument — React would pass the
+// SyntheticEvent as the first one, and `back` doing anything with it (even
+// via a default parameter another call site relies on) breaks every one of
+// those bindings silently (window.history.go(NaN) navigates nowhere). Use
+// backSteps() below for the rare case of closing more than one layer.
 export function back() {
   if (typeof window === 'undefined' || !window.history) return
   window.history.back()
+}
+
+// D4's documented history.go(-n) escape hatch for "closing something that
+// isn't the top layer" — e.g. leaving a Today session that was entered by
+// jumping to a day from the calendar: that pushed Today on top of a
+// Calendar layer, so popping just one layer would surface Calendar again
+// instead of the Timeline the action actually means. A separate export
+// (not a `back(steps)` parameter) specifically so `back` itself stays safe
+// to bind directly as an event handler — see its comment above. Always call
+// this explicitly (`() => backSteps(2)`), never as a raw handler.
+export function backSteps(n) {
+  if (typeof window === 'undefined' || !window.history) return
+  window.history.go(-n)
 }
 
 // --- Dirty-state guards (D5) ------------------------------------------------
