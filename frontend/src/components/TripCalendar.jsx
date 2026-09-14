@@ -12,6 +12,14 @@ import PlanningOverlay from './PlanningOverlay.jsx'
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MAX_CHIPS = 4
 
+// Sizing (rem) for the stop-band strip reserved at the top of each day box —
+// see the "Bands share this same grid" comment below for why this replaced
+// a separate band row floating above the day cells.
+const BAND_H = 1.1
+const BAND_GAP = 0.15
+const BAND_TOP_INSET = 0.2   // gap from the day box's top border to the first band
+const BAND_BOTTOM_GAP = 0.2  // gap from the last band down to the day number
+
 function todayKey() {
   return new Date().toLocaleDateString('sv-SE')
 }
@@ -232,79 +240,17 @@ export default function TripCalendar({
               })
               .filter(Boolean)
             const laneCount = globalLaneCount ?? weekBands.reduce((m, b) => Math.max(m, b.lane + 1), 0)
+            // Reserve room at the TOP of every day box this week for its
+            // stop bands, so a band renders layered inside the bordered day
+            // cells it spans (gridRow: 1, same as the cells) rather than in
+            // a separate row floating above them — previously nothing tied
+            // a band visually to "this row of days" vs. the row before it.
+            const reservedTop = laneCount > 0
+              ? BAND_TOP_INSET + laneCount * BAND_H + Math.max(0, laneCount - 1) * BAND_GAP + BAND_BOTTOM_GAP
+              : null
 
             return (
               <div key={week[0]} className="mb-1 cal-week-row" data-testid="week-row">
-                {laneCount > 0 && (
-                  <div
-                    className="grid"
-                    style={{ gridTemplateColumns: 'repeat(7, minmax(2.5rem, 1fr))', gridTemplateRows: `repeat(${laneCount}, 1.1rem)`, marginBottom: '0.15rem' }}
-                  >
-                    {weekBands.map(b => {
-                      const isTemp = isTempStopId(b.stop.id)
-                      const { style: grabStyle, ...grabProps } = api && !b.isDeleted ? api.bandGrabProps(b.stop.id) : { style: {} }
-                      return (
-                        <div
-                          key={`${b.stop.id}-${wi}`}
-                          data-testid={b.isDeleted ? 'stop-band-deleted' : 'stop-band'}
-                          role="button"
-                          tabIndex={planning && !b.isDeleted ? 0 : -1}
-                          onClick={() => {
-                            if (b.isDeleted) { undeleteStop(b.stop.id); return }
-                            if (!planning) onOpenDay?.(b.first)
-                          }}
-                          title={b.stop.location}
-                          className="text-left truncate px-1 rounded text-[0.6rem] font-medium hover:opacity-80 transition-opacity"
-                          style={{
-                            gridColumn: `${b.startCol} / ${b.endCol}`,
-                            gridRow: b.lane + 1,
-                            position: 'relative',
-                            background: `var(--stop-${b.colorIndex + 1})`,
-                            color: '#1e1e2e',
-                            textDecoration: b.isDeleted ? 'line-through' : 'none',
-                            opacity: b.isDeleted ? 0.55 : 1,
-                            cursor: planning && !b.isDeleted ? 'grab' : 'pointer',
-                            ...grabStyle,
-                          }}
-                          {...grabProps}
-                        >
-                          {b.stop.location}{isTemp ? ' (new)' : ''}
-                          {planning && !b.isDeleted && (() => {
-                            const startProps = api.bandHandleProps(b.stop.id, 'start')
-                            const endProps = api.bandHandleProps(b.stop.id, 'end')
-                            return (
-                              <>
-                                <span
-                                  aria-label="Resize start of stop"
-                                  className="edit-btn"
-                                  {...startProps}
-                                  style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, ...startProps.style }}
-                                />
-                                <span
-                                  aria-label="Resize end of stop"
-                                  className="edit-btn"
-                                  {...endProps}
-                                  style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 6, ...endProps.style }}
-                                />
-                                <span
-                                  role="button"
-                                  aria-label={`Delete ${b.stop.location}`}
-                                  className="edit-btn"
-                                  onPointerDown={e => e.stopPropagation()}
-                                  onClick={e => { e.stopPropagation(); handleDeleteStop(b.stop.id) }}
-                                  style={{ position: 'absolute', right: -2, top: -6, width: 12, height: 12, lineHeight: '11px', borderRadius: '9999px', background: 'var(--error)', color: '#fff', fontSize: '0.5rem', textAlign: 'center' }}
-                                >
-                                  ×
-                                </span>
-                              </>
-                            )
-                          })()}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
                 <div className="grid" style={{ gridTemplateColumns: 'repeat(7, minmax(2.5rem, 1fr))' }}>
                   {week.map(day => {
                     const inRange = day >= rangeFirst && day <= rangeLast
@@ -321,10 +267,13 @@ export default function TripCalendar({
                         data-testid="day-cell"
                         data-day={day}
                         style={{
+                          gridColumn: week.indexOf(day) + 1,
+                          gridRow: 1,
                           border: '1px solid var(--border)',
                           background: isToday ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
                           opacity: inRange ? 1 : 0.45,
                           minHeight: view === 'week' ? '7rem' : '4.5rem',
+                          paddingTop: reservedTop != null ? `${reservedTop}rem` : undefined,
                           touchAction: planning ? 'none' : 'auto',
                         }}
                         className="p-1 flex flex-col gap-0.5 min-w-0"
@@ -367,6 +316,80 @@ export default function TripCalendar({
                             </button>
                           )}
                         </div>
+                      </div>
+                    )
+                  })}
+
+                  {/* Bands share this same grid (gridRow: 1, explicit gridColumn
+                      on both sides so CSS Grid layers them instead of avoiding
+                      the day cells' occupied cells) and are pulled down per
+                      lane via marginTop from the top of the row's box — so a
+                      band bar visually paints across the top of the exact day
+                      boxes it spans, unambiguously "inside" that row. */}
+                  {weekBands.map(b => {
+                    const isTemp = isTempStopId(b.stop.id)
+                    const { style: grabStyle, ...grabProps } = api && !b.isDeleted ? api.bandGrabProps(b.stop.id) : { style: {} }
+                    return (
+                      <div
+                        key={`${b.stop.id}-${wi}`}
+                        data-testid={b.isDeleted ? 'stop-band-deleted' : 'stop-band'}
+                        role="button"
+                        tabIndex={planning && !b.isDeleted ? 0 : -1}
+                        onClick={() => {
+                          if (b.isDeleted) { undeleteStop(b.stop.id); return }
+                          if (!planning) onOpenDay?.(b.first)
+                        }}
+                        title={b.stop.location}
+                        className="text-left truncate px-1 rounded text-[0.6rem] font-medium hover:opacity-80 transition-opacity"
+                        style={{
+                          gridColumn: `${b.startCol} / ${b.endCol}`,
+                          gridRow: 1,
+                          alignSelf: 'start',
+                          marginTop: `${BAND_TOP_INSET + b.lane * (BAND_H + BAND_GAP)}rem`,
+                          height: `${BAND_H}rem`,
+                          lineHeight: `${BAND_H}rem`,
+                          position: 'relative',
+                          zIndex: 1,
+                          background: `var(--stop-${b.colorIndex + 1})`,
+                          color: '#1e1e2e',
+                          textDecoration: b.isDeleted ? 'line-through' : 'none',
+                          opacity: b.isDeleted ? 0.55 : 1,
+                          cursor: planning && !b.isDeleted ? 'grab' : 'pointer',
+                          ...grabStyle,
+                        }}
+                        {...grabProps}
+                      >
+                        {b.stop.location}{isTemp ? ' (new)' : ''}
+                        {planning && !b.isDeleted && (() => {
+                          const startProps = api.bandHandleProps(b.stop.id, 'start')
+                          const endProps = api.bandHandleProps(b.stop.id, 'end')
+                          return (
+                            <>
+                              <span
+                                aria-label="Resize start of stop"
+                                className="edit-btn"
+                                {...startProps}
+                                style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, ...startProps.style }}
+                              />
+                              <span
+                                aria-label="Resize end of stop"
+                                className="edit-btn"
+                                {...endProps}
+                                style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 6, ...endProps.style }}
+                              />
+                              <span
+                                role="button"
+                                aria-label={`Delete ${b.stop.location}`}
+                                className="edit-btn"
+                                onPointerDown={e => e.stopPropagation()}
+                                onClick={e => { e.stopPropagation(); handleDeleteStop(b.stop.id) }}
+                                style={{ position: 'absolute', right: -2, top: -6, width: 12, height: 12, lineHeight: '11px', borderRadius: '9999px', background: 'var(--error)', color: '#fff', fontSize: '0.5rem', textAlign: 'center' }}
+                              >
+                                ×
+                              </span>
+                            </>
+                          )
+                        })()}
                       </div>
                     )
                   })}
