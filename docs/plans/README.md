@@ -28,6 +28,10 @@ assigned plan.** Each plan is one PR-sized unit of work.
 | [plan-16b-calendar-views.md](plan-16b-calendar-views.md) | Frontend: read-only calendar views + menu/footer wiring + swipe | M–L | plan-16 |
 | [plan-16c-calendar-print.md](plan-16c-calendar-print.md) | Print stylesheet + Print button for the calendar | S | 16b |
 | [plan-16d-planning-mode.md](plan-16d-planning-mode.md) | Planning mode: pointer-event drag/resize/create of stop bands, draft → Save via 16a, warnings, Undo | L | 16a, 16b |
+| [plan-17-travelers.md](plan-17-travelers.md) | **Parent:** travelers (who is going) separate from members (who can edit); encrypted booking profiles; traveler-based personal totals — shared decisions, read before any 17x | — | — |
+| [plan-17a-traveler-model-api.md](plan-17a-traveler-model-api.md) | Backend: `Traveler` table + migration with member backfill, encrypted profile, CRUD API with owner/editor/viewer matrix, passport-expiry warning | M | plan-17 |
+| [plan-17b-personal-totals.md](plan-17b-personal-totals.md) | Personal totals key on traveling not membership; `GET /me/travel-totals` (distance + trips + days + countries) | S–M | 17a |
+| [plan-17c-travelers-ui.md](plan-17c-travelers-ui.md) | Frontend Travelers modal: list, owner add/edit/remove, "Add me" for editors, decrypt-on-open profile, "Fill from my vault", age + expiry chips | M–L | 17a |
 
 If implementing both plan-2 and plan-10, do plan-2 first — it extracts the
 AeroDataBox fetch into `backend/flight_live.py`, which plan-10 then reuses.
