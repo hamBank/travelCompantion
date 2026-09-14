@@ -404,6 +404,16 @@ A passport expiring less than 6 months after the trip's last day (a common
 entry rule) surfaces as a `passport_expiry` warning in the existing
 `GET /trips/{trip_id}/date-warnings` endpoint — no separate polling needed.
 
+### Personal totals are traveler-based
+
+`GET /me/distance-totals` and `GET /me/travel-totals` (trips/days/countries/
+distance in one call) both count only the trips your account is a
+**traveler** on — not every trip you own or can edit. Plan a trip for
+someone else without adding yourself as a traveler and it contributes
+nothing to either total; `POST` yourself a traveler row (with `user_email`
+set to your own address) and it's included on the next call, since both
+endpoints recompute fresh each time rather than reading a ledger.
+
 ---
 
 ## 8. Notes & caveats

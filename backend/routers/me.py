@@ -186,11 +186,72 @@ def download_ingested_email(
 
 @router.get("/me/distance-totals")
 def get_distance_totals(session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
-    """Lifetime distance traveled across every trip this account belongs to
-    (any role), broken down by transport mode. Recomputed fresh on each call
-    from current trip/item data (see backend/distance.py) — not an
-    append-only ledger, so a deleted trip or edited item is reflected
-    immediately, with no adjustment needed anywhere items are written."""
+    """Lifetime distance traveled across every trip this account is a
+    **traveler** on (D6, docs/plans/plan-17-travelers.md — owning or merely
+    having access to a trip no longer counts), broken down by transport
+    mode. Recomputed fresh on each call from current trip/item data (see
+    backend/distance.py) — not an append-only ledger, so a deleted trip or
+    edited item is reflected immediately, with no adjustment needed anywhere
+    items are written."""
     from ..distance import compute_user_distance_totals
     by_mode = compute_user_distance_totals(session, user["email"])
     return {"by_mode": by_mode, "total_km": round(sum(by_mode.values()), 1)}
+
+
+def _trip_days_and_countries(session: Session, trip_id: int) -> tuple:
+    """(days, countries) for one trip: `days` is the trip's span in whole
+    days, first day through last day inclusive, computed with the same
+    widened range rule `validation.py`'s date-warning checks use
+    (`_trip_first_day`/`_trip_last_day` — trip start/end dates widened by
+    stop and item dates); an undated trip (no candidate date anywhere)
+    contributes 0 days rather than raising. `countries` is the set of this
+    trip's non-empty `Stop.country` values."""
+    from ..models import ItineraryItem, Stop, Trip
+    from ..validation import _trip_first_day, _trip_last_day
+
+    trip = session.get(Trip, trip_id)
+    if not trip:
+        return 0, set()
+
+    stops = session.exec(select(Stop).where(Stop.trip_id == trip_id)).all()
+    stop_ids = [s.id for s in stops]
+    items = (
+        session.exec(select(ItineraryItem).where(ItineraryItem.stop_id.in_(stop_ids))).all()
+        if stop_ids else []
+    )
+
+    first = _trip_first_day(trip, stops, items)
+    last = _trip_last_day(trip, stops, items)
+    days = (last - first).days + 1 if first and last else 0
+    countries = {s.country for s in stops if s.country}
+    return days, countries
+
+
+@router.get("/me/travel-totals")
+def get_travel_totals(session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """Personal cross-trip totals — trips, days, countries, and distance —
+    all keyed on trips this account is a **traveler** on (D6): planning a
+    trip for someone else, or merely having edit/view access, does not
+    inflate these numbers. `distance` is exactly GET /me/distance-totals'
+    payload (same underlying computation — see backend/distance.py); the
+    two endpoints always agree."""
+    from ..distance import compute_user_distance_totals
+    from ..travelers import trip_ids_traveled_by
+
+    email = user["email"].lower()
+    trip_ids = trip_ids_traveled_by(session, email)
+
+    days = 0
+    countries: set = set()
+    for trip_id in trip_ids:
+        trip_days, trip_countries = _trip_days_and_countries(session, trip_id)
+        days += trip_days
+        countries |= trip_countries
+
+    by_mode = compute_user_distance_totals(session, email)
+    return {
+        "trips": len(trip_ids),
+        "days": days,
+        "countries": sorted(countries),
+        "distance": {"by_mode": by_mode, "total_km": round(sum(by_mode.values()), 1)},
+    }

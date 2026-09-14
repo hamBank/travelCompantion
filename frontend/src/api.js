@@ -133,6 +133,11 @@ async function req(path, opts = {}) {
 }
 
 export const getAuthConfig  = ()       => req('/auth/config')
+// Who the current token (or, with auth disabled, dev@local) resolves to —
+// used client-side to compare against a Traveler row's user_email (e.g.
+// DistanceSummary's "you're not a traveler on this trip" hint) without
+// re-deriving identity from a locally-stored JWT.
+export const getCurrentUser = ()       => req('/auth/me')
 export const loginWithGoogle = (credential) =>
   req('/auth/google', { method: 'POST', body: JSON.stringify({ credential }) })
 
@@ -208,6 +213,14 @@ export const rescheduleTrip = (id, body) =>
   req(`/trips/${id}/reschedule`, { method: 'POST', body: JSON.stringify(body) })
 export const getTripDistance = (id) => req(`/trips/${id}/distance`)
 export const getMyDistanceTotals = () => req(`/me/distance-totals`)
+// Trips/days/countries + the same distance payload as getMyDistanceTotals,
+// all keyed on trips the signed-in user is a *traveler* on (D6, plan-17b) —
+// see backend/routers/me.py's GET /me/travel-totals.
+export const getMyTravelTotals = () => req(`/me/travel-totals`)
+// One-liner also added by plan-17c's fuller Travelers section (createTraveler,
+// updateTraveler, ...) — this line is intentionally duplicated there; keep
+// one copy on merge (see docs/plans/plan-17b-personal-totals.md).
+export const getTravelers = (tripId) => req(`/trips/${tripId}/travelers`)
 
 // ── Pending changes (review-before-apply imports) ────────────────────────────
 export const getPending     = (tripId) => req(`/pending${tripId != null ? `?trip_id=${tripId}` : ''}`)
