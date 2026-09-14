@@ -4,7 +4,9 @@ import EditItemsSection from './EditItemsSection.jsx'
 
 const STATUS_OPTIONS = ['planned', 'confirmed', 'completed', 'cancelled']
 
-function Field({ label, value, onChange, placeholder, type = 'text', span = 1, min }) {
+// Exported so PlanningOverlay's inline "New stop" form (plan-16d) reuses the
+// same field styling instead of a second copy of this markup.
+export function Field({ label, value, onChange, placeholder, type = 'text', span = 1, min }) {
   return (
     <div className={span === 2 ? 'col-span-2' : ''}>
       <label style={{ color: 'var(--text-faint)' }} className="block text-xs mb-0.5">{label}</label>

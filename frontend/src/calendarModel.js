@@ -1,5 +1,6 @@
 // Pure calendar-layout helpers for TripCalendar.jsx — no React, so these are
-// unit-testable in isolation (frontend/src/__tests__/calendarModel.test.js).
+// unit-testable in isolation (frontend/src/__tests__/calendarModel.test.js,
+// frontend/src/__tests__/calendarModel.planning.test.js).
 //
 // Placement of items on days reuses itemDateKey/itemSortKey from StopCard.jsx
 // (plan-16, decision D3) rather than reimplementing the per-kind date rules —
@@ -7,26 +8,62 @@
 // day, everything else on scheduled_at. Do not duplicate that logic here.
 import { itemDateKey, itemSortKey } from './components/StopCard.jsx'
 
-// Shift a 'YYYY-MM-DD' string by N days using the device's local calendar —
-// same approach as shiftDay in TripTimeline.jsx, duplicated deliberately: this
-// module is plain data logic imported by both TripCalendar.jsx and its tests,
-// and must not pull in a React component file just for a date helper.
-function shiftDateStr(dateStr, deltaDays) {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setDate(d.getDate() + deltaDays)
-  return d.toLocaleDateString('sv-SE')
+// Accepted shapes for a stored local wall-clock date/datetime string, most
+// specific first — mirrors backend/reschedule.py's _STR_FORMATS exactly so
+// shiftDateStr below shifts the same shapes the server does.
+const _DT_SHAPES = [
+  { re: /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/, time: true, seconds: true },
+  { re: /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/, time: true, seconds: false },
+  { re: /^(\d{4})-(\d{2})-(\d{2})$/, time: false, seconds: false },
+]
+
+// Shift a local wall-clock date/datetime string by whole days, preserving its
+// exact input shape — a date-only string stays date-only, seconds are kept
+// iff the input had them, time-of-day is untouched. Mirrors
+// backend/reschedule.py::shift_datetime_str field-for-field (plan-16d):
+// planning-mode previews must shift dates the same way the server will on
+// Save, or the preview would lie. Day arithmetic is done in UTC on the
+// parsed y/m/d components (never via the device's local Date + setDate) so
+// it can't be perturbed by the viewer's own timezone/DST — these strings
+// carry no zone of their own (CLAUDE.md's "Timezone handling"). Returns the
+// input unchanged if it isn't a non-empty string or doesn't match one of the
+// shapes above — this reads free-form imported/typed data, so it must never
+// throw. Also used for the calendar's own date-only day-key arithmetic
+// (weeksCovering, dayKeysBetween, shiftPeriod below) — those only ever pass
+// the date-only shape, so this stays behaviourally identical for them.
+function shiftDateStr(value, deltaDays) {
+  if (typeof value !== 'string' || !value) return value
+  for (const { re, time, seconds } of _DT_SHAPES) {
+    const m = value.match(re)
+    if (!m) continue
+    const [, y, mo, d, h, mi, s] = m
+    const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)))
+    dt.setUTCDate(dt.getUTCDate() + deltaDays)
+    const ys = dt.getUTCFullYear()
+    const ms = String(dt.getUTCMonth() + 1).padStart(2, '0')
+    const ds = String(dt.getUTCDate()).padStart(2, '0')
+    if (!time) return `${ys}-${ms}-${ds}`
+    return `${ys}-${ms}-${ds}T${h}:${mi}${seconds ? `:${s}` : ''}`
+  }
+  return value
 }
 
-// The complete set of datetime-bearing fields an item can carry (plan-16 D3),
-// used only to widen the Trip-view date range — NOT for placement (that's
-// itemDateKey's job, used by itemsByDay below).
-const DATE_DETAIL_KEYS = ['checkin', 'checkout', 'bag_drop', 'depart_time', 'arrive_time', 'pickup_time', 'dropoff_time']
+// The complete set of `details` keys that carry a datetime (plan-16 D3) —
+// used to widen the Trip-view date range (itemDateParts below) AND, in
+// planning mode, to shift every date-bearing field of a moved stop's items
+// (applyDraft) exactly like backend/reschedule.py::ITEM_DATETIME_KEYS.
+// `scheduled_at` is the top-level field and is handled separately, same
+// split as the backend module. Keep this list in lockstep with that one and
+// with the `datetime-local` fields in ItemEditModal.jsx — see
+// frontend/src/__tests__/calendarModel.planning.test.js's grep-agreement
+// test, the frontend twin of tests/test_reschedule.py's.
+export const ITEM_DATETIME_KEYS = ['checkin', 'checkout', 'bag_drop', 'depart_time', 'arrive_time', 'pickup_time', 'dropoff_time']
 
 function itemDateParts(item) {
   const out = []
   if (item.scheduled_at) out.push(String(item.scheduled_at).slice(0, 10))
   const d = item.details || {}
-  for (const k of DATE_DETAIL_KEYS) {
+  for (const k of ITEM_DATETIME_KEYS) {
     if (d[k]) out.push(String(d[k]).slice(0, 10))
   }
   return out
@@ -122,6 +159,22 @@ export function packLanes(bands) {
   })
 }
 
+// A stop-band segment clipped to one displayed week row — a band spanning
+// several weeks is drawn once per week it touches (two segments for a stop
+// crossing a single week boundary, etc). null when the band doesn't reach
+// this week at all. Moved here (out of TripCalendar.jsx) in plan-16d so
+// PlanningOverlay's unified multi-week grid can lay out the same bands with
+// the same per-week clipping, without duplicating the logic.
+export function bandSegmentForWeek(band, week) {
+  const weekStart = week[0], weekEnd = week[6]
+  if (band.last < weekStart || band.first > weekEnd) return null
+  const segFirst = band.first < weekStart ? weekStart : band.first
+  const segLast = band.last > weekEnd ? weekEnd : band.last
+  const startCol = week.indexOf(segFirst) + 1
+  const endCol = week.indexOf(segLast) + 2 // CSS grid end line is exclusive
+  return { startCol, endCol }
+}
+
 // Map<dayKey, item[]> — every item with a placeable date (itemDateKey),
 // sorted within each day by itemSortKey. Multi-day items (an accommodation's
 // checkin→checkout span, an overnight flight) are placed on their start day
@@ -154,3 +207,159 @@ export function shiftPeriod(view, anchorDay, delta) {
 }
 
 export { shiftDateStr }
+
+// ── Planning mode (plan-16d) ────────────────────────────────────────────────
+// A "draft" is the pure, client-only accumulation of unsaved planning-mode
+// edits: { moves: {[stopId]: {arrive, depart}}, creates: {[tempId]: {location,
+// country, timezone, arrive, depart}}, deletes: number[] }. Nothing here ever
+// touches the network (plan-16 D10) — Save (App.jsx) turns a draft into one
+// `POST /trips/{id}/reschedule` body via draftToRequest.
+export function emptyDraft() {
+  return { moves: {}, creates: {}, deletes: [] }
+}
+
+export function draftChangeCount(draft) {
+  if (!draft) return 0
+  return Object.keys(draft.moves || {}).length + Object.keys(draft.creates || {}).length + (draft.deletes || []).length
+}
+
+// D4's whole-day delta, mirroring backend/reschedule.py::stop_delta_days
+// exactly: arrive-based, depart as fallback when there's no arrive, 0 when
+// the OLD stop had neither (nothing to be relative to). Comparing calendar
+// dates only (not full datetimes), same reasoning as the backend twin: a
+// stop whose arrive time-of-day changed without its calendar day changing is
+// a resize, not a move.
+export function stopDeltaDays(oldArrive, oldDepart, newArrive, newDepart) {
+  const oldAnchor = oldArrive || oldDepart
+  const newAnchor = newArrive || newDepart
+  if (!oldAnchor || !newAnchor) return 0
+  return daysBetweenDayKeys(String(oldAnchor).slice(0, 10), String(newAnchor).slice(0, 10))
+}
+
+// Whole days from day-key `a` to day-key `b` ('YYYY-MM-DD' strings), i.e.
+// `b - a`. Used by stopDeltaDays above and by PlanningOverlay.jsx to turn a
+// drag's start/current day into a delta before shifting a band's dates.
+export function daysBetweenDayKeys(a, b) {
+  if (!a || !b) return 0
+  const [ay, am, ad] = a.split('-').map(Number)
+  const [by_, bm, bd] = b.split('-').map(Number)
+  return Math.round((Date.UTC(by_, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000)
+}
+
+// Shift every present, parseable datetime field of `item` by `deltaDays`
+// whole days — the top-level `scheduled_at` plus every ITEM_DATETIME_KEYS
+// entry in `item.details` — mirroring backend/reschedule.py::shift_item.
+// Pure: returns `item` unchanged (same identity) when delta is 0 or nothing
+// on the item actually shifts, and otherwise a new item object (new
+// `details` identity too) so callers can rely on reference-equality to tell
+// whether anything changed.
+function shiftItemForPreview(item, deltaDays) {
+  if (deltaDays === 0) return item
+  let changed = false
+  const next = { ...item }
+  if (item.scheduled_at) {
+    const shifted = shiftDateStr(item.scheduled_at, deltaDays)
+    if (shifted !== item.scheduled_at) { next.scheduled_at = shifted; changed = true }
+  }
+  const details = item.details || {}
+  let newDetails = null
+  for (const key of ITEM_DATETIME_KEYS) {
+    const val = details[key]
+    if (!val) continue
+    const shifted = shiftDateStr(val, deltaDays)
+    if (shifted !== val) {
+      if (!newDetails) newDetails = { ...details }
+      newDetails[key] = shifted
+      changed = true
+    }
+  }
+  if (newDetails) next.details = newDetails
+  return changed ? next : item
+}
+
+// applyDraft(timeline, draft) -> timeline' — pure preview of what Save will
+// do: a new timeline object whose stops reflect the draft (moved dates
+// applied, temp-id creates appended, deleted stops removed) and whose items
+// are shifted by D4's rule so the on-screen preview matches the server
+// exactly. Never mutates `timeline` or any of its stops/items. Deleted stops
+// are dropped from the result entirely — TripCalendar renders their
+// struck-through band separately, straight from the original timeline plus
+// draft.deletes, specifically so a still-visible "about to be deleted" band
+// doesn't also (wrongly) contribute a live chip preview here.
+export function applyDraft(timeline, draft) {
+  if (!timeline) return timeline
+  const d = draft || emptyDraft()
+  const deletes = new Set(d.deletes || [])
+  const moves = d.moves || {}
+  const creates = d.creates || {}
+
+  const stops = []
+  for (const stop of timeline.stops || []) {
+    if (deletes.has(stop.id)) continue
+    const move = moves[stop.id]
+    if (!move) { stops.push(stop); continue }
+    const delta = stopDeltaDays(stop.arrive, stop.depart, move.arrive, move.depart)
+    const items = delta === 0 ? (stop.items || []) : (stop.items || []).map(it => shiftItemForPreview(it, delta))
+    stops.push({ ...stop, arrive: move.arrive, depart: move.depart, items })
+  }
+  for (const [tempId, c] of Object.entries(creates)) {
+    stops.push({
+      id: tempId, location: c.location, country: c.country || '',
+      arrive: c.arrive, depart: c.depart, timezone: c.timezone ?? '0',
+      items: [], isDraftNew: true,
+    })
+  }
+  return { ...timeline, stops }
+}
+
+// draftToRequest(draft, originalStops) -> RescheduleRequest body (see
+// backend/models.py's RescheduleRequest / docs/plans/plan-16a-reschedule-api.md).
+// `originalStops` is the real, unmodified timeline.stops (for each moved
+// stop's `base`, compare-and-set per D6/backend/compare_and_set.py). Only
+// stops whose dates actually changed from their original values go into
+// `moves` — a stop touched by the "Place" flow and then untouched again, or
+// a move dragged back to its own start, must not generate a no-op PATCH.
+export function draftToRequest(draft, originalStops) {
+  const d = draft || emptyDraft()
+  const byId = new Map((originalStops || []).map(s => [s.id, s]))
+  const moves = []
+  for (const [stopIdStr, move] of Object.entries(d.moves || {})) {
+    const stopId = Number(stopIdStr)
+    const orig = byId.get(stopId)
+    if (!orig) continue
+    if ((orig.arrive || null) === (move.arrive || null) && (orig.depart || null) === (move.depart || null)) continue
+    moves.push({ stop_id: stopId, arrive: move.arrive || null, depart: move.depart || null, base: { arrive: orig.arrive || null, depart: orig.depart || null } })
+  }
+  const creates = Object.entries(d.creates || {}).map(([tempId, c]) => ({
+    location: c.location, country: c.country || '',
+    arrive: c.arrive || null, depart: c.depart || null,
+    timezone: c.timezone || '0', client_ref: tempId,
+  }))
+  const deletes = [...(d.deletes || [])]
+  return { moves, creates, deletes }
+}
+
+// D8 grid geometry — deterministic hit testing from a pointer position, no
+// elementFromPoint. `gridRect` is any {left, top, width} (a DOMRect works).
+// col/row are clamped into [0, cols-1] / [0, ∞) — a point exactly on a
+// column's right edge belongs to the column to its right (plain floor
+// division), matching how the CSS grid itself lines up.
+export function cellFromPoint(gridRect, cols, rowHeight, x, y) {
+  const cellWidth = gridRect.width / cols
+  let col = Math.floor((x - gridRect.left) / cellWidth)
+  col = Math.max(0, Math.min(cols - 1, col))
+  let row = Math.floor((y - gridRect.top) / rowHeight)
+  row = Math.max(0, row)
+  return { col, row }
+}
+
+// The day key a {col, row} cell (from cellFromPoint) refers to, given the
+// same `weeks` array (weeksCovering's output) the grid was rendered from.
+// Out-of-grid rows/cols clamp to the nearest real cell rather than returning
+// null, so a drag that overshoots past the last week still resolves to a day.
+export function dayKeyAt(weeks, { col, row }) {
+  if (!weeks || !weeks.length) return null
+  const r = Math.max(0, Math.min(weeks.length - 1, row))
+  const c = Math.max(0, Math.min(6, col))
+  return weeks[r][c]
+}

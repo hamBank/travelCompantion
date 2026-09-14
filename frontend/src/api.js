@@ -199,6 +199,13 @@ export const getTripTimeline = (id, opts = {}) => {
   return req(`/trips/${id}/timeline${qs}`)
 }
 export const getDateWarnings = (id) => req(`/trips/${id}/date-warnings`)
+// Planning mode (plan-16d) — one atomic batch of stop moves/creates/deletes;
+// see backend/models.py's RescheduleRequest/RescheduleResponse and
+// docs/plans/plan-16a-reschedule-api.md. A 409 (compare-and-set conflict)
+// surfaces here with `err.detail.conflicts`/`err.detail.current` (req()'s
+// error shape), same as every other compare-and-set PATCH in this app.
+export const rescheduleTrip = (id, body) =>
+  req(`/trips/${id}/reschedule`, { method: 'POST', body: JSON.stringify(body) })
 export const getTripDistance = (id) => req(`/trips/${id}/distance`)
 export const getMyDistanceTotals = () => req(`/me/distance-totals`)
 
