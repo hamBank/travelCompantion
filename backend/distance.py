@@ -33,7 +33,8 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from .models import ItineraryItem, LocationCoords, Stop, TripMembership, UserDistanceTotal
+from .models import ItineraryItem, LocationCoords, Stop, UserDistanceTotal
+from .travelers import trip_ids_traveled_by
 from .weather import geocode as _geocode_place
 
 # ItemKind → transport mode bucket. Kinds not listed here (accommodation,
@@ -198,15 +199,16 @@ def compute_trip_distances(session: Session, trip_id: int, *, geocode=_geocode_p
 def compute_user_distance_totals(session: Session, user_email: str, *, geocode=_geocode_place,
                                   airport_request=None) -> dict:
     """Recomputes {mode: total_km} from scratch across every trip
-    `user_email` belongs to (any role), and upserts the result into
-    UserDistanceTotal — a cache of this computation, not an incrementally
-    maintained ledger, so a deleted trip or edited item is correctly
-    reflected on the very next call with no special-casing at any write site.
+    `user_email` is a **traveler** on (D6, docs/plans/plan-17-travelers.md —
+    trip_ids_traveled_by is the single source of "which trips count" for
+    every personal aggregate; membership/access alone no longer counts), and
+    upserts the result into UserDistanceTotal — a cache of this computation,
+    not an incrementally maintained ledger, so a deleted trip or edited item
+    is correctly reflected on the very next call with no special-casing at
+    any write site.
     """
     email = user_email.lower()
-    trip_ids = set(session.exec(
-        select(TripMembership.trip_id).where(TripMembership.user_email == email)
-    ).all())
+    trip_ids = trip_ids_traveled_by(session, email)
 
     grand: dict = {}
     for trip_id in trip_ids:

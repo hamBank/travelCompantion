@@ -401,6 +401,31 @@ def _trip_last_day(trip: Trip, stops: list[Stop], all_items: list[ItineraryItem]
     return max(candidates) if candidates else None
 
 
+def _trip_first_day(trip: Trip, stops: list[Stop], all_items: list[ItineraryItem]) -> Optional[_date]:
+    """The earliest date anywhere in the trip — the mirror image of
+    `_trip_last_day` above (same widened range rule: `Trip.start_date`,
+    every stop's arrive/depart, and every item's span start, falling back to
+    its primary date), so an undated first stop with only dated items, or a
+    trip whose `start_date` runs earlier than any stop, doesn't understate
+    the range. Used by plan-17b's personal `days` total (trip span,
+    first day -> last day inclusive) — the one range definition this module
+    settled on; don't add a second one elsewhere."""
+    candidates: list[_date] = []
+    if trip.start_date:
+        candidates.append(trip.start_date.date())
+    for s in stops:
+        if s.arrive:
+            candidates.append(s.arrive.date())
+        if s.depart:
+            candidates.append(s.depart.date())
+    for it in all_items:
+        start, end = _item_span(it)
+        d = start or end
+        if d:
+            candidates.append(d.date())
+    return min(candidates) if candidates else None
+
+
 def _add_months(d: _date, months: int) -> _date:
     """Calendar-month addition, clamping the day when the target month is
     shorter (e.g. 2026-08-31 + 6 -> 2027-02-28, not an OverflowError)."""
