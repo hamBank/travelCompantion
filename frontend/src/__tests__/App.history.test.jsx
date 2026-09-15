@@ -208,6 +208,44 @@ describe('mode toggles push; Timeline (from within a mode) closes via back(); ca
     expect(backSpy).toHaveBeenCalled()
   })
 
+  it('Edit shows from Today, and jumping into it clears Today (footer reverts, not left as "All days")', async () => {
+    await openTrip1()
+    fireEvent.click(screen.getByText('Today'))
+    fireEvent.click(screen.getByLabelText('Menu'))
+    expect(screen.getByText('Edit')).toBeTruthy()
+    pushNav.mockClear()
+    fireEvent.click(screen.getByText('Edit'))
+    expect(pushNav).toHaveBeenCalledWith(expect.objectContaining({ tripId: 1, mode: 'edit' }))
+    expect(screen.getByText('Today')).toBeTruthy()
+    expect(screen.queryByText('All days')).toBeNull()
+  })
+
+  it('Edit shows from Packing, and jumping into it clears Packing (menu item reverts, not stuck as "Timeline")', async () => {
+    await openTrip1()
+    fireEvent.click(screen.getByLabelText('Menu'))
+    fireEvent.click(screen.getByText('Packing'))
+    fireEvent.click(screen.getByLabelText('Menu'))
+    expect(screen.getByText('Edit')).toBeTruthy()
+    pushNav.mockClear()
+    fireEvent.click(screen.getByText('Edit'))
+    expect(pushNav).toHaveBeenCalledWith(expect.objectContaining({ tripId: 1, mode: 'edit' }))
+    fireEvent.click(screen.getByLabelText('Menu'))
+    expect(screen.getByText('Packing')).toBeTruthy()
+  })
+
+  it('Edit shows from Calendar, and jumping into it leaves Calendar (the grid unmounts)', async () => {
+    await openTrip1()
+    fireEvent.click(screen.getByLabelText('Menu'))
+    fireEvent.click(screen.getByText('Calendar'))
+    await waitFor(() => expect(screen.getByTestId('calendar')).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('Menu'))
+    expect(screen.getByText('Edit')).toBeTruthy()
+    pushNav.mockClear()
+    fireEvent.click(screen.getByText('Edit'))
+    expect(pushNav).toHaveBeenCalledWith(expect.objectContaining({ tripId: 1, mode: 'edit' }))
+    expect(screen.queryByTestId('calendar')).toBeNull()
+  })
+
   it('Calendar: enter pushes; changing the view replaces (not push)', async () => {
     await openTrip1()
     pushNav.mockClear()
@@ -258,8 +296,7 @@ describe('mode toggles push; Timeline (from within a mode) closes via back(); ca
   it('Today reached via a calendar day/stop click: "All days" skips the Calendar layer too (backSteps(2))', async () => {
     // The bug this covers: tapping a stop on the calendar jumps into Today
     // mode on top of the Calendar layer (not Timeline). A plain back() from
-    // "All days" would then surface Calendar again — where Edit is equally
-    // unavailable — leaving no in-app way back to a view with Edit on it.
+    // "All days" would then surface Calendar again instead of Timeline.
     await openTrip1()
     fireEvent.click(screen.getByLabelText('Menu'))
     fireEvent.click(screen.getByText('Calendar'))
