@@ -575,11 +575,17 @@ function AppShell({ user, onLogout }) {
                 : <span style={{ color: 'var(--text-faint)' }} aria-label="Menu"><Menu size={20} aria-hidden="true" /></span>
             }
           >
-            {selectedTrip && online && !packing && !today && !calendar && canEdit(selectedTrip.role) && (
+            {selectedTrip && online && canEdit(selectedTrip.role) && (
               <MenuItem onClick={() => {
                 if (editing) { back(); return } // Edit -> View closes the Edit layer (D4)
-                setEditing(true)
-                pushSnapshot({ editing: true })
+                // Edit is its own mode, reachable from any other mode (Today,
+                // Packing, Calendar) — not just Timeline — so jumping into it
+                // clears whichever of those was active, same as every other
+                // mode-switch menu item already does.
+                guardLeavePlanning(() => {
+                  setEditing(true); setPacking(false); setToday(false); setCalendar(false)
+                  pushSnapshot({ editing: true, packing: false, today: false, calendar: false, planning: false })
+                })
               }}>
                 {editing ? 'View' : 'Edit'}
               </MenuItem>
