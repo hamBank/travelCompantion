@@ -857,3 +857,39 @@ def test_date_warnings_missing_country_no_arrival_date_not_flagged(client: TestC
     })
     warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
     assert [w for w in warnings if w["name"] == "Missing country"] == []
+
+
+def test_date_warnings_are_sorted_chronologically_across_check_types(client: TestClient, trip, session: Session):
+    # Regression: each check appends its warnings in check-execution order,
+    # not trip order — a missing-country warning (the last check to run) for
+    # an EARLY stop used to land after a date-range warning (the first check
+    # to run) for a LATER stop, purely because of which function happened to
+    # run first, not which one the trip hits first. Confirmed live
+    # (2026-09-16): with dozens of warnings, the missing-country ones ended
+    # up buried at the bottom regardless of where they actually fell in the
+    # trip, making them easy to miss entirely.
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome", country="Italy"))
+    session.commit()
+
+    # Early stop, one night (no accommodation needed to avoid an unrelated
+    # uncovered-nights warning) — its only issue is a missing country.
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned",
+        "arrive": "2026-01-10T00:00:00", "depart": "2026-01-11T00:00:00",
+    })
+    # Later stop, whose item is dated before ITS OWN arrival — a date-range
+    # warning, from the very first check date_warnings() runs.
+    dover = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Dover", "country": "United Kingdom", "status": "planned",
+        "arrive": "2026-03-01T00:00:00", "depart": "2026-03-02T00:00:00",
+    }).json()
+    client.post(f"/stops/{dover['id']}/items", json={
+        "kind": "activity", "name": "Too early", "status": "pending",
+        "scheduled_at": "2026-02-01T10:00:00",
+    })
+
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    rome_idx = next(i for i, w in enumerate(warnings) if w["name"] == "Missing country")
+    dover_idx = next(i for i, w in enumerate(warnings) if w["name"] == "Too early")
+    assert rome_idx < dover_idx, "Rome (10 Jan) should sort before Dover's item (1 Feb)"
