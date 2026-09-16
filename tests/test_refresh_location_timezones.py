@@ -119,3 +119,27 @@ def test_refresh_all_skips_unresolvable_locations_without_erroring(session: Sess
     assert n == 1
     rows = {r.location for r in session.exec(select(LocationTimezone)).all()}
     assert rows == {"ZRH"}
+
+
+def test_refresh_all_logs_a_failed_location_by_name(session: Session, capsys):
+    # A location that fails to resolve must show up BY NAME in the log —
+    # otherwise a persistently-failing location is indistinguishable from
+    # one that was simply never attempted (the concrete gap this closes).
+    sid = _stop_id(session)
+    session.add(_flight(sid, "XXX", "ZRH"))
+    session.commit()
+
+    refresh_all(session, geocode=lambda q: None if q.startswith("XXX") else (0.0, 0.0),
+                geocode_country=lambda q: "Switzerland",
+                fetch_json=lambda url: {"timezone": "Europe/Zurich"})
+    out = capsys.readouterr().out
+    assert "FAILED to resolve 'XXX'" in out
+    assert "resolved 'ZRH' -> Europe/Zurich (Switzerland)" in out
+
+
+def test_refresh_all_logs_country_failure_separately_from_zone_failure(session: Session, capsys):
+    _stop_id(session, location="Nice")
+    refresh_all(session, geocode=lambda q: (43.7, 7.25), geocode_country=lambda q: None,
+                fetch_json=lambda url: {"timezone": "Europe/Paris"})
+    out = capsys.readouterr().out
+    assert "resolved 'Nice' -> Europe/Paris, but country lookup failed" in out
