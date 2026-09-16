@@ -141,8 +141,13 @@ def _fetch_geocode(q: str):
     # structured `address` dict to each result — geocode() below still only
     # reads lat/lon from it, but geocode_with_country() reads address.country
     # from the exact same response instead of firing a second request.
+    # accept-language=en pins that country name to English — Nominatim
+    # otherwise returns it in the location's own local language (confirmed
+    # live 2026-09-16: "Sverige"/"Nederland" instead of "Sweden"/
+    # "Netherlands"), which doesn't match countryFlag.js's English-keyed
+    # FLAGS map and silently renders no flag at all.
     url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
-        {"q": q, "format": "json", "limit": 1, "addressdetails": 1}
+        {"q": q, "format": "json", "limit": 1, "addressdetails": 1, "accept-language": "en"}
     )
     req = urllib.request.Request(url, headers={"User-Agent": "travel-companion/1.0"})
     try:

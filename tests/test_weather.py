@@ -145,6 +145,28 @@ def test_geocode_with_country_none_on_empty_or_failure():
     assert weather.geocode_with_country("x", fetch=lambda q: []) is None
 
 
+def test_fetch_geocode_requests_english_country_names(monkeypatch):
+    # Regression: Nominatim returns address.country in the location's own
+    # local language by default ("Sverige", "Nederland", ...) — confirmed
+    # live 2026-09-16 — which doesn't match countryFlag.js's English-keyed
+    # FLAGS map and silently renders no flag. accept-language=en pins it.
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'[{"lat": "1", "lon": "1"}]'
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return FakeResponse()
+
+    monkeypatch.setattr(weather.urllib.request, "urlopen", fake_urlopen)
+    weather._fetch_geocode("Stockholm")
+    assert "accept-language=en" in captured["url"]
+    assert "addressdetails=1" in captured["url"]
+
+
 def test_get_weather_bad_coords_returns_empty():
     assert weather.get_weather("nope", "nope", "2026-07-22", "2026-07-23") == {}
 

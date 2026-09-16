@@ -605,6 +605,18 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
     out.extend(_timezone_mismatch_warnings(session, all_items, stops))
     out.extend(_missing_country_warnings(session, stops))
 
+    # Every check above appends in *check-execution* order, not trip order —
+    # a stop near the start of the trip whose only problem is a missing
+    # country (the last check to run) would otherwise land at the very
+    # bottom of the list, behind every date-range/coverage/transport warning
+    # from stops later in the trip. Sort chronologically instead so the list
+    # reads top-to-bottom the same way the trip does. item_date is ISO 8601
+    # throughout (some checks use a bare date, others a full datetime) —
+    # plain string comparison already orders those correctly since a date
+    # string is a strict prefix of, and so sorts before, a same-day datetime
+    # string.
+    out.sort(key=lambda w: w.get("item_date") or "")
+
     trip = session.get(Trip, trip_id)
     if trip:
         travelers = session.exec(select(Traveler).where(Traveler.trip_id == trip_id)).all()
