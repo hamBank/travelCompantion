@@ -212,9 +212,29 @@ def test_non_2xx_json_error_body_still_extracts_message(client, session, flight_
     assert r.json()["detail"] == "Invalid API key"
 
 
-def test_2xx_response_with_unparseable_body_gives_a_clear_message(client, session, flight_item, monkeypatch):
+def test_2xx_response_with_genuinely_empty_body_degrades_to_not_found(client, session, flight_item, monkeypatch):
+    # Regression: confirmed live 2026-09-16 (item 1032, SYD→OSL) — AeroDataBox
+    # returned a 2xx with a completely empty body (distinct from its normal
+    # "no data for this flight/date" signal, which is a 2xx with an actual
+    # empty JSON list and never hits this path at all). That used to raise a
+    # 502 the user couldn't act on; a proxy/gateway hiccup like this should
+    # degrade the same as "nothing found yet" instead.
     monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
-    resp = FakeResponse(status_code=200)  # data=None → .json() raises, like the old bug's real case
+    resp = FakeResponse(status_code=200)  # data=None, text="" (default) → .json() raises on a truly empty body
+    monkeypatch.setattr(flight_live.httpx, "Client", _fake_client(resp))
+
+    r = client.get(f"/items/{flight_item['id']}/flight-check")
+    assert r.status_code == 200
+    assert r.json() == {"found": False, "flight_iata": "AY132", "checks": []}
+
+
+def test_2xx_response_with_non_empty_unparseable_body_still_gives_a_clear_error(client, session, flight_item, monkeypatch):
+    # A non-empty-but-invalid body (e.g. an HTML page unexpectedly served
+    # with a 200) is a different, still genuinely-anomalous case — unlike a
+    # bare empty body, this is worth surfacing rather than silently
+    # swallowing.
+    monkeypatch.setattr(flight_live, "AERODATABOX_KEY", "fake-key")
+    resp = FakeResponse(status_code=200, text="<html>not json</html>")
     monkeypatch.setattr(flight_live.httpx, "Client", _fake_client(resp))
 
     r = client.get(f"/items/{flight_item['id']}/flight-check")
