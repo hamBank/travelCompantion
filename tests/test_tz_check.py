@@ -114,6 +114,7 @@ def test_refresh_zone_cache_writes_and_get_cached_zone_reads_it_back(session: Se
     tz_check.refresh_zone_cache(
         session, "Rome",
         geocode=lambda q: (41.9, 12.5),
+        geocode_country=lambda q: "Italy",
         fetch_json=lambda url: {"timezone": "Europe/Rome"},
     )
     session.commit()
@@ -122,9 +123,11 @@ def test_refresh_zone_cache_writes_and_get_cached_zone_reads_it_back(session: Se
 
 def test_refresh_zone_cache_updates_existing_row_in_place(session: Session):
     tz_check.refresh_zone_cache(session, "Rome", geocode=lambda q: (41.9, 12.5),
+                                 geocode_country=lambda q: "Italy",
                                  fetch_json=lambda url: {"timezone": "Europe/Rome"})
     session.commit()
     tz_check.refresh_zone_cache(session, "Rome", geocode=lambda q: (41.9, 12.5),
+                                 geocode_country=lambda q: "Italy",
                                  fetch_json=lambda url: {"timezone": "Europe/Rome"})
     session.commit()
     from sqlmodel import select
@@ -138,3 +141,62 @@ def test_refresh_zone_cache_returns_none_and_writes_nothing_on_failure(session: 
     session.commit()
     assert result is None
     assert tz_check.get_cached_zone(session, "Nowhereville") is None
+
+
+# ── country resolution/cache ────────────────────────────────────────────────
+
+def test_resolve_country_chains_geocode_query_and_country():
+    def fake_geocode_country(q):
+        assert q == "FCO airport"
+        return "Italy"
+    assert tz_check.resolve_country("FCO", geocode_country=fake_geocode_country) == "Italy"
+
+
+def test_resolve_country_none_when_unresolved():
+    assert tz_check.resolve_country("Nowhereville", geocode_country=lambda q: None) is None
+
+
+def test_get_cached_country_returns_none_when_unresolved(session: Session):
+    assert tz_check.get_cached_country(session, "Rome") is None
+
+
+def test_refresh_zone_cache_writes_country_alongside_zone(session: Session):
+    tz_check.refresh_zone_cache(
+        session, "Rome",
+        geocode=lambda q: (41.9, 12.5),
+        geocode_country=lambda q: "Italy",
+        fetch_json=lambda url: {"timezone": "Europe/Rome"},
+    )
+    session.commit()
+    assert tz_check.get_cached_country(session, "Rome") == "Italy"
+
+
+def test_refresh_zone_cache_zone_still_written_when_country_resolution_fails(session: Session):
+    # Country is best-effort — a failure there shouldn't lose the zone, which
+    # the pre-existing timezone-mismatch check depends on independently.
+    tz_check.refresh_zone_cache(
+        session, "Rome",
+        geocode=lambda q: (41.9, 12.5),
+        geocode_country=lambda q: None,
+        fetch_json=lambda url: {"timezone": "Europe/Rome"},
+    )
+    session.commit()
+    assert tz_check.get_cached_zone(session, "Rome") == "Europe/Rome"
+    assert tz_check.get_cached_country(session, "Rome") is None
+
+
+def test_refresh_zone_cache_backfills_country_on_a_previously_zone_only_row(session: Session):
+    # A row resolved before `country` existed (or whose country lookup failed
+    # last time) must not be stuck incomplete forever — re-running with a
+    # working country resolver fills it in on the existing row.
+    tz_check.refresh_zone_cache(session, "Rome", geocode=lambda q: (41.9, 12.5),
+                                 geocode_country=lambda q: None,
+                                 fetch_json=lambda url: {"timezone": "Europe/Rome"})
+    session.commit()
+    assert tz_check.get_cached_country(session, "Rome") is None
+
+    tz_check.refresh_zone_cache(session, "Rome", geocode=lambda q: (41.9, 12.5),
+                                 geocode_country=lambda q: "Italy",
+                                 fetch_json=lambda url: {"timezone": "Europe/Rome"})
+    session.commit()
+    assert tz_check.get_cached_country(session, "Rome") == "Italy"

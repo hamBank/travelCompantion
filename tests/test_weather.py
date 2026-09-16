@@ -126,6 +126,25 @@ def test_geocode_strips_invisible_chars_before_fetching():
     assert weather.geocode(dirty, fetch=fake_fetch) == (1.36, 103.99)
 
 
+def test_geocode_with_country_reads_address_from_the_same_response():
+    def fake_fetch(q):
+        return [{"lat": "41.9", "lon": "12.5", "address": {"country": "Italy"}}]
+
+    assert weather.geocode_with_country("Rome", fetch=fake_fetch) == "Italy"
+
+
+def test_geocode_with_country_none_when_address_details_missing():
+    def fake_fetch(q):
+        return [{"lat": "41.9", "lon": "12.5"}]
+
+    assert weather.geocode_with_country("Rome", fetch=fake_fetch) is None
+
+
+def test_geocode_with_country_none_on_empty_or_failure():
+    assert weather.geocode_with_country("") is None
+    assert weather.geocode_with_country("x", fetch=lambda q: []) is None
+
+
 def test_get_weather_bad_coords_returns_empty():
     assert weather.get_weather("nope", "nope", "2026-07-22", "2026-07-23") == {}
 

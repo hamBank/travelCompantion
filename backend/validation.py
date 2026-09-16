@@ -1,6 +1,7 @@
 """Date sanity checks for a trip: items whose date falls outside their stop's
-window, uncovered accommodation nights, missing inter-stop transport, and
-impossible (overlapping) transport connections.
+window, uncovered accommodation nights, missing inter-stop transport,
+impossible (overlapping) transport connections, timezone mismatches, and
+stops missing a country.
 
 Catches the residual class of bad data (typos, year mistakes, mis-filed items)
 that survives even a clean import — e.g. an item dated 2025 sitting in a 2026 stop.
@@ -363,6 +364,51 @@ def _stop_tz_mismatch(session: Session, stop: Stop) -> list[dict]:
     }]
 
 
+def _missing_country_warnings(session: Session, stops: list[Stop]) -> list[dict]:
+    """A stop with no country recorded (a sheet-import gap, or a quick-added
+    stop that skipped it) is genuinely incomplete data — unlike an unset
+    Stop.timezone ("0" is the model default, indistinguishable from "never
+    set", so _stop_tz_mismatch never flags it alone), a blank country has no
+    ambiguous default and is always worth a warning.
+
+    Only fires once the location has actually been resolved by
+    scripts/refresh_location_timezones.py (both `iana_zone` and `country`
+    cached) — an unresolved location isn't "missing" data, it just hasn't
+    been looked up yet, same reasoning as _stop_tz_mismatch. The suggested
+    fix bundles both the resolved country AND a DST-aware timezone for the
+    stop's actual arrival date (not just today's offset) in one PATCH, so
+    accepting it never leaves the stop with a correct country but a
+    still-wrong timezone or vice versa."""
+    out = []
+    for stop in stops:
+        if not stop.location or stop.country:
+            continue
+        if not stop.arrive:
+            continue
+        zone = tz_check.get_cached_zone(session, stop.location)
+        country = tz_check.get_cached_country(session, stop.location)
+        if not zone or not country:
+            continue
+        expected = tz_check.expected_offset_minutes(zone, stop.arrive.date())
+        if expected is None:
+            continue
+        suggested_tz = f"{expected // 60}" if expected % 60 == 0 else f"{expected / 60}"
+        out.append({
+            "item_id": None,
+            "name": "Missing country",
+            "kind": None,
+            "stop_location": stop.location,
+            "item_date": stop.arrive.date().isoformat(),
+            "stop_arrive": stop.arrive.isoformat() if stop.arrive else None,
+            "stop_depart": stop.depart.isoformat() if stop.depart else None,
+            "reason": f"No country set — {stop.location} is in {country} ({_fmt_offset(expected)} on arrival, {zone})",
+            "stop_id": stop.id,
+            "suggested_country": country,
+            "suggested_timezone": suggested_tz,
+        })
+    return out
+
+
 def _timezone_mismatch_warnings(session: Session, all_items: list[ItineraryItem], stops: list[Stop]) -> list[dict]:
     """Flight-only for item-level checks so far — the one kind with reliable
     IATA origin/destination codes and dedicated depart_tz/arrive_tz fields
@@ -488,9 +534,14 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
     alert on what's still in the future — a gap or a missing connection for a
     day that's already passed isn't actionable, and the alert clears itself
     out on its own the next day rather than needing to be dismissed. The
-    other checks (date-range, impossible connections, timezone mismatches)
-    are about data correctness rather than "still need to do this," so they
-    keep firing regardless of date.
+    other checks (date-range, impossible connections, timezone mismatches,
+    missing country) are about data correctness rather than "still need to do
+    this," so they keep firing regardless of date.
+
+    Also flags stops with no country recorded but a resolved location cache
+    (see _missing_country_warnings) — the suggested fix bundles the resolved
+    country with a DST-aware timezone for the stop's arrival date, so a
+    one-click accept never leaves the two half-fixed.
 
     Also flags travelers (plan-17, D8) whose passport_expiry is too close to
     the trip's last day — see _passport_expiry_warnings; that check's dict
@@ -552,6 +603,7 @@ def date_warnings(session: Session, trip_id: int) -> list[dict]:
     out.extend(_impossible_connection_warnings(all_items_with_stop))
 
     out.extend(_timezone_mismatch_warnings(session, all_items, stops))
+    out.extend(_missing_country_warnings(session, stops))
 
     trip = session.get(Trip, trip_id)
     if trip:

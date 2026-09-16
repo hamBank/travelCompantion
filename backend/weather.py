@@ -137,8 +137,12 @@ def _fetch_json(url: str) -> dict:
 
 def _fetch_geocode(q: str):
     # Nominatim requires a User-Agent; without one it returns 403.
+    # addressdetails=1 costs nothing extra (same single request) but adds a
+    # structured `address` dict to each result — geocode() below still only
+    # reads lat/lon from it, but geocode_with_country() reads address.country
+    # from the exact same response instead of firing a second request.
     url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
-        {"q": q, "format": "json", "limit": 1}
+        {"q": q, "format": "json", "limit": 1, "addressdetails": 1}
     )
     req = urllib.request.Request(url, headers={"User-Agent": "travel-companion/1.0"})
     try:
@@ -151,8 +155,9 @@ def _fetch_geocode(q: str):
     return result
 
 
-def geocode(q: str, *, fetch=_fetch_geocode):
-    """Resolve a place name to (lat, lng) via Nominatim, or None.
+def _geocode_raw(q: str, fetch=_fetch_geocode):
+    """Shared retry loop behind geocode()/geocode_with_country(): resolve `q`
+    via Nominatim, returning its raw first-result dict (or None).
 
     A full free-text address (e.g. a hotel's street address with a unit
     number: "75 Airport Boulevard 01-01, Singapore, 819664 Singapore") often
@@ -174,10 +179,28 @@ def geocode(q: str, *, fetch=_fetch_geocode):
         try:
             results = fetch(candidate)
             if results:
-                return float(results[0]["lat"]), float(results[0]["lon"])
+                return results[0]
         except Exception:
             continue
     return None
+
+
+def geocode(q: str, *, fetch=_fetch_geocode):
+    """Resolve a place name to (lat, lng) via Nominatim, or None."""
+    raw = _geocode_raw(q, fetch)
+    if not raw:
+        return None
+    return float(raw["lat"]), float(raw["lon"])
+
+
+def geocode_with_country(q: str, *, fetch=_fetch_geocode):
+    """Resolve a place name to its country via the same Nominatim lookup as
+    geocode() (addressdetails=1 rides along on every request already), or
+    None if unresolved or Nominatim's result lacks address details."""
+    raw = _geocode_raw(q, fetch)
+    if not raw:
+        return None
+    return (raw.get("address") or {}).get("country") or None
 
 
 def _valid_coords(lat, lng) -> tuple[float, float] | None:

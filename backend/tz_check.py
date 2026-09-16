@@ -20,7 +20,7 @@ from sqlmodel import Session
 
 from .metrics import record_external_call
 from .models import LocationTimezone
-from .weather import geocode as _geocode_place
+from .weather import geocode as _geocode_place, geocode_with_country as _geocode_country_place
 
 _IATA_RE = re.compile(r"^[A-Z]{3}$")
 
@@ -87,22 +87,52 @@ def get_cached_zone(session: Session, location: str) -> Optional[str]:
     return row.iana_zone if row else None
 
 
+def get_cached_country(session: Session, location: str) -> Optional[str]:
+    """Cache-only read, mirroring get_cached_zone — None for an unresolved
+    location, or one resolved before `country` existed / without one."""
+    loc = (location or "").strip()
+    if not loc:
+        return None
+    row = session.get(LocationTimezone, loc)
+    return row.country if row else None
+
+
+def resolve_country(location: str, *, geocode_country=_geocode_country_place) -> Optional[str]:
+    """location -> country name via the same Nominatim geocode call the zone
+    lookup uses (see weather.geocode_with_country) — None if unresolved."""
+    query = geocode_query(location)
+    if not query:
+        return None
+    return geocode_country(query)
+
+
 def refresh_zone_cache(session: Session, location: str, *, geocode=_geocode_place,
+                        geocode_country=_geocode_country_place,
                         fetch_json=_fetch_timezone_json) -> Optional[str]:
     """Live-resolve `location` and upsert it into the cache. Only called from
-    scripts/refresh_location_timezones.py, never from a request handler."""
+    scripts/refresh_location_timezones.py, never from a request handler.
+
+    Country is resolved best-effort alongside the zone: a failure there
+    doesn't fail the whole call (the zone is still useful on its own for the
+    existing timezone-mismatch check) — it just leaves `country` unset for
+    this pass, and refresh_location_timezones.py's pending_locations() will
+    retry it on a later run since a row with a null country still counts as
+    pending."""
     loc = (location or "").strip()
     if not loc:
         return None
     zone = resolve_iana_zone(loc, geocode=geocode, fetch_json=fetch_json)
     if not zone:
         return None
+    country = resolve_country(loc, geocode_country=geocode_country)
     row = session.get(LocationTimezone, loc)
     if row:
         row.iana_zone = zone
+        if country:
+            row.country = country
         row.resolved_at = datetime.utcnow()
     else:
-        row = LocationTimezone(location=loc, iana_zone=zone)
+        row = LocationTimezone(location=loc, iana_zone=zone, country=country)
     session.add(row)
     return zone
 

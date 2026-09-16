@@ -483,6 +483,20 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
     finally { setFixingStopTz(null) }
   }
 
+  // One-click fix for a "Missing country" warning — PATCHes both the
+  // suggested country and its DST-aware timezone (for the stop's arrival
+  // date) in a single call, so accepting it never leaves one field fixed and
+  // the other still wrong.
+  async function fixStopGeoInfo(stopId, country, timezone) {
+    if (fixingStopTz != null) return
+    setFixingStopTz(stopId)
+    try {
+      await updateStop(stopId, { country, timezone })
+      await load({ background: true, remount: false })
+    } catch (_) {}
+    finally { setFixingStopTz(null) }
+  }
+
   // Inbound transport: for each stop, the flight/rail (filed on a *different* stop)
   // whose arrival date matches this stop's arrival date — i.e. how you got here.
   const datePart = v => (v ? String(v).split('T')[0] : null)
@@ -605,7 +619,17 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
                     <li key={w.item_id ?? `gap-${i}`}>
                       <span style={{ color: 'var(--text-muted)' }}>{w.stop_location}:</span>{' '}
                       {w.name} — {fmtDay(w.item_date)} ({w.reason})
-                      {w.suggested_timezone != null && w.stop_id != null && (
+                      {w.suggested_country != null && w.suggested_timezone != null && w.stop_id != null && (
+                        <button
+                          onClick={() => fixStopGeoInfo(w.stop_id, w.suggested_country, w.suggested_timezone)}
+                          disabled={fixingStopTz === w.stop_id}
+                          style={{ color: 'var(--accent)' }}
+                          className="ml-1.5 font-medium hover:opacity-70 transition-opacity underline disabled:opacity-50"
+                        >
+                          {fixingStopTz === w.stop_id ? 'Fixing…' : `Fix → ${w.suggested_country}, UTC${Number(w.suggested_timezone) >= 0 ? '+' : ''}${w.suggested_timezone}`}
+                        </button>
+                      )}
+                      {w.suggested_country == null && w.suggested_timezone != null && w.stop_id != null && (
                         <button
                           onClick={() => fixStopTimezone(w.stop_id, w.suggested_timezone)}
                           disabled={fixingStopTz === w.stop_id}

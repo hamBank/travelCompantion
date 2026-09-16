@@ -756,3 +756,104 @@ def test_date_warnings_stop_dst_aware_winter_vs_summer(client: TestClient, trip,
     })
     warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
     assert [w for w in warnings if w["name"] == "Timezone mismatch"] == []
+
+
+# ── missing country ──────────────────────────────────────────────────────────
+
+def test_date_warnings_missing_country_flagged_with_suggested_fix(client: TestClient, trip, session: Session):
+    # Rome is real GMT+2 in August (CEST) — the suggested fix must reflect
+    # the DST-aware offset for the stop's actual arrival date, not a generic
+    # standard-time offset.
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome", country="Italy"))
+    session.commit()
+
+    stop = client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned",
+        "arrive": "2026-08-04T00:00:00",
+    }).json()
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    geo_warnings = [w for w in warnings if w["name"] == "Missing country"]
+    assert len(geo_warnings) == 1
+    w = geo_warnings[0]
+    assert w["stop_location"] == "Rome"
+    assert w["stop_id"] == stop["id"]
+    assert w["suggested_country"] == "Italy"
+    assert w["suggested_timezone"] == "2"
+    assert "Italy" in w["reason"]
+
+    # Applying the suggestion (both fields in one PATCH) clears the warning.
+    client.patch(f"/stops/{stop['id']}", json={
+        "country": w["suggested_country"], "timezone": w["suggested_timezone"],
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if w["name"] == "Missing country"] == []
+
+
+def test_date_warnings_missing_country_dst_aware_winter_vs_summer(client: TestClient, trip, session: Session):
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome", country="Italy"))
+    session.commit()
+
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned",
+        "arrive": "2026-01-04T00:00:00",
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    geo_warnings = [w for w in warnings if w["name"] == "Missing country"]
+    assert len(geo_warnings) == 1
+    assert geo_warnings[0]["suggested_timezone"] == "1"
+
+
+def test_date_warnings_country_already_set_not_flagged(client: TestClient, trip, session: Session):
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome", country="Italy"))
+    session.commit()
+
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "country": "Italy", "status": "planned",
+        "arrive": "2026-08-04T00:00:00",
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if w["name"] == "Missing country"] == []
+
+
+def test_date_warnings_missing_country_unresolved_location_not_flagged(client: TestClient, trip):
+    # No LocationTimezone row for Reykjavik at all — nothing resolved yet, so
+    # this isn't "missing" data, just not looked up yet (same reasoning as
+    # the flight timezone-mismatch check's uncached-airport case).
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Reykjavik", "status": "planned",
+        "arrive": "2026-08-04T00:00:00",
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if w["name"] == "Missing country"] == []
+
+
+def test_date_warnings_missing_country_zone_only_row_not_flagged(client: TestClient, trip, session: Session):
+    # A LocationTimezone row resolved before `country` existed (or whose
+    # country lookup failed) has zone but no country — still "not resolved
+    # yet" for this check's purposes, not a false "missing country" alarm.
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome"))
+    session.commit()
+
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned",
+        "arrive": "2026-08-04T00:00:00",
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if w["name"] == "Missing country"] == []
+
+
+def test_date_warnings_missing_country_no_arrival_date_not_flagged(client: TestClient, trip, session: Session):
+    # No arrival date means no date to compute a DST-aware offset for.
+    from backend.models import LocationTimezone
+    session.add(LocationTimezone(location="Rome", iana_zone="Europe/Rome", country="Italy"))
+    session.commit()
+
+    client.post(f"/trips/{trip['id']}/stops", json={
+        "location": "Rome", "status": "planned",
+    })
+    warnings = client.get(f"/trips/{trip['id']}/date-warnings").json()["warnings"]
+    assert [w for w in warnings if w["name"] == "Missing country"] == []

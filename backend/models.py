@@ -629,9 +629,17 @@ class LocationTimezone(SQLModel, table=True):
     by scripts/refresh_location_timezones.py (never resolved live in a request —
     see backend/tz_check.py). Timezones are effectively permanent, so there's no
     TTL; a location is re-resolved only if it's missing from this table.
+
+    `country` rides along on the same Nominatim lookup that resolves the zone
+    (see tz_check.resolve_country) — it powers validation.py's "missing
+    country" warning, which suggests both country and a DST-aware timezone in
+    one fix. A row resolved before this field existed (or where Nominatim's
+    result happened to lack address details) has `country=None`; the refresh
+    script treats that as still-pending and retries it, not as "cached".
     """
     location: str = Field(primary_key=True)     # normalized place name or "<IATA> airport"
     iana_zone: str                                # e.g. "Europe/Rome"
+    country: Optional[str] = None                # e.g. "Italy"; None if unresolved
     resolved_at: datetime = Field(default_factory=datetime.utcnow)
 
 
