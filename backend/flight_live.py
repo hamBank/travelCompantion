@@ -103,6 +103,19 @@ def fetch_flight(flight_iata: str, dep_date: str, stored_depart: Optional[str] =
         body = r.json()
     except ValueError as e:
         record_external_call("aerodatabox", ok=False, error=str(e))
+        if not r.text.strip():
+            # A 2xx with a genuinely empty body — distinct from AeroDataBox's
+            # normal "no data for this flight/date" signal, which is a 2xx
+            # with an actual empty JSON list (handled below, no exception at
+            # all). Confirmed live 2026-09-16 (item 1032, SYD→OSL): a bare
+            # empty body on an otherwise-successful response, most likely a
+            # proxy/gateway hiccup rather than anything about the flight
+            # itself. Degrade the same as "not found" rather than surfacing
+            # a 502 the user can't act on — retrying later is the only real
+            # fix either way, and both the live check-flight endpoint and
+            # this module's other caller (notifications.py's polling cron)
+            # already treat a None return as "nothing to show/act on yet".
+            return None
         raise FlightLiveError(f"AeroDataBox returned an unexpected (non-JSON) response: {e}")
     record_external_call("aerodatabox", ok=True)
 
