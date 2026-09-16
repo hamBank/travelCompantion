@@ -11,7 +11,9 @@ without hitting the network.
 from __future__ import annotations
 
 import json
+import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
@@ -135,7 +137,27 @@ def _fetch_json(url: str) -> dict:
     return result
 
 
-def _fetch_geocode(q: str):
+# Nominatim's usage policy caps requests at 1/second absolute max. Nothing
+# here was enforcing that — confirmed live 2026-09-16: resetting many
+# LocationTimezone rows' cached country (scripts/reset_location_country_cache.py)
+# queued a burst of re-resolutions with zero delay between requests, and
+# Nominatim started returning 429s. `_last_nominatim_request` is a
+# module-level clock shared by every call in this process (a list so
+# `_throttle_nominatim` can mutate it without `global`); real time.sleep is
+# the default so production actually waits, while tests inject a no-op to
+# stay fast.
+_NOMINATIM_MIN_INTERVAL = 1.1
+_last_nominatim_request = [0.0]
+
+
+def _throttle_nominatim(sleep=time.sleep):
+    wait = _NOMINATIM_MIN_INTERVAL - (time.monotonic() - _last_nominatim_request[0])
+    if wait > 0:
+        sleep(wait)
+    _last_nominatim_request[0] = time.monotonic()
+
+
+def _fetch_geocode(q: str, *, sleep=time.sleep, max_attempts=3):
     # Nominatim requires a User-Agent; without one it returns 403.
     # addressdetails=1 costs nothing extra (same single request) but adds a
     # structured `address` dict to each result — geocode() below still only
@@ -150,14 +172,28 @@ def _fetch_geocode(q: str):
         {"q": q, "format": "json", "limit": 1, "addressdetails": 1, "accept-language": "en"}
     )
     req = urllib.request.Request(url, headers={"User-Agent": "travel-companion/1.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            result = json.loads(resp.read())
-    except Exception as e:
-        record_external_call("nominatim", ok=False, error=str(e))
-        raise
-    record_external_call("nominatim", ok=True)
-    return result
+    for attempt in range(max_attempts):
+        _throttle_nominatim(sleep)
+        try:
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                result = json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            record_external_call("nominatim", ok=False, error=str(e))
+            # A 429 despite the throttle above (another process sharing this
+            # egress IP, or a burst that outran it) gets a couple of
+            # exponentially-longer retries rather than being given up on
+            # immediately — anything else (404, 400, ...) won't succeed on
+            # retry, so it raises straight away same as before.
+            if e.code == 429 and attempt < max_attempts - 1:
+                sleep(2 ** (attempt + 1))
+                continue
+            raise
+        except Exception as e:
+            record_external_call("nominatim", ok=False, error=str(e))
+            raise
+        else:
+            record_external_call("nominatim", ok=True)
+            return result
 
 
 def _geocode_raw(q: str, fetch=_fetch_geocode):
