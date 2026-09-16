@@ -55,10 +55,25 @@ def pending_locations(session: Session) -> set[str]:
     return locations - set(cached)
 
 
+def _log(msg: str) -> None:
+    """Timestamped line to stdout — the systemd unit appends this straight to
+    /var/log/travelcomp/loctz-refresh.log, so this is the only record of
+    which locations were attempted and what happened to each. Both
+    refresh_zone_cache and the geocode/timezone calls beneath it swallow
+    exceptions and return None on any failure (by design — see
+    tz_check.py's docstring), so without a line per outcome here, a location
+    that's been silently failing every run for weeks looks identical to one
+    that's simply never been attempted."""
+    print(f"{datetime.now(timezone.utc):%F %T} {msg}", flush=True)
+
+
 def refresh_all(session: Session, *, geocode=None, geocode_country=None, fetch_json=None) -> int:
     """Resolve every not-yet-cached location. Returns count newly resolved.
     A location that fails to resolve (bad geocode, network error) is simply
-    skipped — it'll be retried on the next run, not treated as a failure."""
+    skipped — it'll be retried on the next run, not treated as a failure.
+    Every outcome (resolved, country-still-missing, or fully failed) is
+    logged (see _log) so a run's log line-up shows exactly what happened to
+    each location, not just a final count."""
     kwargs = {}
     if geocode is not None:
         kwargs["geocode"] = geocode
@@ -69,8 +84,16 @@ def refresh_all(session: Session, *, geocode=None, geocode_country=None, fetch_j
 
     resolved = 0
     for loc in pending_locations(session):
-        if refresh_zone_cache(session, loc, **kwargs):
-            resolved += 1
+        zone = refresh_zone_cache(session, loc, **kwargs)
+        if not zone:
+            _log(f"FAILED to resolve {loc!r} — geocode or timezone lookup failed, will retry next run")
+            continue
+        resolved += 1
+        row = session.get(LocationTimezone, loc)
+        if row and row.country:
+            _log(f"resolved {loc!r} -> {zone} ({row.country})")
+        else:
+            _log(f"resolved {loc!r} -> {zone}, but country lookup failed — will retry next run")
     session.commit()
     return resolved
 
@@ -78,7 +101,7 @@ def refresh_all(session: Session, *, geocode=None, geocode_country=None, fetch_j
 def main() -> None:
     with Session(engine) as session:
         n = refresh_all(session)
-    print(f"{datetime.now(timezone.utc):%F %T} resolved timezone for {n} location{'' if n == 1 else 's'}")
+    _log(f"resolved timezone for {n} location{'' if n == 1 else 's'}")
 
 
 if __name__ == "__main__":
