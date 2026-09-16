@@ -571,10 +571,20 @@ if [[ ! -d "$APP_DIR/frontend/node_modules" ]] || [[ "$FRONTEND_COMMIT" != "$BUI
   else
     info "frontend/ changed since the last build on this server (${BUILT_COMMIT:-none} -> $FRONTEND_COMMIT) — rebuilding"
   fi
+  # npm ci deletes node_modules before reinstalling, so a failed/interrupted
+  # run (registry hiccup, disk full, OOM) still leaves the directory behind —
+  # just incomplete. The `-d node_modules` check below used to be the only
+  # gate on attempting a build, so a partial install fell straight through
+  # into `npm run build` anyway, failing on whatever package happened to be
+  # mid-extraction (confirmed live 2026-09-16: a missing @fontsource/inter
+  # CSS file wasted every deploy attempt until node_modules was fixed by
+  # hand). Track ci's own exit status explicitly so a failed install skips
+  # the build cleanly, matching what the warning below already promises.
+  npm_ci_ok=true
   $NPM --prefix "$APP_DIR/frontend" ci --silent \
-    || warn "npm ci failed — frontend static files from git will still be served"
+    || { npm_ci_ok=false; warn "npm ci failed — frontend static files from git (or a previous successful build) will still be served"; }
 
-  if [[ -d "$APP_DIR/frontend/node_modules" ]]; then
+  if $npm_ci_ok && [[ -d "$APP_DIR/frontend/node_modules" ]]; then
     info "Building frontend"
     if $NPM --prefix "$APP_DIR/frontend" run build; then
       ok "Frontend built → backend/static"
