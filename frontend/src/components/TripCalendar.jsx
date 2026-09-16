@@ -12,13 +12,15 @@ import PlanningOverlay from './PlanningOverlay.jsx'
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MAX_CHIPS = 4
 
-// Sizing (rem) for the stop-band strip reserved at the top of each day box —
-// see the "Bands share this same grid" comment below for why this replaced
-// a separate band row floating above the day cells.
+// Sizing (rem) for what's reserved at the top of each day box, stacked
+// top-to-bottom: the day-number-and-month label, then the stop-band strip —
+// see the "Bands share this same grid" comment below for why bands are laid
+// out this way instead of a separate row floating above the day cells.
+const DAY_LABEL_H = 0.95    // height of the day-number/month label itself
+const DAY_LABEL_GAP = 0.15  // gap from the label down to the first band (or to items, if none)
 const BAND_H = 1.1
 const BAND_GAP = 0.15
-const BAND_TOP_INSET = 0.2   // gap from the day box's top border to the first band
-const BAND_BOTTOM_GAP = 0.2  // gap from the last band down to the day number
+const BAND_BOTTOM_GAP = 0.2  // gap from the last band down to the item chips
 
 function todayKey() {
   return new Date().toLocaleDateString('sv-SE')
@@ -241,13 +243,16 @@ export default function TripCalendar({
               .filter(Boolean)
             const laneCount = globalLaneCount ?? weekBands.reduce((m, b) => Math.max(m, b.lane + 1), 0)
             // Reserve room at the TOP of every day box this week for its
-            // stop bands, so a band renders layered inside the bordered day
-            // cells it spans (gridRow: 1, same as the cells) rather than in
-            // a separate row floating above them — previously nothing tied
-            // a band visually to "this row of days" vs. the row before it.
-            const reservedTop = laneCount > 0
-              ? BAND_TOP_INSET + laneCount * BAND_H + Math.max(0, laneCount - 1) * BAND_GAP + BAND_BOTTOM_GAP
-              : null
+            // day-number/month label, then its stop bands below that, so a
+            // band renders layered inside the bordered day cells it spans
+            // (gridRow: 1, same as the cells) rather than in a separate row
+            // floating above them — previously nothing tied a band visually
+            // to "this row of days" vs. the row before it. The label is
+            // always reserved (every day has one); the band stack only adds
+            // to it when the week actually has bands.
+            const reservedTop = DAY_LABEL_H + DAY_LABEL_GAP + (laneCount > 0
+              ? laneCount * BAND_H + Math.max(0, laneCount - 1) * BAND_GAP + BAND_BOTTOM_GAP
+              : 0)
 
             return (
               <div key={week[0]} className="mb-1 cal-week-row" data-testid="week-row">
@@ -273,23 +278,37 @@ export default function TripCalendar({
                           background: isToday ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
                           opacity: inRange ? 1 : 0.45,
                           minHeight: view === 'week' ? '7rem' : '4.5rem',
-                          paddingTop: reservedTop != null ? `${reservedTop}rem` : undefined,
+                          paddingTop: `${reservedTop}rem`,
                           touchAction: planning ? 'none' : 'auto',
+                          position: 'relative',
                         }}
                         className="p-1 flex flex-col gap-0.5 min-w-0"
                         {...cellProps}
                       >
+                        {/* Absolutely positioned so the cell's paddingTop
+                            (which reserves room for this plus the bands
+                            below it) doesn't also push this label down —
+                            top/left here are measured from the cell's
+                            padding-box edge, unaffected by its own
+                            padding-top value. Keeps the number+month pinned
+                            top-left regardless of how many bands stack
+                            beneath it. */}
                         <button
                           onPointerDown={e => e.stopPropagation()}
                           onClick={() => handleDayNumberClick(day)}
                           aria-label={`Open ${day}`}
                           style={{
+                            position: 'absolute',
+                            top: '0.2rem',
+                            left: '0.2rem',
+                            height: `${DAY_LABEL_H}rem`,
+                            lineHeight: `${DAY_LABEL_H}rem`,
                             color: isToday ? 'var(--accent)' : 'var(--text-muted)',
                             border: isToday ? '1px solid var(--accent)' : '1px solid transparent',
                           }}
-                          className="text-[0.65rem] font-medium hover:opacity-70 transition-opacity self-start rounded-full w-5 h-5"
+                          className="text-[0.6rem] font-medium hover:opacity-70 transition-opacity rounded px-1 whitespace-nowrap"
                         >
-                          {Number(day.slice(8, 10))}
+                          {fmtShort(day)}
                         </button>
                         <div className={`flex flex-col gap-0.5 min-w-0 cal-day-items${capped ? ' cal-capped' : ''}`}>
                           {items.map(item => (
@@ -345,7 +364,7 @@ export default function TripCalendar({
                           gridColumn: `${b.startCol} / ${b.endCol}`,
                           gridRow: 1,
                           alignSelf: 'start',
-                          marginTop: `${BAND_TOP_INSET + b.lane * (BAND_H + BAND_GAP)}rem`,
+                          marginTop: `${DAY_LABEL_H + DAY_LABEL_GAP + b.lane * (BAND_H + BAND_GAP)}rem`,
                           height: `${BAND_H}rem`,
                           lineHeight: `${BAND_H}rem`,
                           position: 'relative',
