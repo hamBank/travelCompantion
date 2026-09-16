@@ -1,5 +1,8 @@
 """Tests for backend/weather.py — forecast + climatology with mocked network."""
+import urllib.error
 from datetime import date, datetime, timedelta, timezone
+
+import pytest
 
 from backend import weather
 
@@ -162,9 +165,89 @@ def test_fetch_geocode_requests_english_country_names(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(weather.urllib.request, "urlopen", fake_urlopen)
-    weather._fetch_geocode("Stockholm")
+    weather._fetch_geocode("Stockholm", sleep=lambda s: None)
     assert "accept-language=en" in captured["url"]
     assert "addressdetails=1" in captured["url"]
+
+
+# ── Nominatim throttling / 429 backoff ──────────────────────────────────────
+
+def _fake_response(body=b'[{"lat": "1", "lon": "1"}]'):
+    class FakeResponse:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return body
+    return FakeResponse()
+
+
+def test_fetch_geocode_throttles_between_consecutive_requests(monkeypatch):
+    # Regression: nothing paced requests at all, so a burst of pending
+    # locations (e.g. after scripts/reset_location_country_cache.py) fired
+    # them back-to-back and Nominatim started returning 429 — confirmed live
+    # 2026-09-16. Force the "no time has passed" case by pinning
+    # time.monotonic so the throttle can't see the wall-clock gap the test
+    # itself takes to run.
+    monkeypatch.setattr(weather.time, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(weather.urllib.request, "urlopen", lambda req, timeout=None: _fake_response())
+    weather._last_nominatim_request[0] = 100.0  # as if a request just completed
+
+    sleeps = []
+    weather._fetch_geocode("Oslo", sleep=sleeps.append)
+    assert sleeps == [weather._NOMINATIM_MIN_INTERVAL]
+
+
+def test_fetch_geocode_does_not_throttle_the_first_call_in_a_process(monkeypatch):
+    monkeypatch.setattr(weather.urllib.request, "urlopen", lambda req, timeout=None: _fake_response())
+    weather._last_nominatim_request[0] = 0.0  # module default — "no prior request"
+
+    sleeps = []
+    weather._fetch_geocode("Oslo", sleep=sleeps.append)
+    assert sleeps == []
+
+
+def test_fetch_geocode_retries_after_a_429_then_succeeds(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, None)
+        return _fake_response()
+
+    monkeypatch.setattr(weather.urllib.request, "urlopen", fake_urlopen)
+    sleeps = []
+    result = weather._fetch_geocode("Perth", sleep=sleeps.append)
+
+    assert result == [{"lat": "1", "lon": "1"}]
+    assert calls["n"] == 2
+    # One throttle sleep before each attempt, plus the 429 backoff itself —
+    # the backoff (2**1 = 2) is the largest and always present on a retry.
+    assert 2 in sleeps
+
+
+def test_fetch_geocode_gives_up_after_max_attempts_on_persistent_429(monkeypatch):
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, None)
+
+    monkeypatch.setattr(weather.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(urllib.error.HTTPError):
+        weather._fetch_geocode("Perth", sleep=lambda s: None, max_attempts=3)
+
+
+def test_fetch_geocode_does_not_retry_a_non_429_error(monkeypatch):
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+    calls = {"n": 0}
+
+    def counting_urlopen(req, timeout=None):
+        calls["n"] += 1
+        return fake_urlopen(req, timeout=timeout)
+
+    monkeypatch.setattr(weather.urllib.request, "urlopen", counting_urlopen)
+    with pytest.raises(urllib.error.HTTPError):
+        weather._fetch_geocode("Perth", sleep=lambda s: None)
+    assert calls["n"] == 1
 
 
 def test_get_weather_bad_coords_returns_empty():
