@@ -34,9 +34,20 @@ def test_pending_locations_collects_distinct_origins_and_destinations(session: S
 def test_pending_locations_excludes_already_cached(session: Session):
     sid = _stop_id(session)
     session.add(_flight(sid, "FCO", "ZRH"))
-    session.add(LocationTimezone(location="FCO", iana_zone="Europe/Rome"))
+    session.add(LocationTimezone(location="FCO", iana_zone="Europe/Rome", country="Italy"))
     session.commit()
     assert pending_locations(session) == {"ZRH"}
+
+
+def test_pending_locations_includes_zone_only_row_missing_country(session: Session):
+    # A row resolved before `country` existed (or whose country lookup failed
+    # last time) is still incomplete — it must be retried, not treated as
+    # fully cached, or it would stay stuck without a country forever.
+    sid = _stop_id(session)
+    session.add(_flight(sid, "FCO", "ZRH"))
+    session.add(LocationTimezone(location="FCO", iana_zone="Europe/Rome"))
+    session.commit()
+    assert pending_locations(session) == {"FCO", "ZRH"}
 
 
 def test_pending_locations_ignores_non_flight_items(session: Session):
@@ -55,7 +66,7 @@ def test_pending_locations_includes_stop_locations_regardless_of_timezone_set(se
 
 def test_pending_locations_excludes_already_cached_stop_location(session: Session):
     _stop_id(session, location="Nice")
-    session.add(LocationTimezone(location="Nice", iana_zone="Europe/Paris"))
+    session.add(LocationTimezone(location="Nice", iana_zone="Europe/Paris", country="France"))
     session.commit()
     assert pending_locations(session) == set()
 
@@ -80,10 +91,16 @@ def test_refresh_all_resolves_and_caches_pending_locations(session: Session):
                 return {"timezone": zone}
         return {}
 
-    n = refresh_all(session, geocode=fake_geocode, fetch_json=fake_fetch_json)
+    countries = {"FCO": "Italy", "ZRH": "Switzerland"}
+
+    def fake_geocode_country(q):
+        return countries.get(q.split()[0])
+
+    n = refresh_all(session, geocode=fake_geocode, geocode_country=fake_geocode_country,
+                     fetch_json=fake_fetch_json)
     assert n == 2
-    rows = {r.location: r.iana_zone for r in session.exec(select(LocationTimezone)).all()}
-    assert rows == {"FCO": "Europe/Rome", "ZRH": "Europe/Zurich"}
+    rows = {r.location: (r.iana_zone, r.country) for r in session.exec(select(LocationTimezone)).all()}
+    assert rows == {"FCO": ("Europe/Rome", "Italy"), "ZRH": ("Europe/Zurich", "Switzerland")}
 
 
 def test_refresh_all_skips_unresolvable_locations_without_erroring(session: Session):
@@ -97,7 +114,8 @@ def test_refresh_all_skips_unresolvable_locations_without_erroring(session: Sess
     def fake_fetch_json(url):
         return {"timezone": "Europe/Zurich"}
 
-    n = refresh_all(session, geocode=fake_geocode, fetch_json=fake_fetch_json)
+    n = refresh_all(session, geocode=fake_geocode, geocode_country=lambda q: "Switzerland",
+                     fetch_json=fake_fetch_json)
     assert n == 1
     rows = {r.location for r in session.exec(select(LocationTimezone)).all()}
     assert rows == {"ZRH"}

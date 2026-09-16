@@ -22,10 +22,15 @@ from backend.tz_check import refresh_zone_cache  # noqa: E402
 
 def pending_locations(session: Session) -> set[str]:
     """Every distinct flight origin/destination and stop location not already
-    cached. Stops are resolved regardless of whether Stop.timezone is set —
-    the check only *compares* against a set timezone, but caching every stop's
-    real offset up front means a newly-entered timezone is checkable
-    immediately rather than waiting on the airport-only demand-driven path."""
+    fully cached. Stops are resolved regardless of whether Stop.timezone is
+    set — the check only *compares* against a set timezone, but caching every
+    stop's real offset up front means a newly-entered timezone is checkable
+    immediately rather than waiting on the airport-only demand-driven path.
+
+    "Fully cached" requires `country` too, not just `iana_zone` — a row
+    resolved before that field existed (or whose country lookup failed) is
+    still pending, so it gets retried rather than staying incomplete forever
+    (see tz_check.refresh_zone_cache)."""
     items = session.exec(select(ItineraryItem).where(ItineraryItem.kind == ItemKind.flight)).all()
     locations = set()
     for it in items:
@@ -42,18 +47,23 @@ def pending_locations(session: Session) -> set[str]:
     if not locations:
         return set()
     cached = session.exec(
-        select(LocationTimezone.location).where(LocationTimezone.location.in_(locations))
+        select(LocationTimezone.location).where(
+            LocationTimezone.location.in_(locations),
+            LocationTimezone.country.is_not(None),
+        )
     ).all()
     return locations - set(cached)
 
 
-def refresh_all(session: Session, *, geocode=None, fetch_json=None) -> int:
+def refresh_all(session: Session, *, geocode=None, geocode_country=None, fetch_json=None) -> int:
     """Resolve every not-yet-cached location. Returns count newly resolved.
     A location that fails to resolve (bad geocode, network error) is simply
     skipped — it'll be retried on the next run, not treated as a failure."""
     kwargs = {}
     if geocode is not None:
         kwargs["geocode"] = geocode
+    if geocode_country is not None:
+        kwargs["geocode_country"] = geocode_country
     if fetch_json is not None:
         kwargs["fetch_json"] = fetch_json
 
