@@ -131,6 +131,16 @@ function AppShell({ user, onLogout }) {
   const [packing, setPacking] = useState(false)
   const [today, setToday] = useState(false)
   const [todayInitialDay, setTodayInitialDay] = useState(null)
+  // True when the current Today session was pushed directly from the trip
+  // list (openTrip's own todayValue — the "open trips in Today view by
+  // default" setting, or navState.js's restoreToday resuming a forced
+  // reload/iOS-process-eviction that left off in Today mode) rather than
+  // toggled on from an already-open Timeline. In that case there is no
+  // Timeline entry underneath this trip's Today entry at all — only root
+  // (the trip list) — so "All days" (below) must switch this entry to
+  // Timeline in place instead of popping, which would overshoot straight
+  // past the trip and land back on the trip list.
+  const [todayEnteredDirect, setTodayEnteredDirect] = useState(false)
   const [calendar, setCalendar] = useState(false)
   const [calendarView, setCalendarViewState] = useState(getCalendarView)
   const [calendarAnchor, setCalendarAnchor] = useState(() => new Date().toLocaleDateString('sv-SE'))
@@ -197,7 +207,7 @@ function AppShell({ user, onLogout }) {
   // calendar (onOpenDay/onOpenItem below) should override it. Clearing this
   // whenever Today turns off, from whatever caused it, keeps a stale day from
   // a previous calendar jump from silently winning the next plain toggle.
-  useEffect(() => { if (!today) setTodayInitialDay(null) }, [today])
+  useEffect(() => { if (!today) { setTodayInitialDay(null); setTodayEnteredDirect(false) } }, [today])
 
   function setCalendarViewPersisted(view) {
     persistCalendarView(view); setCalendarViewState(view)
@@ -481,7 +491,7 @@ function AppShell({ user, onLogout }) {
   function openTrip(trip, todayOverride) { guardLeavePlanning(() => {
     const todayValue = getDefaultToToday() || (todayOverride ?? false)
     const wasPlanning = planning
-    setSelectedTrip(trip); setEditing(false); setPacking(false); setCalendar(false); setToday(todayValue); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false)
+    setSelectedTrip(trip); setEditing(false); setPacking(false); setCalendar(false); setToday(todayValue); setTodayEnteredDirect(todayValue); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false)
     // Opening a trip is always a push (D3/D6) — TripList's auto-open and
     // navState.js's restore both call this too, so the list is always
     // underneath. If planning was dirty (switching trips out from under an
@@ -780,7 +790,21 @@ function AppShell({ user, onLogout }) {
                   // that jump (and is cleared whenever Today turns off, see
                   // above), so it's exactly the signal for "skip the Calendar
                   // layer too and land straight on Timeline."
-                  if (todayInitialDay != null) { backSteps(2) } else { back() }
+                  if (todayInitialDay != null) { backSteps(2); return }
+                  // A trip opened straight into Today (the "open trips in
+                  // Today view by default" setting, or navState.js's
+                  // restoreToday resuming a reload/iOS-eviction that left off
+                  // in Today mode) has no Timeline entry underneath it at all
+                  // — only the trip list. Popping there would land the user
+                  // back on the trip list instead of this trip's Timeline,
+                  // which isn't what "All days" means. Switch this entry to
+                  // Timeline in place instead of popping past it.
+                  if (todayEnteredDirect) {
+                    setToday(false)
+                    replaceSnapshot({ today: false })
+                    return
+                  }
+                  back()
                   return
                 }
                 setToday(true); setEditing(false); setCalendar(false)

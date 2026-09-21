@@ -119,6 +119,7 @@ vi.mock('../offlineQueue.js', () => ({
 import { getTrips } from '../api.js'
 import { pushNav, replaceNav, back as backSpy, backSteps as backStepsSpy, rootSnapshot } from '../historyNav.js'
 import { clearNav } from '../navState.js'
+import { setDefaultToToday } from '../settings.js'
 import App, { snapshotFromState, OVERLAY_KINDS } from '../App.jsx'
 
 function trip(id = 1, overrides = {}) {
@@ -148,7 +149,7 @@ beforeEach(() => {
   })
 })
 
-afterEach(() => { clearNav() })
+afterEach(() => { clearNav(); setDefaultToToday(false) })
 
 async function openTrip1() {
   getTrips.mockResolvedValue([trip(1)])
@@ -309,6 +310,29 @@ describe('mode toggles push; Timeline (from within a mode) closes via back(); ca
     fireEvent.click(screen.getByText('All days'))
     expect(backStepsSpy).toHaveBeenCalledWith(2)
     expect(backSpy).not.toHaveBeenCalled()
+  })
+
+  it('Today reached by opening the trip directly into it (default-to-today): "All days" replaces in place instead of popping to the trip list', async () => {
+    // The bug this covers: with "open trips in Today view by default" on
+    // (or navState.js's restoreToday resuming a reload that left off in
+    // Today mode), the trip is pushed straight into Today with nothing but
+    // the trip list underneath it — no Timeline entry to pop back to. A
+    // plain back() there overshoots past the trip entirely, landing on the
+    // trip list instead of this trip's Timeline.
+    setDefaultToToday(true)
+    await openTrip1()
+    await waitFor(() => expect(screen.getByText('All days')).toBeTruthy())
+
+    backSpy.mockClear()
+    backStepsSpy.mockClear()
+    replaceNav.mockClear()
+    fireEvent.click(screen.getByText('All days'))
+    expect(backSpy).not.toHaveBeenCalled()
+    expect(backStepsSpy).not.toHaveBeenCalled()
+    expect(replaceNav).toHaveBeenCalledWith(expect.objectContaining({ tripId: 1, mode: 'timeline' }))
+    // Still on Trip 1's Timeline, not bounced back to the trip list.
+    expect(screen.getByText('Trip 1')).toBeTruthy()
+    expect(screen.getByText('Today')).toBeTruthy()
   })
 })
 
