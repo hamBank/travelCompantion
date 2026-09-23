@@ -165,10 +165,17 @@ def get_coverage(session: Session, iata: str, *, now: Optional[datetime] = None,
     the ICAO lookup itself fails — an API hiccup isn't evidence of no
     coverage, and polling remains the fallback either way if the subscription
     then never delivers anything."""
-    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    now = now or datetime.now(timezone.utc)
+    # AirportCoverage.checked_at is aware-UTC; `now` may arrive naive here
+    # (reconcile_subscriptions passes its own naive-UTC clock, shared with
+    # flight-departure-window math that must stay naive — see there) or
+    # aware (the default above, or a test-supplied value) — normalize once,
+    # right at the point this touches the DB column, rather than requiring
+    # every caller to know which flavour checked_at wants.
+    checked_now = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
     iata = iata.strip().upper()
     row = session.get(AirportCoverage, iata)
-    stale = row is None or (now - row.checked_at) > timedelta(days=COVERAGE_RECHECK_DAYS)
+    stale = row is None or (checked_now - row.checked_at) > timedelta(days=COVERAGE_RECHECK_DAYS)
     if not stale:
         return row.live_updates_ok
 
@@ -178,9 +185,9 @@ def get_coverage(session: Session, iata: str, *, now: Optional[datetime] = None,
     if row:
         row.icao = icao
         row.live_updates_ok = live_ok
-        row.checked_at = now
+        row.checked_at = checked_now
     else:
-        row = AirportCoverage(iata=iata, icao=icao, live_updates_ok=live_ok, checked_at=now)
+        row = AirportCoverage(iata=iata, icao=icao, live_updates_ok=live_ok, checked_at=checked_now)
     session.add(row)
     session.commit()
     return live_ok

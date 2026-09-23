@@ -11,7 +11,7 @@ encrypt anything, and only after document_crypto.require_configured() — see
 backend/permissions.py:require_traveler_access for the D4 role matrix this
 file defers to rather than re-implementing.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -136,7 +136,7 @@ def update_traveler(
 
     for field, value in data.items():
         setattr(traveler, field, value)
-    traveler.updated_at = datetime.utcnow()
+    traveler.updated_at = datetime.now(timezone.utc)
     session.add(traveler)
     session.commit()
     session.refresh(traveler)
@@ -196,7 +196,7 @@ def put_traveler_profile(
         except ValueError:
             pass
 
-    traveler.updated_at = datetime.utcnow()
+    traveler.updated_at = datetime.now(timezone.utc)
     session.add(traveler)
     session.commit()
     session.refresh(traveler)
@@ -213,6 +213,6 @@ def delete_traveler_profile(
     traveler.profile_encrypted = None
     traveler.age_band = None
     traveler.passport_expiry = None
-    traveler.updated_at = datetime.utcnow()
+    traveler.updated_at = datetime.now(timezone.utc)
     session.add(traveler)
     session.commit()

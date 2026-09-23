@@ -1,8 +1,13 @@
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
+from pydantic import NaiveDatetime
 from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, JSON, LargeBinary
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class StopStatus(str, Enum):
@@ -50,8 +55,9 @@ ROLE_RANK = {TripRole.viewer: 1, TripRole.editor: 2, TripRole.owner: 3}
 
 class TripBase(SQLModel):
     name: str
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
+    # Local wall-clock, no timezone — same convention as Stop.arrive/depart.
+    start_date: Optional[NaiveDatetime] = None
+    end_date: Optional[NaiveDatetime] = None
     # Cost-style string like "5000 AUD", parsed client-side (parseCost) same
     # as item costs — stored opaquely here, same convention as ItineraryItem.cost.
     budget: Optional[str] = None
@@ -59,7 +65,7 @@ class TripBase(SQLModel):
 
 class Trip(TripBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     stops: List["Stop"] = Relationship(back_populates="trip")
     # Revocable public read-only share link — GET /shared/{share_token}/timeline.
     # None means sharing is off. Regenerating (POST /trips/{id}/share-token)
@@ -98,7 +104,7 @@ class TripMembership(SQLModel, table=True):
     trip_id: int = Field(foreign_key="trip.id", index=True)
     user_email: str = Field(index=True)
     role: TripRole = TripRole.viewer
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class MembershipRead(SQLModel):
@@ -135,10 +141,10 @@ class Traveler(SQLModel, table=True):
     user_email: Optional[str] = Field(default=None, index=True)   # lowercase; None = no account
     display_name: str
     age_band: Optional[str] = None              # "infant" | "child" | "adult" — derived at profile-save time (D5)
-    passport_expiry: Optional[datetime] = None   # clear (D3), for the passport_expiry date warning (D8)
+    passport_expiry: Optional[NaiveDatetime] = None   # clear (D3), for the passport_expiry date warning (D8) — a date, no timezone
     profile_encrypted: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class TravelerRead(SQLModel):
@@ -215,8 +221,11 @@ class TravelerProfileUpdate(SQLModel):
 class StopBase(SQLModel):
     location: str
     country: str = ""
-    arrive: Optional[datetime] = None
-    depart: Optional[datetime] = None
+    # Local wall-clock, no timezone (the separate `timezone` field below is
+    # used only for DST-aware offset math — see backend/tz_check.py — never
+    # attached to these values themselves).
+    arrive: Optional[NaiveDatetime] = None
+    depart: Optional[NaiveDatetime] = None
     timezone: str = "0"
     lat: str = ""
     lng: str = ""
@@ -274,7 +283,8 @@ class StopRead(StopBase):
 class ItemBase(SQLModel):
     kind: ItemKind = ItemKind.activity
     name: str
-    scheduled_at: Optional[datetime] = None
+    # Local wall-clock, no timezone — same convention as Stop.arrive/depart.
+    scheduled_at: Optional[NaiveDatetime] = None
     link: str = ""
     cost: str = ""
     notes: str = ""
@@ -401,7 +411,7 @@ class PendingChange(SQLModel, table=True):
     confidence: str = "low"
     match_reason: str = ""
     status: PendingStatus = PendingStatus.pending
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     decided_at: Optional[datetime] = None
     decided_by: str = ""
 
@@ -436,7 +446,7 @@ class PendingChangeUpdate(SQLModel):
 class IngestedEmail(SQLModel, table=True):
     """A forwarded email saved for parsing, debugging, and future source display."""
     id: Optional[int] = Field(default=None, primary_key=True)
-    received_at: datetime = Field(default_factory=datetime.utcnow)
+    received_at: datetime = Field(default_factory=_utcnow)
     from_addr: str = ""
     to_addr: str = ""
     subject: str = ""
@@ -470,14 +480,14 @@ class ProcessedDocument(SQLModel, table=True):
     cache_key: str = Field(index=True)          # hex SHA256
     trip_id: Optional[int] = None
     item_count: int = 0
-    processed_at: datetime = Field(default_factory=datetime.utcnow)
+    processed_at: datetime = Field(default_factory=_utcnow)
 
 
 class UserImportToken(SQLModel, table=True):
     """Per-user secret embedded in their forwarding address (import+<token>@…)."""
     user_email: str = Field(primary_key=True)   # lowercased
     token: str = Field(index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class ApiToken(SQLModel, table=True):
@@ -491,7 +501,7 @@ class ApiToken(SQLModel, table=True):
     jti: str = Field(index=True, unique=True)
     user_email: str = Field(index=True)   # lowercased
     label: str = Field(default="")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     expires_at: Optional[datetime] = None
     revoked_at: Optional[datetime] = None
 
@@ -517,7 +527,7 @@ class Bag(SQLModel, table=True):
     name: str
     parent_id: Optional[int] = Field(default=None, foreign_key="bag.id")
     packed: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class PackingItem(SQLModel, table=True):
@@ -532,7 +542,7 @@ class PackingItem(SQLModel, table=True):
     quantity: int = 1
     packed_count: int = 0
     sort_order: int = 0
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class BagCreate(SQLModel):
@@ -593,7 +603,7 @@ class PushSubscription(SQLModel, table=True):
     p256dh: str
     auth: str
     device_label: str = ""
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class PushSubscriptionCreate(SQLModel):
@@ -610,7 +620,7 @@ class NotificationLog(SQLModel, table=True):
     item_id: int = Field(index=True)
     kind: str                                    # "checkin_heads_up" | "checkin" | "departure"
                                                   # | "booking_soon" | "booking_due" | ...
-    sent_at: datetime = Field(default_factory=datetime.utcnow)
+    sent_at: datetime = Field(default_factory=_utcnow)
 
 
 class WeatherCache(SQLModel, table=True):
@@ -621,7 +631,7 @@ class WeatherCache(SQLModel, table=True):
     """
     cache_key: str = Field(primary_key=True)    # "lat,lng,start,end" (coords rounded)
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    fetched_at: datetime = Field(default_factory=datetime.utcnow)
+    fetched_at: datetime = Field(default_factory=_utcnow)
 
 
 class LocationTimezone(SQLModel, table=True):
@@ -640,7 +650,7 @@ class LocationTimezone(SQLModel, table=True):
     location: str = Field(primary_key=True)     # normalized place name or "<IATA> airport"
     iana_zone: str                                # e.g. "Europe/Rome"
     country: Optional[str] = None                # e.g. "Italy"; None if unresolved
-    resolved_at: datetime = Field(default_factory=datetime.utcnow)
+    resolved_at: datetime = Field(default_factory=_utcnow)
 
 
 class AirportCoverage(SQLModel, table=True):
@@ -656,7 +666,7 @@ class AirportCoverage(SQLModel, table=True):
     iata: str = Field(primary_key=True)          # as stored in item.details["origin"]
     icao: Optional[str] = None                     # None if IATA→ICAO lookup failed
     live_updates_ok: bool = True                   # conservative default until checked
-    checked_at: datetime = Field(default_factory=datetime.utcnow)
+    checked_at: datetime = Field(default_factory=_utcnow)
 
 
 class LocationCoords(SQLModel, table=True):
@@ -671,7 +681,7 @@ class LocationCoords(SQLModel, table=True):
     location: str = Field(primary_key=True)     # normalized place name or IATA code
     lat: float
     lng: float
-    resolved_at: datetime = Field(default_factory=datetime.utcnow)
+    resolved_at: datetime = Field(default_factory=_utcnow)
 
 
 class UserDistanceTotal(SQLModel, table=True):
@@ -686,7 +696,7 @@ class UserDistanceTotal(SQLModel, table=True):
     user_email: str = Field(primary_key=True)
     mode: str = Field(primary_key=True)           # "air" | "rail" | "road" | "bike" | "walking" | "boat"
     total_km: float = 0.0
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 # ── ItemHistory (versioning / audit log) ──────────────────────────────────────
@@ -700,7 +710,7 @@ class ItemHistory(SQLModel, table=True):
     item_id: int = Field(index=True)
     op: str                                      # "create" | "update" | "delete"
     changed_by: str                              # user email
-    changed_at: datetime = Field(default_factory=datetime.utcnow)
+    changed_at: datetime = Field(default_factory=_utcnow)
     snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     diff: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     source: str = ""                             # "" (manual) | "upload" | "email"
@@ -735,7 +745,7 @@ class ItemAttachment(SQLModel, table=True):
     content_type: str = ""
     size: int = 0
     data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class ItemAttachmentRead(SQLModel):
@@ -757,7 +767,11 @@ class ExpenseBase(SQLModel):
     # Free-text cost string, e.g. "500 THB" — same convention as
     # ItineraryItem.cost, parsed client-side via parseCost().
     amount: str
-    occurred_at: datetime = Field(default_factory=datetime.utcnow)
+    # Local wall-clock, no timezone — same convention as Stop.arrive/depart.
+    # The frontend's quick-add sends a bare local date at midnight
+    # (ExpenseQuickAdd.jsx); the naive-UTC-now default below is only the
+    # fallback for a caller that omits it entirely.
+    occurred_at: NaiveDatetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     notes: str = ""
 
 
@@ -791,7 +805,7 @@ class Expense(ExpenseBase, table=True):
     item_id: Optional[int] = Field(default=None, foreign_key="itineraryitem.id", index=True)
     converted_amount: Optional[float] = None
     converted_currency: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class ExpenseCreate(ExpenseBase):
@@ -841,16 +855,17 @@ class UserDocument(SQLModel, table=True):
     label: str = ""
     country: str = ""
     document_number_encrypted: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
-    issued_date: Optional[datetime] = None
-    expiry_date: Optional[datetime] = None
+    # Dates, no time-of-day/timezone meaning.
+    issued_date: Optional[NaiveDatetime] = None
+    expiry_date: Optional[NaiveDatetime] = None
     notes: str = ""
     # Fernet-encrypted JSON: {"holder_name", "nationality", "date_of_birth"
     # (YYYY-MM-DD), "sex"} — sourced from passport MRZ OCR (plan-13) or
     # manual entry. Same tier as document_number_encrypted: never queried
     # directly, never in UserDocumentRead, decrypted only via GET .../holder.
     holder_data_encrypted: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class UserDocumentRead(SQLModel):
@@ -884,7 +899,7 @@ class UserDocumentFile(SQLModel, table=True):
     content_type: str = ""
     size: int = 0
     data_encrypted: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class UserDocumentFileRead(SQLModel):

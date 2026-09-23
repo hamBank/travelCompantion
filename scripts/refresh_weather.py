@@ -63,7 +63,7 @@ def _upsert(session, key, data):
     row = session.get(WeatherCache, key)
     if row:
         row.payload = data
-        row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        row.fetched_at = datetime.now(timezone.utc)
     else:
         row = WeatherCache(cache_key=key, payload=data)
     session.add(row)
@@ -123,7 +123,7 @@ def refresh_all(session: Session, *, get_weather=_get_weather, geocode=_geocode,
             data = get_weather(resolved[0], resolved[1], start, end) if resolved else {}
         if _usable(data, start, end, today):
             row.payload = data
-            row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            row.fetched_at = datetime.now(timezone.utc)
             session.add(row)
             refreshed += 1
     session.commit()

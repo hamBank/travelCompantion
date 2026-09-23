@@ -1,6 +1,6 @@
 """Tests for plan-14: AeroDataBox webhook subscriptions, the reconciler, the
 /webhooks/aerodatabox/{secret} receiver, and the polling fallback skip."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -263,7 +263,10 @@ def test_get_coverage_rechecks_feed_status_but_not_icao_after_ttl(session):
     from backend.models import AirportCoverage
     api = FakeApi(airports={"FCO": "LIRF"}, feed_status={"LIRF": "OK"})
     stale = NOW - timedelta(days=fas.COVERAGE_RECHECK_DAYS + 1)
-    session.add(AirportCoverage(iata="FCO", icao="LIRF", live_updates_ok=False, checked_at=stale))
+    # AirportCoverage.checked_at is aware-UTC; NOW (shared with this file's
+    # naive-UTC flight-window fixtures) needs attaching tzinfo for this one.
+    session.add(AirportCoverage(iata="FCO", icao="LIRF", live_updates_ok=False,
+                                 checked_at=stale.replace(tzinfo=timezone.utc)))
     session.commit()
 
     assert fas.get_coverage(session, "FCO", now=NOW, request=api) is True  # flipped since last check
