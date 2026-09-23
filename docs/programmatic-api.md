@@ -67,7 +67,7 @@ Response:
   "token": "eyJhbGciOiJIUzI1NiIsIn...",
   "token_type": "bearer",
   "label": "trip-importer",
-  "expires_at": "2027-08-27T21:20:33.123456",
+  "expires_at": "2027-08-27T21:20:33.123456Z",
   "email": "you@example.com"
 }
 ```
@@ -76,9 +76,8 @@ Response:
   365). `label` is an optional name to recognise the token later. Omit the body
   entirely for the default lifetime and no label.
 - Store `token` — it's shown **only here**. `id` is what you revoke by (§2d).
-- `expires_at` (here and in §2d's list) is a plain ISO datetime with **no
-  timezone suffix** — it's always UTC, same convention as every other
-  timestamp the API returns.
+- `expires_at` (here and in §2d's list) is a UTC ISO datetime with a `Z`
+  suffix, same convention as every other timestamp the API returns.
 
 If auth isn't configured on the server (`GOOGLE_CLIENT_ID` unset — local dev),
 every request is already the `dev@local` user and no token is needed.

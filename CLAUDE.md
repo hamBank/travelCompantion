@@ -145,6 +145,48 @@ the unconditional part of the call actually conditional. `backend/metrics.py`'s
 AeroDataBox specifically, the `travelcomp_flight_alert_credits` gauge) makes
 this observable — check it, don't just estimate from reading the code.
 
+## Model datetime fields — aware vs. naive, and why both exist
+`backend/models.py`'s `datetime` fields fall into two deliberately different
+categories, and mixing them up breaks either CI or the stored value:
+
+- **UTC-instant audit/cache timestamps** (`created_at`, `updated_at`,
+  `fetched_at`, `resolved_at`, `checked_at`, `sent_at`, `decided_at`,
+  `revoked_at`, `expires_at`, etc.) — plain `datetime`, which SQLModel (as of
+  0.0.45) maps to its `UTCDateTime` column type and validates as **aware**.
+  Write these with `datetime.now(timezone.utc)` (or `models.py`'s own
+  `_utcnow` for a `default_factory`) — never bare `datetime.utcnow()` or
+  `.replace(tzinfo=None)`.
+- **Local wall-clock fields with no attached timezone** (`Stop.arrive`/
+  `depart`, `ItineraryItem.scheduled_at`, `Trip.start_date`/`end_date`,
+  `Traveler.passport_expiry`, `UserDocument.issued_date`/`expiry_date`,
+  `Expense.occurred_at`) — annotated `NaiveDatetime` (from `pydantic`) so
+  SQLModel keeps mapping them to `DateTime(timezone=False)`, matching every
+  migration's `sa.DateTime()` (no `timezone=True` anywhere in
+  `alembic/versions/`) and the naive local values these fields have always
+  held — see "Timezone handling" below for why several of them (`Stop.
+  arrive`/`depart` especially) must stay naive, not just happen to be.
+
+This split exists because SQLModel 0.0.45 changed plain `datetime` fields to
+require aware values by default (previously naive) — unpinned in
+`backend/requirements.txt` (`sqlmodel>=0.0.19`), so a routine `pip install`
+silently picked up the new default and broke every write to every
+`datetime` field at once (CI, 2026-09-23: ~300 failures, `ValueError:
+Datetime values must have timezone information`, identical on SQLite and
+Postgres — it's a SQLAlchemy-level type check, not a driver quirk). Fixing
+it meant sorting every field into one of the two categories above, not just
+silencing the error — an `AwareDatetime`/blanket rewrite would have quietly
+corrupted every wall-clock field's meaning (see below). No Alembic
+migration was needed either way: the actual Postgres columns were already
+`TIMESTAMP WITHOUT TIME ZONE` and stay that way — `UTCDateTime` attaches
+UTC tzinfo on read regardless of the column's own timezone-awareness, so
+this is a Python-side typing fix only.
+
+When adding a new `datetime` field: decide which category it's in *before*
+writing `default_factory=`. If it's genuinely "when did this happen, in
+real time" (Category 1), use `_utcnow`/`datetime.now(timezone.utc)`. If it's
+a value someone entered or that represents a day/wall-clock moment with no
+timezone attached (Category 2), use `NaiveDatetime`.
+
 ## Timezone handling — which clock, and why it's not obvious
 Multiple pieces of this app each need "what time/day is it" for a different
 purpose, and each needs a **different** clock. Getting this backwards has

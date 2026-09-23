@@ -27,7 +27,7 @@ module is only ever invoked on demand, when a user actually asks to see a
 distance total.
 """
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from math import asin, cos, radians, sin, sqrt
 from typing import Optional
 
@@ -216,7 +216,7 @@ def compute_user_distance_totals(session: Session, user_email: str, *, geocode=_
                                                  airport_request=airport_request).items():
             grand[mode] = grand.get(mode, 0.0) + km
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     existing = {
         row.mode: row for row in session.exec(
             select(UserDistanceTotal).where(UserDistanceTotal.user_email == email)

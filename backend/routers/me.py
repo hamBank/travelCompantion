@@ -1,7 +1,7 @@
 """Per-user self-service endpoints."""
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -53,10 +53,13 @@ def create_personal_api_token(
         "token": token,
         "token_type": "bearer",
         "label": row.label,
-        # Plain (non-"Z"-suffixed) ISO datetime, same as every other timestamp
-        # in the API (including GET /me/api-tokens' own expires_at) — FastAPI's
-        # default jsonable_encoder for a naive datetime, not hand-formatted.
-        "expires_at": exp,
+        # This response is a plain dict, not a declared Pydantic
+        # response_model, so FastAPI's jsonable_encoder would render `exp` as
+        # "...+00:00" — Pydantic's own datetime encoder (used for every other
+        # timestamp in the API, including GET /me/api-tokens' own
+        # expires_at, which IS a declared ApiTokenRead model) renders
+        # "...Z" instead. Match that explicitly so the two agree.
+        "expires_at": exp.isoformat().replace("+00:00", "Z"),
         "email": user["email"],
     }
 
@@ -71,9 +74,10 @@ def list_personal_api_tokens(
     rows = session.exec(
         select(ApiToken)
         .where(ApiToken.user_email == user["email"].lower())
-        # id.desc() breaks ties: created_at is datetime.utcnow(), which can
-        # collide at microsecond resolution for tokens minted back-to-back
-        # (e.g. a script minting several) — id is monotonic and always distinct.
+        # id.desc() breaks ties: created_at is datetime.now(timezone.utc),
+        # which can collide at microsecond resolution for tokens minted
+        # back-to-back (e.g. a script minting several) — id is monotonic and
+        # always distinct.
         .order_by(ApiToken.created_at.desc(), ApiToken.id.desc())
     ).all()
     return rows
@@ -91,7 +95,7 @@ def revoke_personal_api_token(
     if not row or row.user_email != user["email"].lower():
         raise HTTPException(status_code=404, detail="Not found")
     if row.revoked_at is None:
-        row.revoked_at = datetime.utcnow()
+        row.revoked_at = datetime.now(timezone.utc)
         session.add(row)
         session.commit()
     return Response(status_code=204)

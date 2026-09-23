@@ -8,7 +8,7 @@ Deliberately NOT named documents.py — that name is already taken by the
 unrelated router that parses uploaded booking PDFs into PendingChange rows.
 """
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
@@ -167,7 +167,7 @@ def update_document(
         holder.update(holder_updates)
         doc.holder_data_encrypted = _encrypt_holder(holder)
 
-    doc.updated_at = datetime.utcnow()
+    doc.updated_at = datetime.now(timezone.utc)
     session.add(doc)
     session.commit()
     session.refresh(doc)

@@ -92,7 +92,7 @@ def weather_lookup(
     ttl = _cache_ttl(start_d, end_d, today)
 
     cached = session.get(WeatherCache, key)
-    if cached and (datetime.now(timezone.utc).replace(tzinfo=None) - cached.fetched_at) < ttl:
+    if cached and (datetime.now(timezone.utc) - cached.fetched_at) < ttl:
         return {"weather": cached.payload, "cached": True}
 
     # Resolve coordinates: use given ones, else geocode the place name.
@@ -112,7 +112,7 @@ def weather_lookup(
     if not is_degraded(data, start_d, end_d, today):
         if cached:
             cached.payload = data
-            cached.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            cached.fetched_at = datetime.now(timezone.utc)
             session.add(cached)
         else:
             session.add(WeatherCache(cache_key=key, payload=data))
@@ -150,7 +150,7 @@ def weather_hourly(
 
     ttl = _cache_ttl(day_d, day_d, today)
     cached = session.get(WeatherCache, key)
-    if cached and (datetime.now(timezone.utc).replace(tzinfo=None) - cached.fetched_at) < ttl:
+    if cached and (datetime.now(timezone.utc) - cached.fetched_at) < ttl:
         return {"hourly": cached.payload, "cached": True}
 
     if have_coords:
@@ -169,7 +169,7 @@ def weather_hourly(
 
     if cached:
         cached.payload = data
-        cached.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        cached.fetched_at = datetime.now(timezone.utc)
         session.add(cached)
     else:
         session.add(WeatherCache(cache_key=key, payload=data))

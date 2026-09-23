@@ -128,7 +128,7 @@ def test_weather_endpoint_refetches_stale_immediate_bucket_entry(client, session
 
     key = wr.cache_key("1.35", "103.82", "2026-07-06", "2026-07-06")
     row = session.get(WeatherCache, key)
-    row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+    row.fetched_at = datetime.now(timezone.utc) - timedelta(hours=2)
     session.add(row)
     session.commit()
 
@@ -160,7 +160,7 @@ def test_weather_endpoint_invalidates_far_bucket_entry_once_date_enters_horizon(
     # would still read as "fresh" (7h < 48h); it must not.
     key = wr.cache_key("1.35", "103.82", "2026-07-22", "2026-07-22")
     row = session.get(WeatherCache, key)
-    row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=7)
+    row.fetched_at = datetime.now(timezone.utc) - timedelta(hours=7)
     session.add(row)
     session.commit()
     fake_today["value"] = date(2026, 7, 7)
@@ -188,7 +188,7 @@ def test_weather_endpoint_serves_stale_far_bucket_entry_from_cache(client, sessi
 
     key = wr.cache_key("1.35", "103.82", "2026-08-01", "2026-08-01")
     row = session.get(WeatherCache, key)
-    row.fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+    row.fetched_at = datetime.now(timezone.utc) - timedelta(hours=2)
     session.add(row)
     session.commit()
 
@@ -234,7 +234,7 @@ def test_weather_endpoint_degraded_refetch_does_not_overwrite_existing_row(clien
     monkeypatch.setattr(wr, "utc_today", lambda: date(2026, 7, 6))
     key = wr.cache_key("1.35", "103.82", "2026-07-06", "2026-07-06")
     good_payload = {"2026-07-06": {"tmin": 10, "tmax": 20, "icon": "☀", "desc": "Clear", "source": "forecast"}}
-    old_fetched_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+    old_fetched_at = datetime.now(timezone.utc) - timedelta(hours=2)
     session.add(WeatherCache(cache_key=key, payload=good_payload, fetched_at=old_fetched_at))
     session.commit()
 
