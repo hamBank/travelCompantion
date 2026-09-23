@@ -1091,17 +1091,27 @@ function AuthenticatedApp() {
     )
   }
 
-  const shell = <AppShell user={user} onLogout={authEnabled ? handleLogout : null} />
-
-  if (!authEnabled || user) {
-    return googleClientId
-      ? <GoogleOAuthProvider clientId={googleClientId}>{shell}</GoogleOAuthProvider>
-      : shell
-  }
-
+  // Always the same GoogleOAuthProvider element at this tree position, even
+  // before getAuthConfig() resolves and googleClientId is still '' — the
+  // provider only stores clientId in context (GoogleLogin/etc. read it when
+  // rendered) and doesn't need a real id to mount safely, so its own clientId
+  // prop can just update once the real value arrives. Switching between
+  // *rendering* the provider at all (clientId ? <Provider>...</Provider> :
+  // bare) — as this used to — changes the element type at this position the
+  // instant the config finishes loading, which unmounts AppShell entirely
+  // and mounts a brand new one: for a returning user (authReady starts true
+  // off a stored token, so AppShell is already up and has already
+  // auto-opened a trip, pushing it to history) that meant losing all of
+  // AppShell's state and getting a *second* auto-open pushed on top of a
+  // history entry the first one had already claimed — corrupting the Back
+  // stack right after every cold boot. Reported: "hitting the back button
+  // after an initial load of the app, which defaults to the latest trip,
+  // results in going back in the browser and exiting the app."
   return (
     <GoogleOAuthProvider clientId={googleClientId}>
-      <LoginPage onLogin={handleLogin} />
+      {(!authEnabled || user)
+        ? <AppShell user={user} onLogout={authEnabled ? handleLogout : null} />
+        : <LoginPage onLogin={handleLogin} />}
     </GoogleOAuthProvider>
   )
 }
