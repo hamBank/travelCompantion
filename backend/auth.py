@@ -47,7 +47,7 @@ def create_jwt(user: dict) -> str:
         "sub":     user["email"],
         "name":    user.get("name", ""),
         "picture": user.get("picture", ""),
-        "exp":     datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=JWT_EXPIRE_DAYS),
+        "exp":     datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -70,10 +70,10 @@ API_TOKEN_EXPIRE_DAYS = int(os.environ.get("API_TOKEN_EXPIRE_DAYS", "365"))
 def create_api_token(user: dict, days: Optional[int] = None) -> tuple[str, str, datetime]:
     """Mint a personal access token for `user`. `days` is clamped to
     [1, API_TOKEN_EXPIRE_DAYS]; None uses the full default. Returns
-    (token, jti, naive-UTC expiry) — the caller persists an ApiToken row keyed
+    (token, jti, aware-UTC expiry) — the caller persists an ApiToken row keyed
     by `jti` so the token can later be listed and revoked."""
     ttl = API_TOKEN_EXPIRE_DAYS if days is None else max(1, min(int(days), API_TOKEN_EXPIRE_DAYS))
-    exp = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=ttl)
+    exp = datetime.now(timezone.utc) + timedelta(days=ttl)
     jti = secrets.token_urlsafe(12)
     payload = {
         "sub":     user["email"],

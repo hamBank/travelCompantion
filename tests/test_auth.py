@@ -122,7 +122,7 @@ def test_create_api_token_clamps_requested_days(monkeypatch):
     # Over the cap → clamped down; zero/negative → floored to 1.
     _, _, exp_hi = auth.create_api_token({"email": "a@example.com"}, days=100000)
     _, _, exp_lo = auth.create_api_token({"email": "a@example.com"}, days=0)
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
     assert (exp_hi - now) <= timedelta(days=365)
     assert timedelta(hours=23) < (exp_lo - now) <= timedelta(days=1)
 
@@ -157,14 +157,17 @@ def test_mint_api_token_persists_a_revocable_row(client: TestClient, session: Se
 
 
 def test_mint_response_expires_at_matches_list_response_format(client: TestClient):
-    """docs/programmatic-api.md documents one format (plain ISO, no "Z") for
-    expires_at in both the mint and list responses — they must actually agree,
-    not just each individually look like a datetime."""
+    """docs/programmatic-api.md documents one format (UTC ISO datetime with a
+    "Z" suffix) for expires_at in both the mint and list responses — they
+    must actually agree, not just each individually look like a datetime.
+    The mint response builds its own dict rather than going through
+    ApiTokenRead like the list response does, so it's easy for the two to
+    drift (see backend/routers/me.py's create_personal_api_token)."""
     minted = client.post("/me/api-token", json={"label": "fmt"}).json()
     listed = client.get("/me/api-tokens").json()
     row = next(t for t in listed if t["id"] == minted["id"])
     assert minted["expires_at"] == row["expires_at"]
-    assert not minted["expires_at"].endswith("Z")
+    assert minted["expires_at"].endswith("Z")
 
 
 def test_list_and_revoke_api_tokens(client: TestClient, session: Session):
@@ -207,7 +210,7 @@ def test_revoked_token_is_rejected_by_the_auth_gate(client: TestClient, session:
     hdr = {"Authorization": f"Bearer {token}"}
     assert client.get("/trips/", headers=hdr).status_code == 200   # active → allowed
 
-    row.revoked_at = datetime.utcnow()
+    row.revoked_at = datetime.now(timezone.utc)
     session.add(row); session.commit()
     assert client.get("/trips/", headers=hdr).status_code == 401   # revoked → rejected
 

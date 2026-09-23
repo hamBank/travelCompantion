@@ -12,7 +12,7 @@ import json
 import re
 import urllib.parse
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -130,7 +130,7 @@ def refresh_zone_cache(session: Session, location: str, *, geocode=_geocode_plac
         row.iana_zone = zone
         if country:
             row.country = country
-        row.resolved_at = datetime.utcnow()
+        row.resolved_at = datetime.now(timezone.utc)
     else:
         row = LocationTimezone(location=loc, iana_zone=zone, country=country)
     session.add(row)

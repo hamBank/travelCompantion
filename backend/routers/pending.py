@@ -174,7 +174,7 @@ def apply_pending(
         session.add(item)
 
     pc.status = PendingStatus.applied
-    pc.decided_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    pc.decided_at = datetime.now(timezone.utc)
     pc.decided_by = user["email"].lower()
     session.add(pc)
     session.commit()
@@ -200,7 +200,7 @@ def discard_pending(
     pc = _owned(session, user, pc_id)
     if pc.status == PendingStatus.pending:
         pc.status = PendingStatus.discarded
-        pc.decided_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        pc.decided_at = datetime.now(timezone.utc)
         pc.decided_by = user["email"].lower()
         session.add(pc)
         session.commit()

@@ -26,7 +26,7 @@ def test_parse_cache_key_rejects_other_versions():
 def test_refresh_all_updates_payload_and_timestamp():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
-    old_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=2)
+    old_time = datetime.now(timezone.utc) - timedelta(days=2)
     key = weather.cache_key("40.66", "16.60", "2026-07-27", "2026-07-27")
     with Session(engine) as s:
         s.add(WeatherCache(cache_key=key, payload={"old": True}, fetched_at=old_time))
