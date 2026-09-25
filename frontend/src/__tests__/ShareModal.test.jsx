@@ -60,3 +60,15 @@ describe('ShareModal — public link', () => {
     await waitFor(() => expect(screen.getByText('Create public link')).toBeInTheDocument())
   })
 })
+
+describe('ShareModal — internal trip link', () => {
+  it('copies /t/:tripId to the clipboard, distinct from the public share link', async () => {
+    getShareToken.mockResolvedValue({ token: null, url: null })
+    render(<ShareModal trip={trip} onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Copy trip link'))
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('/t/1')))
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalledWith(expect.stringContaining('/shared/'))
+    expect(await screen.findByText('Copied')).toBeInTheDocument()
+  })
+})

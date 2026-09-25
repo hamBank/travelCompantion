@@ -95,7 +95,7 @@ function renderTimeline(props = {}, navBase = BASE) {
 beforeEach(() => {
   vi.clearAllMocks()
   getTripTimeline.mockResolvedValue(timelineFixture())
-  window.history.replaceState(null, '') // start every test on a clean, foreign entry
+  window.history.replaceState(null, '', '/') // start every test on a clean, foreign entry
 })
 
 describe('opening an item (card tap)', () => {
