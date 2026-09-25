@@ -72,7 +72,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   localStorage.setItem('tc-token', 'fake-jwt') // returning, already-signed-in user
-  window.history.replaceState(null, '')
+  window.history.replaceState(null, '', '/')
   getTrips.mockResolvedValue([TRIP])
 })
 

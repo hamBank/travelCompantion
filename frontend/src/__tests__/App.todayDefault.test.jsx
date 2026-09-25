@@ -54,6 +54,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   clearNav()
+  window.history.replaceState(null, '', '/') // a prior test's render leaves the URL wherever it navigated
   getTrips.mockResolvedValue([TRIP])
 })
 

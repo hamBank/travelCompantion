@@ -1075,9 +1075,18 @@ const KIND_COLOR = {
   food:          'var(--kind-food)',
 }
 
-export default function ItemDetailModal({ item: initialItem, onClose, onEdit, onDeleted, onSave, isNavModal = false }) {
+export default function ItemDetailModal({ item: initialItem, onClose, onEdit, onDeleted, onSave, isNavModal = false, tripId = null }) {
   const [item, setItem] = useState(initialItem)
   const [showHistory, setShowHistory] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  // Copy link (urlPath.js's /t/:tripId/item/:itemId).
+  async function copyItemLink() {
+    if (!tripId) return
+    await navigator.clipboard?.writeText(`${window.location.origin}/t/${tripId}/item/${item.id}`)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 1500)
+  }
 
   function onStatusChange(updated) {
     setItem(updated)
@@ -1133,13 +1142,25 @@ export default function ItemDetailModal({ item: initialItem, onClose, onEdit, on
               <NeedsBookingChip details={item.details} />
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{ color: 'var(--text-faint)' }}
-            className="text-lg leading-none hover:opacity-70 shrink-0"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            {tripId && (
+              <button
+                onClick={copyItemLink}
+                title="Copy link to this item"
+                style={{ color: 'var(--text-faint)', fontSize: '0.9rem' }}
+                className="hover:opacity-70 leading-none"
+              >
+                {linkCopied ? '✓' : '🔗'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              style={{ color: 'var(--text-faint)' }}
+              className="text-lg leading-none hover:opacity-70"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className="px-5 py-4">

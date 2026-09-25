@@ -16,6 +16,7 @@ export default function ShareModal({ trip, onClose }) {
   const [shareBusy, setShareBusy] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
   const [shareError, setShareError] = useState(null)
+  const [linkCopied, setLinkCopied] = useState(false)
 
   async function load() {
     try { setMembers(await getTripMembers(trip.id)) }
@@ -43,6 +44,17 @@ export default function ShareModal({ trip, onClose }) {
     setError(null)
     try { await removeTripMember(trip.id, memberEmail); await load() }
     catch (err) { setError(err.message) }
+  }
+
+  // Internal link (urlPath.js's /t/:tripId): for people who already have
+  // access, unlike the public link below — opening it in the app takes
+  // them straight to this trip's timeline, same as opening it from the
+  // trip list would, but it 401s/redirects to sign-in first for anyone who
+  // isn't already a member.
+  async function copyLink() {
+    await navigator.clipboard?.writeText(`${window.location.origin}/t/${trip.id}`)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 1500)
   }
 
   async function copyCalendarUrl() {
@@ -103,6 +115,18 @@ export default function ShareModal({ trip, onClose }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Internal link — for people who already have access */}
+          <div>
+            <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Link to this trip</p>
+            <button
+              onClick={copyLink}
+              style={{ color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}
+              className="text-xs px-3 py-2 rounded-lg hover:opacity-80 transition-opacity"
+            >
+              {linkCopied ? 'Copied' : 'Copy trip link'}
+            </button>
+          </div>
+
           {/* Add person */}
           <div>
             <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide mb-2">Invite by email</p>

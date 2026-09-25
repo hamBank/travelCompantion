@@ -33,6 +33,35 @@ function stopCoveringDate(stops, dateStr) {
   }) || null
 }
 
+// A stop deep link (urlPath.js's /t/:id/stop/:stopId — "copy link" on a
+// stop) resolves to the day the stop starts, per the same arrive-date
+// convention stopCoveringDate/itemDateKey already use. null if the stop
+// isn't in this trip (deleted since the link was copied) or has no arrive
+// date at all, in which case the caller falls back to pickInitialDay.
+function resolveStopDay(stops, stopId) {
+  const stop = (stops || []).find(s => String(s.id) === String(stopId))
+  return stop?.arrive ? String(stop.arrive).slice(0, 10) : null
+}
+
+// An item deep link (urlPath.js's /t/:id/item/:itemId) resolves to the day
+// the item occurs on, using the same kind-based date field as allItems'
+// sort below (flight/rail: depart time, accommodation: check-in, else
+// scheduled_at). null if the item isn't in this trip (deleted since the
+// link was copied) or has no date at all, in which case the caller falls
+// back to pickInitialDay — same contract as resolveStopDay above.
+function resolveItemDay(stops, itemId) {
+  for (const s of (stops || [])) {
+    const item = (s.items || []).find(i => String(i.id) === String(itemId))
+    if (!item) continue
+    const d = item.details || {}
+    const raw = item.kind === 'flight' || item.kind === 'rail' ? d.depart_time
+      : item.kind === 'accommodation' ? (d.checkin || item.scheduled_at)
+      : item.scheduled_at
+    return raw ? String(raw).slice(0, 10) : null
+  }
+  return null
+}
+
 // Today-view defaults: today's date if it falls within the trip's dates,
 // otherwise the trip's first day (or plain today when the trip has no
 // dates set at all, so Today view still does something sensible).
@@ -84,7 +113,7 @@ export function clampedShiftDay(dateStr, direction, timeline) {
 // load() resolves if the timeline isn't loaded yet, or replacing the entry
 // without `item` if it genuinely doesn't exist), and opens/closes the edit
 // layer on top of it.
-const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday, importing = false, setImporting = () => {}, initialDay = null }, ref) {
+const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops, todayMode = false, onExitToday, importing = false, setImporting = () => {}, initialDay = null, initialStopId = null }, ref) {
   const navBase = useContext(NavBaseContext)
   const [timeline, setTimeline] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -246,20 +275,30 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
   // would otherwise reset navigation back to the default day mid-browse).
   // `initialDay` (set by App.jsx when entering Today mode from the calendar's
   // "open day"/chip tap — plan-16b) wins over pickInitialDay's own guess for
-  // that one "on" stint; a plain Today toggle passes no initialDay and falls
-  // back to pickInitialDay as before. The first pick for a stint replaces the
-  // entry Today mode's own push already created (App.jsx), so it records the
-  // picked day (plan-18b) — when a popped/restored snapshot supplies the day
-  // itself instead, applyNav (below) already sets dayInitializedRef, so this
-  // effect no-ops rather than clobbering it with a fresh guess.
+  // that one "on" stint; `initialStopId` (a copied stop deep link — see
+  // resolveStopDay above) is next, since it's also a specific place the
+  // caller asked for, just not resolvable until the stops are loaded; an
+  // item deep link (App.jsx stashes the target into pendingNavItemRef before
+  // this ever runs — see applyNav below) resolves to that item's own day the
+  // same way, so the item actually lands on a day that shows it instead of
+  // "Nothing scheduled today" on whatever day pickInitialDay would have
+  // guessed. A plain Today toggle passes none of these and falls back to
+  // pickInitialDay as before. The first pick for a stint replaces the entry Today mode's own
+  // push already created (App.jsx), so it records the picked day (plan-18b)
+  // — when a popped/restored snapshot supplies the day itself instead,
+  // applyNav (below) already sets dayInitializedRef, so this effect no-ops
+  // rather than clobbering it with a fresh guess.
   useEffect(() => {
     if (!todayMode) { dayInitializedRef.current = false; setDay(null); return }
     if (dayInitializedRef.current || !timeline) return
     dayInitializedRef.current = true
-    const day = initialDay || pickInitialDay(timeline)
+    const day = initialDay
+      || (initialStopId && resolveStopDay(timeline.stops, initialStopId))
+      || (pendingNavItemRef.current && resolveItemDay(timeline.stops, pendingNavItemRef.current.id))
+      || pickInitialDay(timeline)
     setDay(day)
     replaceNav({ ...navBase, day })
-  }, [todayMode, timeline, initialDay, navBase])
+  }, [todayMode, timeline, initialDay, initialStopId, navBase])
 
   // Surface stop counts to the header (shown in the minimal title bar).
   useEffect(() => {
@@ -384,6 +423,25 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
   if (error)   return <p style={{ color: 'var(--error)' }} className="text-center py-12 text-sm">{error}</p>
   if (!timeline?.stops?.length) return <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">No stops yet.</p>
 
+  // Built and stashed unconditionally (unfiltered by activeDay, and above
+  // every conditional return below) so a stash left by applyNav/the effect
+  // above can always resolve — including on a day with nothing scheduled,
+  // which used to hit the early return further down before this ever ran,
+  // leaving allItemsRef permanently empty and stranding a fresh item deep
+  // link with no way to find its target.
+  const allItems = timeline.stops.flatMap(s =>
+    s.items.filter(i => i.kind !== 'food' && i.kind !== 'purchase')
+  ).sort((a, b) => {
+    const t = i => {
+      const d = i.details || {}
+      if (i.kind === 'flight' || i.kind === 'rail') return d.depart_time || ''
+      if (i.kind === 'accommodation') return d.checkin || i.scheduled_at || ''
+      return i.scheduled_at || ''
+    }
+    return t(a).localeCompare(t(b))
+  })
+  allItemsRef.current = allItems
+
   const activeDay = todayMode ? selectedDay : null
 
   // Today mode: only stops with at least one occurring-on-activeDay item, each
@@ -437,20 +495,6 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
       </div>
     )
   }
-
-  // Build global sorted item list for cross-stop j/k navigation
-  const allItems = timeline.stops.flatMap(s =>
-    s.items.filter(i => i.kind !== 'food' && i.kind !== 'purchase')
-  ).sort((a, b) => {
-    const t = i => {
-      const d = i.details || {}
-      if (i.kind === 'flight' || i.kind === 'rail') return d.depart_time || ''
-      if (i.kind === 'accommodation') return d.checkin || i.scheduled_at || ''
-      return i.scheduled_at || ''
-    }
-    return t(a).localeCompare(t(b))
-  })
-  allItemsRef.current = allItems
 
   // Items still "pending" well after they should be over — surfaced as a
   // one-tap catch-up banner rather than silently auto-marked done (multi-user
@@ -717,7 +761,7 @@ const TripTimeline = forwardRef(function TripTimeline({ tripId, onStats, onStops
       // Just the refresh — the close (back(), one layer) is left to the
       // onClose DetailActions' handleDelete always calls right after onDeleted.
       const del = () => { load({ background: true }) }
-      const common = { key: navItem.id, item: navItem, onClose: back, onSave: save, onEdit: edit, onDeleted: del, isNavModal: true }
+      const common = { key: navItem.id, item: navItem, onClose: back, onSave: save, onEdit: edit, onDeleted: del, isNavModal: true, tripId }
       if (navItem.kind === 'flight') return <FlightDetailModal {...common} />
       if (navItem.kind === 'rail')   return <RailDetailModal {...common} />
       return <ItemDetailModal {...common} />

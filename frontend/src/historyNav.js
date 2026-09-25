@@ -7,6 +7,8 @@
 // docs/plans/plan-18a-history-shell.md for the shape and behaviour this
 // implements.
 
+import { snapshotToPath } from './urlPath.js'
+
 export const SNAPSHOT_VERSION = 1
 
 // The entry the app boots on — trip list, nothing open. Anything opening a
@@ -74,7 +76,7 @@ export function pushNav(snapshot) {
   if (typeof window === 'undefined' || !window.history) return
   const next = withVersion(snapshot)
   if (isSameNav(currentNav(), next)) return
-  window.history.pushState(next, '')
+  window.history.pushState(next, '', snapshotToPath(next))
 }
 
 // Updates the current entry in place (D3): cycling a value (day, calendar
@@ -84,7 +86,7 @@ export function replaceNav(snapshot) {
   if (typeof window === 'undefined' || !window.history) return
   const next = withVersion(snapshot)
   if (isSameNav(currentNav(), next)) return
-  window.history.replaceState(next, '')
+  window.history.replaceState(next, '', snapshotToPath(next))
 }
 
 // Every UI close/back affordance goes through this (D4) — never set state

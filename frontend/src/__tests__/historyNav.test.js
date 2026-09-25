@@ -27,7 +27,7 @@ beforeEach(() => {
   // Reset the entry under the test to a "foreign" one (no v:1 state) so
   // isSameNav/currentNav start from a known baseline each test, and clear
   // any go() spy from a previous test.
-  window.history.replaceState(null, '')
+  window.history.replaceState(null, '', '/')
   vi.restoreAllMocks()
 })
 
@@ -42,6 +42,13 @@ describe('pushNav / replaceNav / currentNav', () => {
     replaceNav(snap({ mode: 'today' }))
     expect(currentNav()).toEqual(snap({ mode: 'today', v: SNAPSHOT_VERSION }))
     expect(window.history.length).toBe(lengthBefore)
+  })
+
+  it('push and replace also write the matching deep-link URL (see urlPath.js)', () => {
+    pushNav(snap({ mode: 'timeline' }))
+    expect(window.location.pathname).toBe('/t/1')
+    replaceNav(snap({ mode: 'today', day: '2026-09-16' }))
+    expect(window.location.pathname).toBe('/t/1/day/2026-09-16')
   })
 
   it('an identical consecutive push is a no-op', () => {
@@ -64,7 +71,7 @@ describe('pushNav / replaceNav / currentNav', () => {
   })
 
   it('currentNav() returns null with no state at all', () => {
-    window.history.replaceState(null, '')
+    window.history.replaceState(null, '', '/')
     expect(currentNav()).toBeNull()
   })
 })

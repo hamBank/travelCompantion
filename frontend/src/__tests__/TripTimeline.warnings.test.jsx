@@ -61,7 +61,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   getTripTimeline.mockResolvedValue(timelineFixture())
   getPending.mockResolvedValue([])
-  window.history.replaceState(null, '')
+  window.history.replaceState(null, '', '/')
 })
 
 describe('Timezone mismatch warning (timezone-only fix)', () => {

@@ -33,10 +33,23 @@ import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
 import { useOnline } from './online.js'
 import ItemEditModal from './components/ItemEditModal.jsx'
 import { rootSnapshot, pushNav, replaceNav, back, backSteps, onPopNav, registerNavGuard } from './historyNav.js'
+import { parseDeepLinkPath } from './urlPath.js'
 import { NavBaseContext } from './navContext.js'
 
 // Apply saved font scale before first render
 applyFontScale()
+
+// True exactly once per boot, read synchronously (never re-checked after) —
+// used to seed AppShell's initial tripNavLoading/userChoseList state so a
+// deep link (urlPath.js's /t/:id/...) shows the "Loading…" spinner on the
+// very first paint instead of TripList, which would otherwise mount and
+// fetch/auto-open on that same first render (its own effect runs before
+// AppShell's — children's effects fire before their parent's in the same
+// commit — so setting state to suppress it from an effect is always one
+// render too late).
+function hasDeepLinkAtBoot() {
+  return typeof window !== 'undefined' && parseDeepLinkPath(window.location.pathname) != null
+}
 
 function useTheme() {
   const [theme, setThemeState] = useState(
@@ -141,6 +154,13 @@ function AppShell({ user, onLogout }) {
   // Timeline in place instead of popping, which would overshoot straight
   // past the trip and land back on the trip list.
   const [todayEnteredDirect, setTodayEnteredDirect] = useState(false)
+  // Set only for a deep link to a stop (urlPath.js's /t/:id/stop/:stopId —
+  // "copy link" on a stop). TripTimeline resolves it to that stop's arrival
+  // day once its data loads (same effect that already resolves initialDay),
+  // then replaces the URL with the canonical .../day/:day form. Cleared
+  // whenever Today turns off, same as todayInitialDay/todayEnteredDirect
+  // above, so it can't leak into a later, unrelated Today session.
+  const [deepLinkStopId, setDeepLinkStopId] = useState(null)
   const [calendar, setCalendar] = useState(false)
   const [calendarView, setCalendarViewState] = useState(getCalendarView)
   const [calendarAnchor, setCalendarAnchor] = useState(() => new Date().toLocaleDateString('sv-SE'))
@@ -179,7 +199,27 @@ function AppShell({ user, onLogout }) {
   // fetches a trip a snapshot names that isn't already held in state.
   const timelineRef = useRef(null)
   const applyingRef = useRef(false)
-  const [tripNavLoading, setTripNavLoading] = useState(false)
+  const [tripNavLoading, setTripNavLoading] = useState(hasDeepLinkAtBoot)
+  // A deep link to a specific day or item (urlPath.js's /t/:id/day/:day or
+  // /t/:id/item/:itemId) can't be applied until TripTimeline has actually
+  // mounted and its own imperative applyNav is reachable — that only
+  // happens on the render *after* setSelectedTrip commits, not
+  // synchronously in the same tick (confirmed: a ref set by a child's
+  // forwardRef isn't attached yet immediately after the parent's own
+  // setState call that mounts it). Stashed here and consumed by the effect
+  // below once selectedTrip actually changes. Deliberately NOT threaded
+  // through todayInitialDay/the initialDay prop instead, even though that
+  // would also reach TripTimeline: todayInitialDay doubles as the "All
+  // days" button's signal that a Calendar layer sits underneath this Today
+  // session (see todayEnteredDirect above) — a deep-linked day has no such
+  // layer, so setting it there would make "All days" wrongly try to
+  // backSteps(2) past a layer that doesn't exist. TripTimeline's own
+  // applyNav sets the day directly instead, same seam a popped Back/
+  // Forward navigation already uses, bypassing that signal entirely.
+  // (A stop deep link's day isn't known yet at this point at all — that
+  // one resolves through initialStopId/TripTimeline's own day-picking
+  // effect instead, see resolveStopDay.)
+  const pendingDeepLinkNavRef = useRef(null)
 
   function refreshPending() {
     if (online) getPending().then(p => setPendingCount(p.length)).catch(() => {})
@@ -207,7 +247,7 @@ function AppShell({ user, onLogout }) {
   // calendar (onOpenDay/onOpenItem below) should override it. Clearing this
   // whenever Today turns off, from whatever caused it, keeps a stale day from
   // a previous calendar jump from silently winning the next plain toggle.
-  useEffect(() => { if (!today) { setTodayInitialDay(null); setTodayEnteredDirect(false) } }, [today])
+  useEffect(() => { if (!today) { setTodayInitialDay(null); setTodayEnteredDirect(false); setDeepLinkStopId(null) } }, [today])
 
   function setCalendarViewPersisted(view) {
     persistCalendarView(view); setCalendarViewState(view)
@@ -476,11 +516,25 @@ function AppShell({ user, onLogout }) {
     }
   }
 
-  const [userChoseList, setUserChoseList] = useState(false)
+  // Seeded true for a deep link too (not just an explicit Back-to-list),
+  // same reasoning as tripNavLoading above — and also correct on its own
+  // merits for a *broken* link (deleted/unshared trip): falling through to
+  // the plain trip list without auto-opening some unrelated "next upcoming"
+  // trip is the less surprising outcome when the user's actual intent was
+  // a specific trip, not whatever the list would otherwise guess.
+  const [userChoseList, setUserChoseList] = useState(hasDeepLinkAtBoot)
 
   // Read once, at boot — whatever was open just before the app was last
   // reloaded (see main.jsx's update banner and navState.js).
   const savedNavRef = useRef(getSavedNav())
+
+  // Also read once, at boot, and for the same reason: the "claim the entry
+  // we start on as root" effect below calls replaceNav(rootSnapshot()),
+  // which (since historyNav.js started writing real URLs) overwrites
+  // location.pathname to '/' — reading it live from the deep-link effect
+  // further down would always see that overwritten value instead of
+  // whatever path the page was actually opened with.
+  const initialPathRef = useRef(typeof window !== 'undefined' ? window.location.pathname : '/')
 
   // The "open in Today view by default" setting is an explicit, persistent
   // user preference — it must win over restoreToday (navState.js's "resume
@@ -488,18 +542,67 @@ function AppShell({ user, onLogout }) {
   // is otherwise saved on every trip open and would silently pin the app to
   // whatever view mode happened to be active last time, defeating the
   // setting on nearly every subsequent open).
-  function openTrip(trip, todayOverride) { guardLeavePlanning(() => {
-    const todayValue = getDefaultToToday() || (todayOverride ?? false)
+  //
+  // `deepLinkTarget` ({ day } | { item } | { stopId }, or omitted) is set
+  // only by the deep-link boot effect below (a copied /t/:id/... link) —
+  // it forces Today mode regardless of the setting, since it names a
+  // specific place in the trip the link was for.
+  function openTrip(trip, todayOverride, deepLinkTarget) { guardLeavePlanning(() => {
+    const todayValue = deepLinkTarget ? true : (getDefaultToToday() || (todayOverride ?? false))
     const wasPlanning = planning
     setSelectedTrip(trip); setEditing(false); setPacking(false); setCalendar(false); setToday(todayValue); setTodayEnteredDirect(todayValue); setStats(null); setTripStops([]); setKindFilter(''); setHidePacked(false)
+    setTodayInitialDay(null)
+    setDeepLinkStopId(deepLinkTarget?.stopId ?? null)
+    pendingDeepLinkNavRef.current = (deepLinkTarget?.day || deepLinkTarget?.item)
+      ? { day: deepLinkTarget.day ?? null, item: deepLinkTarget.item ?? null }
+      : null
     // Opening a trip is always a push (D3/D6) — TripList's auto-open and
     // navState.js's restore both call this too, so the list is always
     // underneath. If planning was dirty (switching trips out from under an
     // unsaved draft), collapse rather than stack a redundant layer — same
     // reasoning as handleOpenDay above.
-    const overrides = { selectedTrip: trip, editing: false, packing: false, calendar: false, today: todayValue, planning: false }
+    const overrides = {
+      selectedTrip: trip, editing: false, packing: false, calendar: false, today: todayValue, planning: false,
+      day: deepLinkTarget?.day ?? null, item: deepLinkTarget?.item ?? null,
+    }
     if (wasPlanning) replaceSnapshot(overrides); else pushSnapshot(overrides)
   }) }
+
+  // Resolves a deep link to a specific day or item (see openTrip/
+  // pendingDeepLinkNavRef above) once TripTimeline has actually mounted for
+  // the newly-opened trip — reuses its own applyNav seam (the same one a
+  // popped Back/Forward navigation applies a day/item through), including
+  // its "trip data hasn't loaded yet" item deferral, so this doesn't need
+  // to duplicate that logic.
+  useEffect(() => {
+    if (!selectedTrip || !pendingDeepLinkNavRef.current) return
+    const nav = pendingDeepLinkNavRef.current
+    pendingDeepLinkNavRef.current = null
+    timelineRef.current?.applyNav({ ...snapshotFromState(currentStateBag()), ...nav })
+  }, [selectedTrip])
+
+  // Deep link (copied /t/:id[/day|item|stop/:value] link — see
+  // urlPath.js) takes priority over navState.js's restore below: someone
+  // opening a link to a specific trip/day/item/stop wants THAT, not
+  // wherever they last left off. tripNavLoading/userChoseList are already
+  // seeded true above for this exact case (hasDeepLinkAtBoot), so TripList
+  // never gets a chance to mount and race this with its own auto-open (see
+  // PR #193's AppShell-remount postmortem for why that race matters) — the
+  // "Loading…" spinner shows instead, same as a Forward/Back pop into a
+  // trip not already held in state.
+  useEffect(() => {
+    const deepLink = parseDeepLinkPath(initialPathRef.current)
+    if (!deepLink) return
+    getTrip(deepLink.tripId).then(trip => {
+      setTripNavLoading(false)
+      const target =
+        deepLink.kind === 'day' ? { day: deepLink.value }
+        : deepLink.kind === 'item' ? { item: { id: Number(deepLink.value), edit: false } }
+        : deepLink.kind === 'stop' ? { stopId: deepLink.value }
+        : null
+      openTrip(trip, undefined, target)
+    }).catch(() => { setTripNavLoading(false) }) // bad/deleted trip id — falls through to the trip list, same as a stale share link
+  }, [])
 
   // Keep the last-open trip/view-mode saved so a forced reload can restore
   // it instead of dumping the user back at the trip list.
@@ -715,7 +818,7 @@ function AppShell({ user, onLogout }) {
                     <TripTimeline
                       ref={timelineRef}
                       tripId={selectedTrip.id} onStats={setStats} onStops={setTripStops}
-                      todayMode={today} initialDay={todayInitialDay}
+                      todayMode={today} initialDay={todayInitialDay} initialStopId={deepLinkStopId}
                       onExitToday={() => setToday(false)}
                       importing={showImportDoc} setImporting={back}
                     />

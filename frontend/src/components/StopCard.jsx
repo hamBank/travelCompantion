@@ -730,6 +730,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
   const [busy, setBusy] = useState(false)
   const [itemEdits, setItemEdits] = useState({})  // Only track local edits, not synced items
   const [showAddExpense, setShowAddExpense] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   const canEdit = useCanEdit()
   const canQueueEdit = useCanQueueEdit()
 
@@ -858,6 +859,17 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
     finally { setBusy(false) }
   }
 
+  // Copy link (urlPath.js's /t/:tripId/stop/:stopId — opens Today view on
+  // this stop's arrival day). Only meaningful once the stop has a tripId
+  // (always true from TripTimeline; some test/standalone callers omit it).
+  async function copyStopLink(e) {
+    e.stopPropagation()
+    if (!tripId) return
+    await navigator.clipboard?.writeText(`${window.location.origin}/t/${tripId}/stop/${stop.id}`)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 1500)
+  }
+
   if (hideFrame) {
     return (
       <>
@@ -931,9 +943,21 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
         borderLeft: `3px solid var(--status-${status})`,
       }}
     >
-      <button
+      {/* A <div role="button"> here, not a real <button> — it wraps two
+          actual buttons (copy-link, status-cycle) below, and a <button>
+          can't legally contain another one. That used to be the case
+          anyway (status-cycle nested inside this same toggle) — harmless
+          in jsdom's fireEvent.click (which dispatches straight to the
+          target, bypassing hit-testing) but confirmed live in a real
+          browser: the outer button visually overlaps the inner one and
+          wins pointer-events, so the inner button's own clicks never
+          actually land. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setOpen(o => !o)}
-        className="w-full px-2.5 py-3.5 flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}
+        className="w-full px-2.5 py-3.5 flex items-center gap-3 text-left hover:opacity-80 transition-opacity cursor-pointer"
       >
         <div className="flex-1 min-w-0 flex items-center gap-1.5">
           <FlagMark country={stop.country} />
@@ -944,6 +968,16 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
             </span>
           )}
         </div>
+        {tripId && (
+          <button
+            onClick={copyStopLink}
+            title="Copy link to this stop"
+            style={{ color: 'var(--text-faint)', fontSize: '0.7rem' }}
+            className="hover:opacity-70 transition-opacity shrink-0"
+          >
+            {linkCopied ? '✓' : '🔗'}
+          </button>
+        )}
         <button
           onClick={cycleStatus}
           style={{ color: `var(--status-${status})`, fontSize: '0.65rem' }}
@@ -952,7 +986,7 @@ export default function StopCard({ stop, index, onUpdate, inbound, hideFrame = f
           {status}
         </button>
         <span style={{ color: 'var(--text-faint)', fontSize: '0.6rem' }}>{contentVisible ? '▲' : '▼'}</span>
-      </button>
+      </div>
 
       {/* Tight horizontal padding on purpose: the item cards' own rounded
           borders / left strips provide the visual separation from the stop

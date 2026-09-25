@@ -136,7 +136,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   clearNav()
-  window.history.replaceState(null, '') // start every test on a clean, foreign entry
+  window.history.replaceState(null, '', '/') // start every test on a clean, foreign entry
   getPending.mockResolvedValue([])
   getTripTimeline.mockResolvedValue({ id: 1, start_date: '2026-09-14', end_date: '2026-09-20', stops: [] })
   TripTimelineMock.mockImplementation(({ onStops, importing, setImporting }) => {
