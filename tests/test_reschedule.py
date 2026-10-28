@@ -4,7 +4,7 @@ docs/plans/plan-16a-reschedule-api.md's "Tests" section — this file's cases
 mirror that list."""
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -387,10 +387,14 @@ def test_reschedule_inverse_lossy_when_deletes_present(client: TestClient, trip)
 
 
 def test_reschedule_clears_notification_log_for_future_shifted_item(client: TestClient, trip, session: Session):
-    stop = _stop(client, trip, arrive="2026-09-30T00:00", depart="2026-10-03T00:00")
+    # Relative to today: the reschedule route only clears logs when the item's
+    # NEW date is in the future, so hard-coded dates rot into failures.
+    base = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=30)
+    fmt = "%Y-%m-%dT%H:%M"
+    stop = _stop(client, trip, arrive=base.strftime(fmt), depart=(base + timedelta(days=3)).strftime(fmt))
     future_item = client.post(f"/stops/{stop['id']}/items", json={
         "kind": "flight", "name": "Future flight", "status": "pending",
-        "details": {"depart_time": "2026-09-30T09:00"},
+        "details": {"depart_time": (base + timedelta(hours=9)).strftime(fmt)},
     }).json()
     unshifted_item = client.post(f"/stops/{stop['id']}/items", json={
         "kind": "note", "name": "No dates here", "status": "pending",
@@ -401,7 +405,7 @@ def test_reschedule_clears_notification_log_for_future_shifted_item(client: Test
     session.commit()
 
     r = client.post(f"/trips/{trip['id']}/reschedule", json={
-        "moves": [{"stop_id": stop["id"], "arrive": "2026-10-04T00:00", "depart": "2026-10-07T00:00"}],
+        "moves": [{"stop_id": stop["id"], "arrive": (base + timedelta(days=4)).strftime(fmt), "depart": (base + timedelta(days=7)).strftime(fmt)}],
     })
     assert r.status_code == 200
 
