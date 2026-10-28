@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { createRef } from 'react'
 
@@ -92,11 +92,18 @@ function renderTimeline(props = {}, navBase = BASE) {
   return { ...utils, ref }
 }
 
+// The fixture's items are dated Oct 2026; pin "now" before them so the
+// "past items still pending" banner (a second ✕ button) never appears as
+// real time moves on. Date only — waitFor/findBy still need real timers.
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-09-20T12:00:00'))
   vi.clearAllMocks()
   getTripTimeline.mockResolvedValue(timelineFixture())
   window.history.replaceState(null, '', '/') // start every test on a clean, foreign entry
 })
+
+afterEach(() => { vi.useRealTimers() })
 
 describe('opening an item (card tap)', () => {
   it('pushes {item:{id, edit:false}} with the current day', async () => {

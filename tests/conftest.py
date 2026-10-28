@@ -31,6 +31,11 @@ def make_test_session() -> Session:
         engine = database_mod.engine
         SQLModel.metadata.drop_all(engine)
         SQLModel.metadata.create_all(engine)
+        # psycopg3 server-side-prepares a statement after a few repeats, and a
+        # pooled connection keeps that plan across the drop/create above —
+        # recreated tables then fail with "cached plan must not change result
+        # type" / "cache lookup failed for type N". Fresh connections per test.
+        engine.dispose()
         return Session(engine)
 
     engine = create_engine(
