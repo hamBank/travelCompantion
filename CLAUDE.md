@@ -181,6 +181,17 @@ migration was needed either way: the actual Postgres columns were already
 UTC tzinfo on read regardless of the column's own timezone-awareness, so
 this is a Python-side typing fix only.
 
+**`requirements.txt` now floors `sqlmodel>=0.0.45`, and that floor matters in
+the other direction too.** `NaiveDatetime` only maps to a column type from 0.0.45
+on. With the old `>=0.0.19` floor, `pip install -r` treated prod's long-lived
+venv (0.0.39) as already satisfied and never upgraded it, so the 2026-10-28
+deploy died in `alembic upgrade head` importing `models.py` (`ValueError:
+<class 'pydantic.types.NaiveDatetime'> has no matching SQLAlchemy type`) —
+before the service restart, so prod stayed up on the old code. CI never saw it
+because CI builds a fresh venv every run. `tests/test_requirements_floor.py`
+guards the declared floor; if models.py ever starts needing a newer SQLModel
+feature, raise the floor (and that test's `MIN_SQLMODEL`) in the same commit.
+
 When adding a new `datetime` field: decide which category it's in *before*
 writing `default_factory=`. If it's genuinely "when did this happen, in
 real time" (Category 1), use `_utcnow`/`datetime.now(timezone.utc)`. If it's
