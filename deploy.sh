@@ -717,10 +717,9 @@ fi
 # smoke-check failure shouldn't fail the whole deploy/webhook unit, just flag it.
 if $UPDATE_ONLY || $_WAS_RUNNING; then
   info "Running post-deploy smoke check"
-  if bash "$APP_DIR/scripts/smoke_check.sh" "http://127.0.0.1:${BIND_PORT}" \
+  # smoke_check.sh prints its own pass/fail summary line.
+  if ! bash "$APP_DIR/scripts/smoke_check.sh" "http://127.0.0.1:${BIND_PORT}" \
        "$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || true)"; then
-    ok "Smoke check passed"
-  else
     warn "Smoke check failed — investigate: journalctl -u travelcomp"
     SMOKE_FAILED=true
   fi
