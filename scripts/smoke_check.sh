@@ -10,9 +10,13 @@
 #   scripts/smoke_check.sh [BASE_URL] [EXPECTED_SHA]
 #
 #   BASE_URL      Defaults to http://127.0.0.1:8000 (the on-server case).
-#   EXPECTED_SHA  Optional. If given, compared against the health response's
+#   EXPECTED_SHA  Optional (positional, NOT an env var). If given, compared against the health response's
 #                 backend_sha field (falling back to sha if backend_sha is
 #                 absent — that field is landing in a parallel change).
+#
+# Before check 1 it waits (SMOKE_CHECK_WAIT seconds, default 60) for /health
+# to answer 200: this runs right after a service restart, and uvicorn takes a
+# few seconds to bind — without the wait a perfectly good deploy reports HTTP 000.
 #
 # Checks:
 #   1. GET /health            → HTTP 200, {"status":"ok"}       (hard FAIL)
@@ -21,15 +25,16 @@
 #      weather object; WARN (not FAIL) if any day in range is
 #      still climatology-sourced (near-term days should be live
 #      forecasts, but a transient upstream blip shouldn't fail a deploy).
-#   4. Scheduled tasks (travelcomp-weather/-notifications/-backup timers)
-#      (WARN only — never fails the deploy):
+#   4. Scheduled tasks (travelcomp-weather/-notifications/-backup timers):
 #      - skipped entirely if `systemctl` isn't available (e.g. running this
 #        off the production server, or in a container/CI without systemd —
 #        that's expected, not a problem to report on)
-#      - each timer should be enabled, and its paired oneshot .service's
-#        last run should not have Result=failed
-#      - the backup timer additionally checks for a recent dump file under
-#        $APP_DIR/backups, but only when Postgres is actually configured
+#      - each timer should be enabled (WARN if not), and its paired oneshot
+#        .service's last run must have Result=success (hard FAIL otherwise —
+#        systemd reports a non-zero exit as "exit-code", not "failed", and a
+#        job that is broken after a deploy must not pass silently)
+#      - the backup timer additionally checks (WARN) for a recent dump file
+#        under $APP_DIR/backups, but only when Postgres is actually configured
 #        (pg_backup.sh intentionally no-ops on a SQLite install, so an
 #        empty/missing backups dir there is correct, not stale)
 #
@@ -39,8 +44,7 @@
 # caught it — see CLAUDE.md/PR #80). Check 4 exists so that class of bug
 # shows up here instead of needing another manual investigation.
 #
-# Exit 0 on success (hard checks all passed; check 4 never affects this),
-# 1 on any hard failure. Only curl + python3 (+ systemctl, when present) are
+# Exit 0 on success (all hard checks passed), 1 on any hard failure. Only curl + python3 (+ systemctl, when present) are
 # used — no jq dependency.
 
 set -euo pipefail
@@ -48,6 +52,7 @@ set -euo pipefail
 BASE_URL="${1:-http://127.0.0.1:8000}"
 EXPECTED_SHA="${2:-}"
 CURL_TIMEOUT="${SMOKE_CHECK_TIMEOUT:-10}"
+WAIT_SECS="${SMOKE_CHECK_WAIT:-60}"
 APP_DIR="${APP_DIR:-/opt/travelcomp}"
 
 # Strip a trailing slash so "$BASE_URL/health" never ends up "//health".
@@ -60,6 +65,17 @@ fail() { echo -e "\033[1;31m✗\033[0m $*"; FAIL=1; }
 warn() { echo -e "\033[1;33m⚠\033[0m $*"; }
 
 echo "── Smoke check: $BASE_URL ──────────────────────────────"
+
+# ── 0. Wait for the service to come up ─────────────────────────────────────
+# Polls /health until it answers 200 or WAIT_SECS elapses; the real check
+# below then reports whatever state it ended up in.
+WAITED=0
+until [[ "$(curl -s -o /dev/null --max-time "$CURL_TIMEOUT" -w '%{http_code}' "$BASE_URL/health" 2>/dev/null || true)" == "200" ]]; do
+  if [[ "$WAITED" -ge "$WAIT_SECS" ]]; then break; fi
+  [[ "$WAITED" -eq 0 ]] && echo "  (waiting up to ${WAIT_SECS}s for $BASE_URL/health ...)"
+  sleep 2
+  WAITED=$((WAITED + 2))
+done
 
 # ── 1. /health ─────────────────────────────────────────────────────────────
 HEALTH_BODY=""
@@ -166,16 +182,17 @@ except Exception:
 fi
 
 # ── 4. Scheduled tasks (systemd timers) ─────────────────────────────────────
-# WARN-only: a scheduled-task problem is real and worth surfacing, but it's
-# not something that happened *because of this deploy*, so it shouldn't make
-# a deploy look like it failed (the existing FAIL/pass convention above is
-# reserved for "is the thing we just deployed actually serving correctly").
+# A scheduled job whose last run failed is a hard FAIL, not a warning: the
+# nightly weather refresh failed for days on a stale venv while deploys kept
+# reporting success. A stale failure from before the deploy also fails here
+# until the job is re-run (sudo systemctl start <service>) — that is
+# deliberate, so the failure gets looked at rather than ignored.
 if ! command -v systemctl &>/dev/null; then
   echo "  (systemctl not available — skipping scheduled-task checks; expected off the production server)"
 else
-  # unit_ok NAME → the paired oneshot .service's last run didn't fail.
-  # Absent Result (never run yet, e.g. right after a fresh enable) prints
-  # empty and is NOT treated as a failure — only an explicit "failed" is.
+  # unit_result NAME → the paired oneshot .service's last Result. Empty
+  # (never run yet, e.g. right after a fresh enable) is NOT a failure;
+  # anything else but "success" (exit-code, signal, timeout, failed, ...) is.
   unit_result() {
     systemctl show "$1" --property=Result --value 2>/dev/null || true
   }
@@ -196,8 +213,8 @@ else
     RESULT="$(unit_result "$SERVICE")"
     if [[ "$ENABLED" != "enabled" ]]; then
       warn "$TIMER is '$ENABLED', not enabled — scheduled task will never run. Fix: sudo systemctl daemon-reload && sudo systemctl enable --now $TIMER"
-    elif [[ "$RESULT" == "failed" ]]; then
-      warn "$SERVICE's last run FAILED — check: journalctl -u $SERVICE -n 40"
+    elif [[ -n "$RESULT" && "$RESULT" != "success" ]]; then
+      fail "$SERVICE's last run failed (Result=$RESULT) — check: journalctl -u $SERVICE -n 40; re-run: sudo systemctl start $SERVICE"
     else
       pass "$TIMER enabled, $SERVICE last result: ${RESULT:-not yet run}"
     fi
