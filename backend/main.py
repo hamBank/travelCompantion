@@ -141,6 +141,16 @@ async def webhook_deploy(request: Request):
     return {"ok": True}
 
 
+def _with_refreshed_token(request: Request, response):
+    """Hand back the fresh login token get_current_user minted for a session
+    that's past halfway through its life (see auth.py). Never on an error
+    response: a failed request shouldn't extend a session."""
+    token = getattr(request.state, "refreshed_token", None)
+    if token and response.status_code < 400:
+        response.headers["X-Refreshed-Token"] = token
+    return response
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     from .auth import AUTH_ENABLED, JWT_SECRET, JWT_ALGORITHM
@@ -149,7 +159,9 @@ async def auth_middleware(request: Request, call_next):
 
     path = request.url.path
     if path in _PUBLIC_EXACT or any(path.startswith(p) for p in _PUBLIC_PREFIXES):
-        return await call_next(request)
+        # Public prefixes skip the gate below, but a few routes under them
+        # (/auth/me) still authenticate via get_current_user and can refresh.
+        return _with_refreshed_token(request, await call_next(request))
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -163,7 +175,7 @@ async def auth_middleware(request: Request, call_next):
     except JWTError:
         return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)
 
-    return await call_next(request)
+    return _with_refreshed_token(request, await call_next(request))
 
 
 def _frontend_sha():

@@ -47,6 +47,33 @@ async function cachedFallback(path) {
 // touched by logout), so queued edits still sync after signing back in.
 export const AUTH_EXPIRED_EVENT = 'tc-auth-expired'
 
+// Header the backend sets on a response once the login token we sent is past
+// halfway through its life (backend/auth.py, get_current_user) — the sliding
+// session. The new token replaces the stored one.
+const REFRESHED_TOKEN_HEADER = 'X-Refreshed-Token'
+
+// Every authenticated request goes through here — req() and the blob/upload/
+// download helpers below — so the two session behaviours can't be missed by
+// one of them:
+//  - a refreshed token in the response is stored, and
+//  - a 401 on a request that carried a token announces AUTH_EXPIRED_EVENT.
+// A 401 on a token-less request (e.g. a failed login attempt on the login
+// page) is not an expired session.
+async function authFetch(path, opts = {}) {
+  const token = getToken()
+  const headers = { ...(opts.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  const r = await fetch(path, { ...opts, headers })
+  if (typeof window !== 'undefined' && token) {
+    const fresh = r.headers?.get?.(REFRESHED_TOKEN_HEADER)
+    // Only if the token we sent is still the stored one: a response that lands
+    // after sign-out (or after another tab signed in as someone else) must not
+    // write its token back.
+    if (fresh && getToken() === token) localStorage.setItem('tc-token', fresh)
+    if (r.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  }
+  return r
+}
+
 // A GET whose response the service worker's StaleWhileRevalidate strategy
 // can't answer from cache (nothing cached yet for this URL — e.g. the very
 // first network-controlled load of a session, since a page's own first load
@@ -70,15 +97,11 @@ function withReadTimeout(promise, ms) {
 }
 
 async function req(path, opts = {}) {
-  const token = getToken()
   const method = (opts.method || 'GET').toUpperCase()
-  const doFetch = () => fetch(path, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+  const doFetch = () => authFetch(path, {
     cache: 'no-store',
     ...opts,
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
   })
 
   let r
@@ -92,11 +115,6 @@ async function req(path, opts = {}) {
     }
   } else {
     r = await doFetch()
-  }
-  // Only when a token was actually sent: a 401 on a token-less request (e.g.
-  // a failed login attempt on the login page) is not an expired session.
-  if (r.status === 401 && token && typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
   }
   // Deploy in progress: flip into offline mode (background /health poll
   // flips back). Reads quietly serve the service worker's cached copy —
@@ -140,17 +158,6 @@ export const getAuthConfig  = ()       => req('/auth/config')
 export const getCurrentUser = ()       => req('/auth/me')
 export const loginWithGoogle = (credential) =>
   req('/auth/google', { method: 'POST', body: JSON.stringify({ credential }) })
-
-/** Sliding session: swap the stored JWT for a freshly-minted one (see
- * POST /auth/refresh). Called on boot and periodically while the app stays
- * open, so the session only hard-expires after JWT_EXPIRE_DAYS of the app
- * not being used at all. A 401 here means the current token is already
- * dead — req() fires AUTH_EXPIRED_EVENT and the user lands on login. */
-export async function refreshAuthToken() {
-  const data = await req('/auth/refresh', { method: 'POST' })
-  if (data?.access_token) localStorage.setItem('tc-token', data.access_token)
-  return data
-}
 
 export const getTrips   = () => req('/trips/')
 export const createTrip = (data) => req('/trips/', { method: 'POST', body: JSON.stringify(data) })
@@ -241,10 +248,7 @@ export const createApiToken = (body) => req('/me/api-token', { method: 'POST', b
 export const revokeApiToken = (id) => req(`/me/api-tokens/${id}`, { method: 'DELETE' })
 
 export async function downloadIngestedEmail(id) {
-  const token = getToken()
-  const r = await fetch(`/me/emails/${id}/raw`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const r = await authFetch(`/me/emails/${id}/raw`)
   if (!r.ok) throw new Error('Download failed')
   const blob = await r.blob()
   const url = URL.createObjectURL(blob)
@@ -255,10 +259,7 @@ export async function downloadIngestedEmail(id) {
 }
 
 export async function exportTripPdf(id, name) {
-  const token = getToken()
-  const r = await fetch(`/trips/${id}/export.pdf`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const r = await authFetch(`/trips/${id}/export.pdf`)
   if (!r.ok) throw new Error('PDF export failed')
   const blob = await r.blob()
   const url = URL.createObjectURL(blob)
@@ -349,38 +350,27 @@ export const generateRiverPath = (points, riverName) =>
   req('/river-path', { method: 'POST', body: JSON.stringify({ points, river_name: riverName || null }) })
 
 export async function fetchRiverMapBlob(id) {
-  const token = getToken()
-  const r = await fetch(`/items/${id}/river-map`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const r = await authFetch(`/items/${id}/river-map`)
   return r.ok ? r.blob() : null
 }
 
 export async function fetchGpxMapBlob(id) {
-  const token = getToken()
-  const r = await fetch(`/items/${id}/gpx-map`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const r = await authFetch(`/items/${id}/gpx-map`)
   return r.ok ? r.blob() : null
 }
 
 export async function fetchDayMapBlob(stopId, locations) {
-  const token = getToken()
   const params = new URLSearchParams()
   for (const loc of locations) params.append('locations', loc)
-  const r = await fetch(`/stops/${stopId}/day-map?${params.toString()}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const r = await authFetch(`/stops/${stopId}/day-map?${params.toString()}`)
   return r.ok ? r.blob() : null
 }
 
 export async function uploadGpx(id, file) {
-  const token = getToken()
   const form = new FormData()
   form.append('file', file)
-  const r = await fetch(`/items/${id}/gpx`, {
+  const r = await authFetch(`/items/${id}/gpx`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   })
   const body = await r.json()
@@ -389,14 +379,12 @@ export async function uploadGpx(id, file) {
 }
 
 export async function parseDocument(tripId, files, { force = false } = {}) {
-  const token = getToken()
   const form = new FormData()
   const fileList = Array.isArray(files) ? files : [files]
   for (const f of fileList) form.append('files', f)
   const url = `/trips/${tripId}/parse-document` + (force ? '?force=true' : '')
-  const r = await fetch(url, {
+  const r = await authFetch(url, {
     method:  'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body:    form,
   })
   const text = await r.text()
@@ -407,10 +395,7 @@ export async function parseDocument(tripId, files, { force = false } = {}) {
 }
 
 export async function downloadGpx(id, filename) {
-  const token = getToken()
-  const r = await fetch(`/items/${id}/gpx`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const r = await authFetch(`/items/${id}/gpx`)
   if (!r.ok) throw new Error('Download failed')
   const blob = await r.blob()
   const url = URL.createObjectURL(blob)
@@ -421,22 +406,17 @@ export async function downloadGpx(id, filename) {
 }
 
 export async function fetchGpxText(id) {
-  const token = getToken()
-  const r = await fetch(`/items/${id}/gpx`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const r = await authFetch(`/items/${id}/gpx`)
   return r.ok ? r.text() : null
 }
 
 // ── Item attachments (boarding passes, booking PDFs, QR codes) ──────────────
 
 export async function uploadAttachment(itemId, file) {
-  const token = getToken()
   const form = new FormData()
   form.append('file', file)
-  const r = await fetch(`/items/${itemId}/attachments`, {
+  const r = await authFetch(`/items/${itemId}/attachments`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   })
   const body = await r.json()
@@ -448,10 +428,7 @@ export const listAttachments = (itemId) => req(`/items/${itemId}/attachments`)
 export const deleteAttachment = (id) => req(`/attachments/${id}`, { method: 'DELETE' })
 
 export async function fetchAttachmentBlob(id) {
-  const token = getToken()
-  const r = await fetch(`/attachments/${id}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const r = await authFetch(`/attachments/${id}`)
   return r.ok ? r.blob() : null
 }
 
@@ -468,12 +445,10 @@ export const getDocumentHolder = (id)        => req(`/me/documents/${id}/holder`
 export const scanPassportFile = (docId, fileId) => req(`/me/documents/${docId}/files/${fileId}/scan`, { method: 'POST' })
 
 export async function uploadDocumentFile(docId, file) {
-  const token = getToken()
   const form = new FormData()
   form.append('file', file)
-  const r = await fetch(`/me/documents/${docId}/files`, {
+  const r = await authFetch(`/me/documents/${docId}/files`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   })
   const body = await r.json()
@@ -482,10 +457,7 @@ export async function uploadDocumentFile(docId, file) {
 }
 
 export async function fetchDocumentFileBlob(docId, fileId) {
-  const token = getToken()
-  const r = await fetch(`/me/documents/${docId}/files/${fileId}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const r = await authFetch(`/me/documents/${docId}/files/${fileId}`)
   return r.ok ? r.blob() : null
 }
 
