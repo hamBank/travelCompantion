@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlmodel import Session
@@ -43,13 +43,49 @@ def verify_google_token(credential: str) -> dict:
 
 
 def create_jwt(user: dict) -> str:
+    now = datetime.now(timezone.utc)
     payload = {
         "sub":     user["email"],
         "name":    user.get("name", ""),
         "picture": user.get("picture", ""),
-        "exp":     datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS),
+        "iat":     now,
+        "exp":     now + timedelta(days=JWT_EXPIRE_DAYS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def email_authorised(session, email: str) -> bool:
+    """The sign-in gate: the bootstrap admin (ALLOWED_EMAIL), or anyone who has
+    been shared at least one trip (any TripMembership). When ALLOWED_EMAIL is
+    unset, anyone with a Google account may sign in (membership then gates
+    access). Shared by /auth/google, /auth/refresh and the sliding refresh in
+    get_current_user, so revoking someone's access stops all three."""
+    email = email.lower()
+    if not ALLOWED_EMAIL or email == ALLOWED_EMAIL:
+        return True
+    from sqlmodel import select
+    from .models import TripMembership
+    return session.exec(
+        select(TripMembership).where(TripMembership.user_email == email)
+    ).first() is not None
+
+
+def token_refresh_due(payload: dict, now: Optional[datetime] = None) -> bool:
+    """True once a login token is more than halfway through its life.
+
+    Lifetime is exp - iat. Tokens minted before `iat` was added have none, so
+    they're assumed to have been issued with the current JWT_EXPIRE_DAYS.
+    """
+    exp = payload.get("exp")
+    if not isinstance(exp, (int, float)):
+        return False
+    iat = payload.get("iat")
+    if isinstance(iat, (int, float)) and exp > iat:
+        lifetime = exp - iat
+    else:
+        lifetime = JWT_EXPIRE_DAYS * 86400
+    now_ts = (now or datetime.now(timezone.utc)).timestamp()
+    return exp - now_ts < lifetime / 2
 
 
 # ── Personal access tokens (programmatic / non-browser clients) ────────────────
@@ -101,6 +137,7 @@ def api_token_active(session, jti: str) -> bool:
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_security),
     session: Session = Depends(get_session),
+    request: Request = None,
 ) -> dict:
     if not AUTH_ENABLED:
         return {"email": "dev@local", "name": "Dev", "picture": ""}
@@ -122,11 +159,29 @@ def get_current_user(
         if not api_token_active(session, payload.get("jti")):
             raise HTTPException(status_code=401, detail="Token revoked")
 
-    return {
+    user = {
         "email":   payload["sub"],
         "name":    payload.get("name", ""),
         "picture": payload.get("picture", ""),
     }
+
+    # Sliding session: a login token past halfway through its life gets a fresh
+    # one handed back, which main.py's auth_middleware attaches to the response
+    # as X-Refreshed-Token for the frontend to store. Login tokens only — a
+    # personal access token keeps its fixed, revocable lifetime. Someone whose
+    # access has been revoked since login can see out their current token but
+    # can't extend it. (`request` is None when called directly in unit tests.)
+    if request is not None:
+        request.state.token_scope = payload.get("scope")
+        if (
+            payload.get("scope") is None
+            and token_refresh_due(payload)
+            and isinstance(session, Session)
+            and email_authorised(session, user["email"])
+        ):
+            request.state.refreshed_token = create_jwt(user)
+
+    return user
 
 
 # ── iCal feed tokens ───────────────────────────────────────────────────────────

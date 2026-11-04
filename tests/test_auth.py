@@ -304,7 +304,7 @@ def test_google_auth_returns_401_on_invalid_google_token(client: TestClient, mon
 
 def test_google_auth_rejects_unauthorised_email_with_no_membership(client: TestClient, monkeypatch):
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
-    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "admin@example.com")
+    monkeypatch.setattr(auth, "ALLOWED_EMAIL", "admin@example.com")
     monkeypatch.setattr(
         auth_router, "verify_google_token",
         lambda credential: {"email": "stranger@example.com", "name": "Stranger", "picture": ""},
@@ -315,7 +315,7 @@ def test_google_auth_rejects_unauthorised_email_with_no_membership(client: TestC
 
 def test_google_auth_allows_bootstrap_admin_email(client: TestClient, monkeypatch):
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
-    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "admin@example.com")
+    monkeypatch.setattr(auth, "ALLOWED_EMAIL", "admin@example.com")
     monkeypatch.setattr(
         auth_router, "verify_google_token",
         lambda credential: {"email": "admin@example.com", "name": "Admin", "picture": ""},
@@ -330,7 +330,7 @@ def test_google_auth_allows_bootstrap_admin_email(client: TestClient, monkeypatc
 
 def test_google_auth_allows_any_account_when_allowed_email_unset(client: TestClient, monkeypatch):
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
-    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "")
+    monkeypatch.setattr(auth, "ALLOWED_EMAIL", "")
     monkeypatch.setattr(
         auth_router, "verify_google_token",
         lambda credential: {"email": "anyone@example.com", "name": "Anyone", "picture": ""},
@@ -359,7 +359,7 @@ def test_refresh_requires_valid_token(client: TestClient, monkeypatch):
 def test_refresh_issues_a_new_token_with_fresh_expiry(client: TestClient, monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
-    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "admin@example.com")
+    monkeypatch.setattr(auth, "ALLOWED_EMAIL", "admin@example.com")
     # A token nearing the end of its life (2 days left of a 30-day lifetime).
     old_payload = {
         "sub": "admin@example.com", "name": "Admin", "picture": "p.png",
@@ -385,7 +385,7 @@ def test_refresh_rejects_revoked_user_with_no_membership(client: TestClient, mon
     can't extend their session."""
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
-    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "admin@example.com")
+    monkeypatch.setattr(auth, "ALLOWED_EMAIL", "admin@example.com")
     token = auth.create_jwt({"email": "revoked@example.com", "name": "Gone"})
     r = client.post("/auth/refresh", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403
@@ -394,7 +394,7 @@ def test_refresh_rejects_revoked_user_with_no_membership(client: TestClient, mon
 def test_refresh_allows_member_user(client: TestClient, session: Session, monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
-    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "admin@example.com")
+    monkeypatch.setattr(auth, "ALLOWED_EMAIL", "admin@example.com")
     trip = Trip(name="T")
     session.add(trip)
     session.commit()
@@ -412,7 +412,7 @@ def test_google_auth_allows_email_with_existing_trip_membership(
     client: TestClient, session: Session, monkeypatch
 ):
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
-    monkeypatch.setattr(auth_router, "ALLOWED_EMAIL", "admin@example.com")
+    monkeypatch.setattr(auth, "ALLOWED_EMAIL", "admin@example.com")
     monkeypatch.setattr(
         auth_router, "verify_google_token",
         lambda credential: {"email": "shared@example.com", "name": "Shared", "picture": ""},

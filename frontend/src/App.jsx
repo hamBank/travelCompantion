@@ -21,7 +21,7 @@ import { itemDateKey } from './components/StopCard.jsx'
 import { shiftPeriod, emptyDraft, draftChangeCount, draftToRequest } from './calendarModel.js'
 import { DEFAULT_THEME } from './themes.js'
 import {
-  getAuthConfig, exportTripPdf, getPending, getTripTimeline, refreshAuthToken, AUTH_EXPIRED_EVENT,
+  getAuthConfig, exportTripPdf, getPending, getTripTimeline, AUTH_EXPIRED_EVENT,
   rescheduleTrip, getDateWarnings, getTrip,
 } from './api.js'
 import { Menu, Backpack, Wallet, Inbox, FileText, Settings, CalendarDays, CalendarRange, Plane, Route, Printer, Users } from 'lucide-react'
@@ -1164,26 +1164,18 @@ function AuthenticatedApp() {
   // Expired/invalidated session (any authed request came back 401, see
   // api.js) — sign out so the login page shows, rather than leaving the app
   // up with every request failing until the user finds Sign out themselves.
+  // The session itself slides server-side: api.js stores the fresh token the
+  // backend returns once the current one is past halfway (X-Refreshed-Token).
+  // Attached from the first render, not once /auth/config says auth is on: a
+  // returning user whose token expired while the app was closed fires requests
+  // at boot, and their 401s can land before the config does. (The event only
+  // fires for a request that carried a token, which an auth-disabled server
+  // never rejects, so there's nothing to guard.)
   useEffect(() => {
-    if (!authEnabled) return
     const onExpired = () => handleLogout()
     window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
-  }, [authEnabled])
-
-  // Sliding session: refresh the stored JWT on boot and daily while the app
-  // stays open (a phone PWA can stay "open" for weeks without rebooting the
-  // page), so an actively-used session never hits the fixed JWT_EXPIRE_DAYS
-  // cliff — it only expires after that long of not using the app at all.
-  // Failures are ignored: offline is fine (next interval/boot retries), and
-  // an actually-dead token 401s → the expiry handler above signs out.
-  useEffect(() => {
-    if (!authEnabled || !user) return
-    const doRefresh = () => { refreshAuthToken().catch(() => {}) }
-    doRefresh()
-    const id = setInterval(doRefresh, 24 * 60 * 60 * 1000)
-    return () => clearInterval(id)
-  }, [authEnabled, user])
+  }, [])
 
   if (!authReady) {
     return (
