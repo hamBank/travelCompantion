@@ -41,7 +41,14 @@ SUBSCRIBE_WINDOW_HOURS = 72
 # quota, 1 unit = 1 credit) in this increment when it dips below. A zero
 # balance silently pauses ALL subscriptions, so the floor is load-bearing.
 CREDIT_FLOOR = int(os.getenv("FLIGHT_ALERT_CREDIT_FLOOR", "20"))
-CREDIT_REFILL = int(os.getenv("FLIGHT_ALERT_CREDIT_REFILL", "50"))
+CREDIT_REFILL = int(os.getenv("FLIGHT_ALERT_CREDIT_REFILL", "40"))
+# AeroDataBox rejects a refill outside 1..N credits per call, N depending on the
+# pricing plan ("not more than 40 per single API call for your pricing plan" on
+# the current one). The default used to be 50, so every reconcile's top-up was
+# rejected, the error was swallowed, and the balance was never replenished
+# (seen in the cron log from at least 2026-11-04). CREDIT_REFILL is clamped to
+# this, so an env value above the plan's limit can't recreate that.
+CREDIT_REFILL_MAX = int(os.getenv("FLIGHT_ALERT_CREDIT_REFILL_MAX", "40"))
 
 # Feed statuses that mean "there's a real chance of getting live updates" —
 # only Down/Unavailable are a confident "this subscription would never fire"
@@ -230,7 +237,7 @@ def reconcile_subscriptions(session: Session, *, now: Optional[datetime] = None,
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     window_end = now + timedelta(hours=SUBSCRIBE_WINDOW_HOURS)
     summary = {"subscribed": 0, "unsubscribed": 0, "credits": None, "refilled": 0,
-               "no_coverage": 0}
+               "no_coverage": 0, "balance_error": False}
 
     flights = session.exec(
         select(ItineraryItem).where(ItineraryItem.kind == ItemKind.flight)
@@ -267,13 +274,18 @@ def reconcile_subscriptions(session: Session, *, now: Optional[datetime] = None,
     # per-flight polling instead — itself not free of quota either).
     try:
         credits = get_balance(request=request)
-        if credits < CREDIT_FLOOR and CREDIT_REFILL > 0:
-            credits = refill_balance(CREDIT_REFILL, request=request)
-            summary["refilled"] = CREDIT_REFILL
+        refill = min(CREDIT_REFILL, CREDIT_REFILL_MAX)
+        if credits < CREDIT_FLOOR and refill > 0:
+            credits = refill_balance(refill, request=request)
+            summary["refilled"] = refill
         summary["credits"] = credits
         flight_alert_credits.set(credits)
     except FlightAlertApiError:
-        pass  # balance check failing shouldn't block subscription sync
+        # A failing balance check shouldn't block subscription sync, but it must
+        # not pass silently either: with no credits, new subscriptions sit
+        # paused. scripts/reconcile_flight_alerts.py turns this into a failed
+        # run (visible to systemd and smoke_check.sh).
+        summary["balance_error"] = True
 
     for item in to_subscribe:
         d = item.details or {}

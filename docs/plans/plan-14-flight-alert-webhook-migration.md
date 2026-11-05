@@ -50,7 +50,8 @@ flights and tops up credits on its own 4-hourly cadence; polling (still on
 the 15-minute notification cron) skips subscribed flights (and remains the
 per-flight fallback for failed creates), and the credit balance auto-refills
 below a floor of `FLIGHT_ALERT_CREDIT_FLOOR` (default 20) by
-`FLIGHT_ALERT_CREDIT_REFILL` (default 50) API units.
+`FLIGHT_ALERT_CREDIT_REFILL` (default 40, clamped to `FLIGHT_ALERT_CREDIT_REFILL_MAX`, the plan's per-call
+limit) API units.
 
 **Rate limiting (found immediately in production, 2026-07-18):** the first
 live reconcile run 429'd — RapidAPI's BASIC plan rejects two AeroDataBox

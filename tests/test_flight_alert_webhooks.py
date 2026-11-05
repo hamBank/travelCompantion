@@ -61,8 +61,12 @@ class FakeResponse:
 class FakeApi:
     """Records subscription API calls and plays back canned behavior."""
 
-    def __init__(self, balance=100, existing=None, airports=None, feed_status=None):
+    def __init__(self, balance=100, existing=None, airports=None, feed_status=None, refill_max=40):
         self.balance = balance
+        # The real API rejects a refill outside 1..N credits per call (N = 40 on
+        # the current plan). The fake used to accept anything, which is how a
+        # default of 50 shipped and failed on every run in production.
+        self.refill_max = refill_max
         self.existing = list(existing or [])
         self.calls = []
         self._next_id = 0
@@ -90,6 +94,10 @@ class FakeApi:
                 return FakeResponse(200, None, text="")  # observed live: empty body when never refilled
             return FakeResponse(200, {"creditsRemaining": self.balance})
         if method == "POST" and path == "/subscriptions/balance/refill":
+            if not 1 <= json_body["credits"] <= self.refill_max:
+                raise fas.FlightAlertApiError(
+                    f"Credit amount to refill must not be less than 1 and not more than "
+                    f"{self.refill_max} per single API call for your pricing plan.")
             self.balance += json_body["credits"]
             return FakeResponse(200, {"creditsRemaining": self.balance})
         if method == "GET" and path.startswith("/airports/Iata/"):
@@ -169,6 +177,56 @@ def test_reconcile_refills_when_below_floor(session):
     summary = fas.reconcile_subscriptions(session, now=NOW, request=api)
     assert summary["refilled"] == fas.CREDIT_REFILL
     assert summary["credits"] == fas.CREDIT_REFILL
+
+
+def test_default_refill_is_within_the_plan_limit():
+    # A default above the per-call limit means every top-up is rejected.
+    assert 1 <= fas.CREDIT_REFILL <= fas.CREDIT_REFILL_MAX
+
+
+def test_reconcile_clamps_an_oversized_refill_to_the_plan_limit(session, monkeypatch):
+    monkeypatch.setattr(fas, "CREDIT_REFILL", 50)  # e.g. a stale value in .env
+    _, stop = _seed_trip(session)
+    api = FakeApi(balance=0)
+    summary = fas.reconcile_subscriptions(session, now=NOW, request=api)
+    refills = [c for c in api.calls if c[1] == "/subscriptions/balance/refill"]
+    assert [c[2]["credits"] for c in refills] == [fas.CREDIT_REFILL_MAX]
+    assert summary["credits"] == fas.CREDIT_REFILL_MAX
+    assert summary["balance_error"] is False
+
+
+def test_reconcile_flags_a_failed_balance_top_up_instead_of_hiding_it(session, monkeypatch):
+    # Plan allows less per call than we ask for: the refill is rejected. The sync
+    # still carries on, but the summary must say the balance step failed.
+    monkeypatch.setattr(fas, "CREDIT_REFILL_MAX", 100)  # our clamp can't help here
+    _, stop = _seed_trip(session)
+    api = FakeApi(balance=0, refill_max=10)
+    summary = fas.reconcile_subscriptions(session, now=NOW, request=api)
+    assert summary["balance_error"] is True
+    assert summary["credits"] is None
+
+
+def test_reconcile_script_exits_nonzero_when_the_balance_step_failed(monkeypatch, capsys):
+    import importlib.util, pathlib
+    spec = importlib.util.spec_from_file_location(
+        "reconcile_flight_alerts",
+        pathlib.Path(__file__).resolve().parent.parent / "scripts" / "reconcile_flight_alerts.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+
+    monkeypatch.setattr(script.flight_alert_subscriptions, "enabled", lambda: True)
+    summary = {"subscribed": 0, "unsubscribed": 0, "credits": None, "refilled": 0,
+               "no_coverage": 0, "balance_error": True}
+    monkeypatch.setattr(script.flight_alert_subscriptions, "reconcile_subscriptions",
+                        lambda session: summary)
+    import pytest
+    with pytest.raises(SystemExit) as e:
+        script.main()
+    assert e.value.code == 1
+    assert "alert-credit balance" in capsys.readouterr().err
+
+    summary["balance_error"] = False
+    script.main()  # a healthy run still returns normally
 
 
 def test_reconcile_skips_refill_when_credit_refill_is_zero(session, monkeypatch):
