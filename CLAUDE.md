@@ -89,6 +89,13 @@ silently serving the old bundle. `frontend_sha` is the reload key; `sha` is a
 deprecated alias of it (already-deployed bundles read it). A production build with no
 git and no `BUILD_SHA` env var fails on purpose.
 
+`deploy.sh` runs the frontend **build on every deploy**; only the slow `npm ci` is
+skipped when `frontend/` is unchanged since the last build on the server. It used to
+skip the build too, which left `version.json` describing an older commit after every
+backend-only deploy, so the smoke check's `build_sha == deployed commit` assertion
+failed on all of them (2026-11-05, the first deploy after it was added). If you add a
+fast path to the deploy, it must still leave `build_sha` equal to HEAD.
+
 ## Repository
 - Remote: https://github.com/hamBank/travelCompantion.git
 - PAT stored in Claude memory (project_travel_app.md)
