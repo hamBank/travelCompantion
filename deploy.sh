@@ -126,8 +126,6 @@ else
   sudo -u "$APP_USER" git -C "$APP_DIR" checkout "$REPO_BRANCH"
   sudo -u "$APP_USER" git -C "$APP_DIR" reset --hard "origin/$REPO_BRANCH"
 fi
-# Remove untracked files from static/assets so old content-hashed bundles don't linger.
-sudo -u "$APP_USER" git -C "$APP_DIR" clean -fd backend/static/assets/ 2>/dev/null || true
 ok "Repo up to date"
 # Ensure pipe/exec'd scripts are executable (git clone preserves mode bits,
 # but an explicit chmod guards against any umask or fs-mount edge cases, and
@@ -300,8 +298,10 @@ else
 fi
 
 # ── 4b. (Re)start service — runs HERE so npm below can never block it ──────────
-# backend/static/ is already correct from git reset --hard; there is no reason
-# to wait for npm before bringing up the new Python code and static assets.
+# backend/static/ is build output, not in git: until the build in 6b finishes it
+# still holds the PREVIOUS build (ignored files survive git reset --hard), which
+# is what gets served meanwhile. No reason to hold the new Python code back for
+# npm. (Stale old hashed assets don't linger: each build empties the directory.)
 if $UPDATE_ONLY || $_WAS_RUNNING; then
   info "Restarting $SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
@@ -546,18 +546,11 @@ else
 fi
 
 # ── 6b. Frontend build ──────────────────────────────────────────────────────────
-# Build on EVERY deploy (dependencies are reinstalled only when frontend/ changed
-# since the last build THIS SERVER completed — see the block below). The build was
-# once gated on "the very first time node_modules doesn't exist yet"; that assumption ("backend/static/ is committed to git, so the
-# correct build is already on disk after git reset --hard") relies on whoever
-# merges a frontend change first rebuilding and committing backend/static/ as its
-# own commit (CLAUDE.md's documented flow). Every merge to main goes through
-# GitHub's squash-merge button, which never runs a local `git push` — so the
-# pre-push hook that's supposed to enforce that convention structurally never
-# sees it. It silently broke twice in one session (2026-09-07: PRs #162 and #164
-# landed with no rebuilt static/, and the server kept serving a bundle from
-# before either) before being caught by hand. Deploy must be able to catch up on
-# its own regardless of whether that commit-time convention was followed.
+# backend/static/ is NOT committed (fleet spec BLD-1): this step is the only thing
+# that produces it. It runs on EVERY deploy so the bundle always comes from the
+# commit just checked out and static/version.json (build_sha) says so, which
+# smoke_check.sh asserts afterwards. Dependencies are reinstalled only when
+# frontend/ changed since the last build THIS SERVER completed.
 NPM="sudo -u $APP_USER HOME=$APP_DIR npm"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/.npm" 2>/dev/null || true
 
@@ -594,7 +587,7 @@ fi
 npm_ci_ok=true
 if $need_npm_ci; then
   $NPM --prefix "$APP_DIR/frontend" ci --silent \
-    || { npm_ci_ok=false; warn "npm ci failed — frontend static files from git (or a previous successful build) will still be served"; }
+    || { npm_ci_ok=false; warn "npm ci failed — the previous frontend build (if any) will still be served"; }
 fi
 
 if $npm_ci_ok && [[ -d "$APP_DIR/frontend/node_modules" ]]; then
@@ -604,7 +597,7 @@ if $npm_ci_ok && [[ -d "$APP_DIR/frontend/node_modules" ]]; then
     # Marks that dependencies match this frontend/ state (gates npm ci above).
     sudo -u "$APP_USER" sh -c "echo '$FRONTEND_COMMIT' > '$BUILT_COMMIT_FILE'"
   else
-    warn "Frontend build failed — static files from git (or a previous successful build) will still be served; smoke_check.sh will flag the stale build"
+    warn "Frontend build failed — the previous build (if any) will still be served; smoke_check.sh will flag the stale build"
   fi
 fi
 

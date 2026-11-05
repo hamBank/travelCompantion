@@ -10,9 +10,6 @@ deviations:
   - rule: CFG-2
     reason: JWT_SECRET still defaults to a public string; do together with CFG-3 so the startup guard has an explicit AUTH_ENABLED to key off
     until: 2026-12-01
-  - rule: BLD-1
-    reason: backend/static is still committed; next step now that /health reports build_sha and the smoke check asserts it
-    until: 2026-12-15
   - rule: DEP-1
     reason: deploy.sh has set -euo pipefail but no ERR trap logging file:line
     until: 2026-12-15

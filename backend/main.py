@@ -305,6 +305,10 @@ async def currency_convert(amount: float, from_currency: str, to_currency: str):
 
 
 # Serve the compiled React frontend — must come after all API routes
+# backend/static/ is build output (not in git): on a fresh checkout it doesn't exist
+# until the first frontend build, and the service can start before that build
+# finishes. Create it so the mount always works (404s until files appear) rather
+# than skipping the mount and never serving the frontend until a restart.
 _static = os.path.join(os.path.dirname(__file__), "static")
-if os.path.isdir(_static):
-    app.mount("/", StaticFiles(directory=_static, html=True), name="static")
+os.makedirs(_static, exist_ok=True)
+app.mount("/", StaticFiles(directory=_static, html=True), name="static")

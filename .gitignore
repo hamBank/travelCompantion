@@ -29,8 +29,9 @@ token.json
 .pytest_cache/
 .coverage
 htmlcov/
-# coverage reports are generated on deploy, not committed
-backend/static/coverage/
+# The compiled frontend is built on deploy (deploy.sh), never committed. It also
+# holds the coverage reports and version.json (fleet spec BLD-1).
+backend/static/
 
 # OS
 .DS_Store

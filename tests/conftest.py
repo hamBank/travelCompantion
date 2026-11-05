@@ -7,6 +7,7 @@ from backend.main import app
 from backend.database import get_session
 from backend import database as database_mod
 from backend import flight_live, flight_alert_subscriptions
+from backend.routers import deeplink as deeplink_router, shared as shared_router
 
 # The Postgres CI job (.github/workflows/ci.yml) points DATABASE_URL at a
 # real Postgres service so the suite exercises JSON/enum/datetime dialect
@@ -45,6 +46,18 @@ def make_test_session() -> Session:
     )
     SQLModel.metadata.create_all(engine)
     return Session(engine)
+
+
+@pytest.fixture(autouse=True)
+def _spa_shell(tmp_path, monkeypatch):
+    """backend/static/ is build output (gitignored; deploy.sh builds it), so it
+    does not exist in a fresh checkout or in CI. The routes that serve the SPA
+    shell (/shared/..., /t/...) read index.html through a module-level path;
+    point them at a tiny stand-in so no test depends on a frontend build."""
+    index = tmp_path / "index.html"
+    index.write_text("<!doctype html><title>spa</title><div id=root></div>")
+    monkeypatch.setattr(deeplink_router, "_STATIC_INDEX", str(index))
+    monkeypatch.setattr(shared_router, "_STATIC_INDEX", str(index))
 
 
 @pytest.fixture(autouse=True)

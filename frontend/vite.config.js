@@ -7,9 +7,8 @@ import { writeFileSync } from 'node:fs'
 // Build identity (fleet spec BLD-2). Two different questions, two values:
 //  - frontend_sha: last commit that touched this frontend's source. Baked into
 //    the bundle as __BUILD_SHA__ and compared by the stale-client poller, so a
-//    backend-only deploy doesn't make every open client reload. Stable across
-//    amends that only add backend/static/ files. Path is relative to cwd
-//    (frontend/), which is where vite.config.js executes from.
+//    backend-only deploy doesn't make every open client reload. Path is
+//    relative to cwd (frontend/), which is where vite.config.js executes from.
 //  - build_sha: HEAD when the build ran, i.e. the commit that was deployed.
 //    After a deploy it must equal the backend's own HEAD; smoke_check.sh
 //    asserts that, which catches a build that was skipped or failed.
@@ -24,8 +23,8 @@ function resolveVersion() {
   return { build, frontend: frontend || build }
 }
 
-// Writes version.json (and the older build-sha.txt, still read by the
-// pre-push hook and /health's fallback) into the output dir so /health can
+// Writes version.json (and the older build-sha.txt, still read by
+// /health's fallback) into the output dir so /health can
 // report what this bundle is, read fresh per request.
 function writeVersion(version) {
   return {
