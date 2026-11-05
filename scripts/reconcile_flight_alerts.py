@@ -40,6 +40,13 @@ def main() -> None:
         f"{datetime.now(timezone.utc):%F %T} webhook subs +{w['subscribed']}/-{w['unsubscribed']}"
         f" (credits: {w['credits']}{refilled}){no_coverage}"
     )
+    if w["balance_error"]:
+        # Exit non-zero so the systemd unit shows failed (and smoke_check.sh
+        # flags it) instead of logging an error nobody reads: without a topped-up
+        # balance, new flight subscriptions are created paused.
+        print("ERROR: could not read or top up the alert-credit balance (see the "
+              "'external call failed' line above)", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
