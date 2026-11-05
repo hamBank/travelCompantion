@@ -15,7 +15,18 @@
 #
 # Re-running is safe — all steps are idempotent.
 
-set -euo pipefail
+set -Eeuo pipefail
+
+# Say WHERE a deploy died. `set -e` alone ends the script silently on the failing
+# command, leaving a deploy log that just stops; with -E this trap also fires inside
+# functions and subshells, and prints file:line and the command to the deploy log
+# (the update unit sends stderr to /var/log/travelcomp-deploy.log). It fires only
+# where `set -e` would exit, so `cmd || true`, `if cmd`, and `cmd && ...` stay quiet.
+_on_err() {
+  local rc=$1 line=$2 cmd=$3
+  echo -e "\033[1;31m✗ ERROR\033[0m ${BASH_SOURCE[1]:-deploy.sh}:${line}: \`${cmd}\` exited with status ${rc}" >&2
+}
+trap '_on_err $? $LINENO "$BASH_COMMAND"' ERR
 
 # ── Config (override via environment for a new server) ──────────────────────────
 APP_USER="${APP_USER:-travelcomp}"
@@ -295,6 +306,20 @@ if [[ "$DB_URL" == postgresql* ]]; then
     || die "Alembic upgrade failed — aborting before restart"
 else
   ok "SQLite backend — schema self-migrates on startup (skipping Alembic step)"
+fi
+
+# ── 4a-check. Configuration preflight ──────────────────────────────────────────
+# Authentication fails closed: backend.auth refuses to import with auth neither
+# enabled nor explicitly off, or enabled with a missing/default JWT_SECRET. Find that
+# out HERE, with the new code and the real .env, before the restart replaces a working
+# service with one that crash-loops. A failure aborts the deploy and leaves the running
+# service untouched. (scripts/check_config.py reads .env the way systemd does; it is
+# run as root with bytecode writing off so it leaves no root-owned __pycache__.)
+if { $UPDATE_ONLY || $_WAS_RUNNING; } && [[ -f "$APP_DIR/.env" ]]; then
+  info "Checking configuration with the new code"
+  PYTHONDONTWRITEBYTECODE=1 "$VENV/bin/python" "$APP_DIR/scripts/check_config.py" "$APP_DIR/.env" \
+    || die "Configuration check failed (above) — aborting before restart; the running service is untouched. Fix $APP_DIR/.env and re-run: sudo $APP_DIR/deploy.sh --update"
+  ok "Configuration valid"
 fi
 
 # ── 4b. (Re)start service — runs HERE so npm below can never block it ──────────
@@ -630,6 +655,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   info "Creating $ENV_FILE (fill in secrets before starting)"
   cat > "$ENV_FILE" <<ENVEOF
 # Google OAuth (required for authentication)
+AUTH_ENABLED=true
 GOOGLE_CLIENT_ID=
 ALLOWED_EMAIL=
 JWT_SECRET=$(openssl rand -hex 32)

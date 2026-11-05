@@ -39,9 +39,11 @@ Schemas: `MembershipRead`, `MembershipCreate`. Role enum: `TripRole`.
 
 ## Authentication (unchanged)
 
-Google OAuth → JWT bearer token (`auth.py`). When `GOOGLE_CLIENT_ID` is unset
-(`AUTH_ENABLED = False`, local dev) **all authorization is bypassed** — every
-request is treated as `owner` so the app behaves as before.
+Google OAuth → JWT bearer token (`auth.py`). When `AUTH_ENABLED=false` (local dev
+only, set explicitly) **all authorization is bypassed** — every request is treated as
+`owner` so the app behaves as before. The server refuses to start if `AUTH_ENABLED` is
+unset and `GOOGLE_CLIENT_ID` is empty, or if auth is enabled with the default
+`JWT_SECRET`, so authentication can never be off by accident.
 
 ## Enforcement (backend)
 

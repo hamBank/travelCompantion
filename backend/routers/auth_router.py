@@ -16,7 +16,7 @@ class GoogleAuthRequest(SQLModel):
 @router.post("/auth/google")
 def google_auth(req: GoogleAuthRequest, session: Session = Depends(get_session)):
     if not AUTH_ENABLED:
-        raise HTTPException(status_code=503, detail="Auth not configured (GOOGLE_CLIENT_ID not set)")
+        raise HTTPException(status_code=503, detail="Auth is disabled (AUTH_ENABLED=false)")
     try:
         user = verify_google_token(req.credential)
     except Exception as e:
@@ -49,7 +49,7 @@ def refresh_token(
     would mint a 30-day login token that revoking it could not take back.
     """
     if not AUTH_ENABLED:
-        raise HTTPException(status_code=503, detail="Auth not configured (GOOGLE_CLIENT_ID not set)")
+        raise HTTPException(status_code=503, detail="Auth is disabled (AUTH_ENABLED=false)")
 
     if getattr(request.state, "token_scope", None) is not None:
         raise HTTPException(status_code=403, detail="API tokens can't be exchanged for a session token")

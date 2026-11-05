@@ -75,7 +75,8 @@ def running_server():
               "(`cd frontend && npm run build`)")
     db_path = Path(tempfile.mkstemp(suffix=".db")[1])
     db_path.unlink()  # let sqlite create it fresh
-    env = {"DATABASE_URL": f"sqlite:///{db_path}", "PATH": __import__("os").environ["PATH"]}
+    env = {"DATABASE_URL": f"sqlite:///{db_path}", "AUTH_ENABLED": "false",
+           "PATH": __import__("os").environ["PATH"]}
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "backend.main:app", "--port", str(PORT)],
         cwd=REPO_ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

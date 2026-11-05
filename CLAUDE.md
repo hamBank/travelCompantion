@@ -7,9 +7,16 @@ same FastAPI process.
 
 ## Running the app
 ```bash
-python -m uvicorn backend.main:app --reload
+AUTH_ENABLED=false python -m uvicorn backend.main:app --reload
 # → http://localhost:8000
 ```
+Authentication fails closed (fleet spec CFG-2/CFG-3): `backend.auth` refuses to import,
+so the server won't start, if `AUTH_ENABLED` is unset and `GOOGLE_CLIENT_ID` is empty
+(local dev must say `AUTH_ENABLED=false` on purpose), or if auth is enabled with a
+missing/default `JWT_SECRET`. With `AUTH_ENABLED` unset but `GOOGLE_CLIENT_ID` set it
+still runs enabled, with a warning, so older `.env` files keep working. The test suite
+sets `AUTH_ENABLED=false` in `tests/conftest.py`; `deploy.sh` checks the config before
+restarting so a bad `.env` aborts the deploy instead of taking the site down.
 
 ## Database & schema migrations
 `DATABASE_URL` selects the backend (defaults to `sqlite:///./travel.db`; Postgres
