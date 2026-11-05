@@ -1,0 +1,7 @@
+# Scripts that run on the Linux server (deploy.sh, the systemd timers' Python
+# scripts, shebang executables) must be checked out with LF endings. On Windows,
+# git's autocrlf converts them to CRLF, and bash then fails with
+# "$'\r': command not found" / "set: pipefail: invalid option name", and
+# executed scripts with "bad interpreter".
+*.sh text eol=lf
+*.py text eol=lf
