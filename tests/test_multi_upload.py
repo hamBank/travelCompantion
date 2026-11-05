@@ -118,7 +118,7 @@ def test_deduplication_across_documents(client, session):
          "details": {"flight_number": "AY 132", "depart_time": "2026-07-24T21:35",
                      "origin": "SIN", "destination": "HEL", "booking_ref": "DYL7CY"}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     # Dedup by booking_ref+kind → only one pending
     assert len(pcs) == 1
 
@@ -142,7 +142,7 @@ def test_two_passengers_same_flight_merged(client, session):
                      "passengers": [{"name": "Mrs Nicole Wuth", "seat": "3D",
                                      "baggage": "2 x 32kg"}]}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     # Both passengers merge into one create
     assert len(pcs) == 1
     merged_pax = pcs[0].payload["details"]["passengers"]
@@ -168,7 +168,7 @@ def test_same_booking_ref_different_legs_not_deduped(client, session):
                      "origin": "DOH", "destination": "PER", "booking_ref": "FVLYWE",
                      "passengers": [{"name": "Mrs Nicole Wuth", "seat": "03E"}]}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 2, f"Expected 2 pending changes, got {len(pcs)}"
     flight_numbers = {(pc.payload or {}).get("details", {}).get("flight_number") for pc in pcs}
     assert "QR 40" in flight_numbers

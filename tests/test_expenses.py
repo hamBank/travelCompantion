@@ -120,7 +120,7 @@ def test_delete_expense(client: TestClient, trip):
 
 
 def test_viewer_cannot_create_expense(client: TestClient, trip, session: Session, monkeypatch):
-    # `trip` was created with auth disabled (dev@local auto-owner). Flip to a
+    # `trip` was created with auth disabled (dev@localhost auto-owner). Flip to a
     # real, membership-scoped viewer identity to exercise the actual 403 path
     # — same pattern as test_ical.py's test_calendar_url_requires_at_least_viewer_access.
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)

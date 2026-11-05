@@ -14,7 +14,7 @@ vi.mock('../vaultOfflineStore.js', () => ({
 }))
 
 const DOC = {
-  id: 1, user_email: 'dev@local', doc_type: 'passport', label: 'US Passport',
+  id: 1, user_email: 'dev@localhost', doc_type: 'passport', label: 'US Passport',
   country: 'US', issued_date: null, expiry_date: null, notes: '',
   created_at: '2026-01-01T00:00:00', updated_at: '2026-01-01T00:00:00',
 }

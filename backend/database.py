@@ -146,14 +146,17 @@ def _backfill_accommodations():
 
 
 def _backfill_trip_ownership():
-    """Give every trip without any membership an owner. Uses ALLOWED_EMAIL (the
-    single existing user) so pre-permissions trips remain accessible."""
+    """Give every trip without any membership an owner. Uses the first
+    ALLOWED_EMAILS entry (the original single user) so pre-permissions trips
+    remain accessible."""
     try:
         import os
         from .models import Trip, TripMembership, TripRole
         from sqlmodel import select
 
-        owner_email = os.environ.get("ALLOWED_EMAIL", "").lower()
+        from .allowlist import parse_allowed_emails
+        emails = parse_allowed_emails(os.environ)
+        owner_email = emails[0] if emails else ""
         if not owner_email:
             return  # nothing to assign to (auth-disabled / no configured user)
 

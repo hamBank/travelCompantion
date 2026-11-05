@@ -255,7 +255,7 @@ cross-user-isolation shape on the newest cascade-delete tests in
 
 1. Generate and set `DOCUMENT_ENCRYPTION_KEY`; restart the backend.
 2. `curl -X POST /me/documents` with a passport's metadata (as the dev-mode
-   `dev@local` user, or a real bearer token) → note the returned `id`.
+   `dev@localhost` user, or a real bearer token) → note the returned `id`.
 3. `curl -X POST /me/documents/{id}/files -F file=@passport.jpg` → note the
    returned file `id`.
 4. `curl /me/documents/{id}/files/{file_id}` → save the response body, diff

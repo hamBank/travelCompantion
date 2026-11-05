@@ -13,7 +13,7 @@ from backend import document_crypto
 from backend.auth import get_current_user
 from backend.main import app
 
-OWNER = "dev@local"   # AUTH_ENABLED is off in tests, so get_current_user always
+OWNER = "dev@localhost"   # AUTH_ENABLED is off in tests, so get_current_user always
                         # returns this — matches backend/auth.py's dev fallback.
 OTHER = "other@example.com"
 

@@ -13,7 +13,7 @@ def trip_stop(client: TestClient):
 
 
 def _mk_pending(session: Session, trip_id=None, stop_id=None, op="create",
-                target_item_id=None, created_by="dev@local", name="Colosseum"):
+                target_item_id=None, created_by="dev@localhost", name="Colosseum"):
     pc = PendingChange(
         created_by=created_by, source="upload", trip_id=trip_id,
         suggested_stop_id=stop_id, op=op, target_item_id=target_item_id,

@@ -55,7 +55,7 @@ def test_ingest_unknown_token_stores_email_no_pending(client, session, ingest_en
 
 
 def test_ingest_resolves_user_and_creates_email_pending(client, session, ingest_env):
-    session.add(UserImportToken(user_email="dev@local", token="TESTTOKEN"))
+    session.add(UserImportToken(user_email="dev@localhost", token="TESTTOKEN"))
     session.commit()
     r = _post(client)
     assert r.status_code == 202
@@ -67,7 +67,7 @@ def test_ingest_resolves_user_and_creates_email_pending(client, session, ingest_
     pc = pcs[0]
     assert pc.source == "email"
     assert pc.trip_id is None              # user picks the trip at review
-    assert pc.created_by == "dev@local"
+    assert pc.created_by == "dev@localhost"
     assert pc.payload["details"]["flight_number"] == "AY 132"  # normalised
 
     em = session.exec(select(IngestedEmail)).all()[0]
@@ -77,7 +77,7 @@ def test_ingest_resolves_user_and_creates_email_pending(client, session, ingest_
 
 def test_ingest_reads_token_from_delivered_to_header(client, session, ingest_env):
     """When the pipe passes no X-Original-To, fall back to the email's headers."""
-    session.add(UserImportToken(user_email="dev@local", token="HDRTOKEN"))
+    session.add(UserImportToken(user_email="dev@localhost", token="HDRTOKEN"))
     session.commit()
     eml = (b"From: x <x@finnair.com>\n"
            b"To: antony@gmail.com\n"
@@ -87,7 +87,7 @@ def test_ingest_reads_token_from_delivered_to_header(client, session, ingest_env
     assert r.status_code == 202
     assert r.json()["resolved"] is True
     pcs = session.exec(select(PendingChange)).all()
-    assert len(pcs) == 1 and pcs[0].created_by == "dev@local"
+    assert len(pcs) == 1 and pcs[0].created_by == "dev@localhost"
 
 
 def test_import_address_is_generated_and_stable(client):
@@ -111,7 +111,7 @@ def test_regenerate_import_address_changes_the_token(client, session):
     assert client.get("/me/import-address").json()["address"] == rotated
 
     # Exactly one row for the user (rotation updates in place, doesn't leave a stale row).
-    rows = session.exec(select(UserImportToken).where(UserImportToken.user_email == "dev@local")).all()
+    rows = session.exec(select(UserImportToken).where(UserImportToken.user_email == "dev@localhost")).all()
     assert len(rows) == 1
 
 

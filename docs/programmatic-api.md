@@ -80,7 +80,7 @@ Response:
   suffix, same convention as every other timestamp the API returns.
 
 If auth is disabled on the server (`AUTH_ENABLED=false` — local dev),
-every request is already the `dev@local` user and no token is needed.
+every request is already the `dev@localhost` user and no token is needed.
 
 ### 2c. Use the token
 

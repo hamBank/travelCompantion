@@ -18,6 +18,14 @@ still runs enabled, with a warning, so older `.env` files keep working. The test
 sets `AUTH_ENABLED=false` in `tests/conftest.py`; `deploy.sh` checks the config before
 restarting so a bad `.env` aborts the deploy instead of taking the site down.
 
+**Sign-in allowlist (fleet spec CFG-4/CFG-5).** `ALLOWED_EMAILS` is a comma-separated list
+(`backend/allowlist.py`); the first entry is also the owner given pre-sharing trips. The old
+singular `ALLOWED_EMAIL` is still read, with a warning, only while `ALLOWED_EMAILS` is
+unset/empty — if both are set the plural wins and they are never merged. Rename it in the
+server `.env` at your convenience, then the fallback can be deleted. With auth disabled
+every request is the dev user `dev@localhost` (`auth.DEV_USER_EMAIL`; it was `dev@local`, so
+an old local `travel.db` keeps its trips under the old address).
+
 **Remote sessions (fleet spec PRC-2).** `.claude/hooks/session-start.sh` runs on session
 start in Claude Code on the web only (`CLAUDE_CODE_REMOTE=true`): it creates `.venv`,
 installs `backend/requirements.txt`, exports `AUTH_ENABLED=false` and `.venv/bin` onto the

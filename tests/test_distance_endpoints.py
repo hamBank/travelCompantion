@@ -3,14 +3,14 @@
 D6 (docs/plans/plan-17-travelers.md, plan-17b-personal-totals.md): personal
 totals key on being a **traveler** on a trip, not merely a member (owner/
 editor/viewer). Auth is disabled in this suite (see tests/conftest.py), so
-every request is `dev@local`-as-owner — creating a trip auto-adds a
-TripMembership for dev@local (see backend/routers/trips.py) but never a
+every request is `dev@localhost`-as-owner — creating a trip auto-adds a
+TripMembership for dev@localhost (see backend/routers/trips.py) but never a
 Traveler row (D1), so `_add_traveler` below must be called explicitly
-wherever a trip should count toward dev@local's totals.
+wherever a trip should count toward dev@localhost's totals.
 """
 from fastapi.testclient import TestClient
 
-DEV_EMAIL = "dev@local"
+DEV_EMAIL = "dev@localhost"
 
 
 def _trip_with_stop(client: TestClient):
@@ -88,14 +88,14 @@ def test_me_distance_totals_sums_across_trips(client: TestClient):
 # ── D6: totals key on being a traveler, not on membership ──────────────────
 
 def test_owner_not_traveler_excluded_traveler_included(client: TestClient):
-    # Trip A: dev@local is owner (auto-membership on create) but never added
+    # Trip A: dev@localhost is owner (auto-membership on create) but never added
     # as a traveler.
     trip_a, stop_a = _trip_with_stop(client)
     client.post(f"/stops/{stop_a['id']}/items", json={
         "kind": "cycling", "name": "Ride A", "status": "pending",
         "details": {"gpx_distance_m": 10000},
     })
-    # Trip B: dev@local is both owner and traveler.
+    # Trip B: dev@localhost is both owner and traveler.
     trip_b, stop_b = _trip_with_stop(client)
     _add_traveler(client, trip_b["id"])
     client.post(f"/stops/{stop_b['id']}/items", json={
@@ -106,7 +106,7 @@ def test_owner_not_traveler_excluded_traveler_included(client: TestClient):
     body = client.get("/me/distance-totals").json()
     assert body["by_mode"] == {"bike": 4.0}   # trip A's distance is excluded
 
-    # Add dev@local as a traveler on A too -> both now count.
+    # Add dev@localhost as a traveler on A too -> both now count.
     _add_traveler(client, trip_a["id"])
     body = client.get("/me/distance-totals").json()
     assert body["by_mode"] == {"bike": 14.0}

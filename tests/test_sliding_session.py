@@ -35,7 +35,7 @@ def _get(client, path, token):
 def _auth_on(monkeypatch):
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router, "AUTH_ENABLED", True)
-    monkeypatch.setattr(auth, "ALLOWED_EMAIL", ADMIN)
+    monkeypatch.setattr(auth, "ALLOWED_EMAILS", [ADMIN])
 
 
 # ── token_refresh_due ────────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ def test_error_responses_never_carry_a_new_token(client: TestClient):
 
 
 def test_revoked_user_can_finish_their_token_but_not_extend_it(client: TestClient):
-    # Not ALLOWED_EMAIL and no trip membership: the sign-in gate says no.
+    # Not on ALLOWED_EMAILS and no trip membership: the sign-in gate says no.
     r = _get(client, "/auth/me", _token(email="gone@example.com", age=LIFETIME * 0.6))
     assert r.status_code == 200
     assert HEADER not in r.headers

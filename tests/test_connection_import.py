@@ -68,7 +68,7 @@ def test_connection_extracted_as_two_items(client, session):
                          {"name": "Mrs Nicole Wuth", "seat": "2A", "baggage": "2x checked bag max 32kg"},
                      ]}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 2
     assert all(pc.op == "update" for pc in pcs)
     by_flight = {(pc.diff or {}).get("after", {}).get("passengers", [{}])[0].get("seat", ""): pc
@@ -89,7 +89,7 @@ def test_connection_does_not_overwrite_leg_destination(client, session):
          "details": {"flight_number": "AY 132", "depart_time": "2026-07-24T21:35",
                      "origin": "SIN", "destination": "CDG"}},   # wrong dest!
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 1
     pc = pcs[0]
     # Should match AY132 and NOT flag destination as changed

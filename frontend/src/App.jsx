@@ -1137,7 +1137,7 @@ function AuthenticatedApp() {
         setGoogleClientId(cfg.client_id)
         if (!cfg.enabled) {
           // No auth configured — go straight in
-          setUser({ email: 'dev@local', name: 'Dev', picture: '' })
+          setUser({ email: 'dev@localhost', name: 'Dev', picture: '' })
         } else if (!hasStoredToken) {
           // Check for existing token
           const token = localStorage.getItem('tc-token')

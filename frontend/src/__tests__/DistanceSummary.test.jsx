@@ -19,7 +19,7 @@ beforeEach(() => {
   api.getTripDistance.mockResolvedValue({ by_mode: {}, total_km: 0 })
   api.getMyTravelTotals.mockResolvedValue(travelTotals)
   api.getTravelers.mockResolvedValue([])
-  api.getCurrentUser.mockResolvedValue({ email: 'dev@local' })
+  api.getCurrentUser.mockResolvedValue({ email: 'dev@localhost' })
 })
 
 describe('DistanceSummary — My totals', () => {
@@ -43,14 +43,14 @@ describe('DistanceSummary — My totals', () => {
 
   it('shows the not-a-traveler hint when the current user is missing from the trip\'s travelers list', async () => {
     api.getTravelers.mockResolvedValue([{ id: 1, user_email: 'someone-else@example.com' }])
-    api.getCurrentUser.mockResolvedValue({ email: 'dev@local' })
+    api.getCurrentUser.mockResolvedValue({ email: 'dev@localhost' })
     render(<DistanceSummary trip={trip} onClose={() => {}} />)
     expect(await screen.findByText(/You're not listed as a traveler on this trip/)).toBeInTheDocument()
   })
 
   it('hides the not-a-traveler hint when the current user is in the trip\'s travelers list', async () => {
-    api.getTravelers.mockResolvedValue([{ id: 1, user_email: 'dev@local' }])
-    api.getCurrentUser.mockResolvedValue({ email: 'dev@local' })
+    api.getTravelers.mockResolvedValue([{ id: 1, user_email: 'dev@localhost' }])
+    api.getCurrentUser.mockResolvedValue({ email: 'dev@localhost' })
     render(<DistanceSummary trip={trip} onClose={() => {}} />)
     await waitFor(() => expect(api.getTravelers).toHaveBeenCalledWith(1))
     expect(screen.queryByText(/You're not listed as a traveler on this trip/)).not.toBeInTheDocument()
