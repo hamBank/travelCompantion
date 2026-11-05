@@ -283,7 +283,7 @@ See **PERMISSIONS.md** for the full role/sharing design. In brief: per-trip role
 (`RoleContext`) gates UI. Sharing via owner-only `ShareModal` + `/trips/{id}/members`,
 plus a public no-login `share_token` link (`shared.py` router / `SharedTripView.jsx`).
 
-- `auth.py` `AUTH_ENABLED` (env). When disabled, middleware passes through, the
+- `auth.py` `AUTH_ENABLED` (env; explicit, fails closed — see CLAUDE.md). When disabled, middleware passes through, the
   frontend auto-logs-in as a dev user, and all permission checks return `owner`.
 - When enabled: middleware validates `Authorization: Bearer <JWT>` except for
   public prefixes/paths (see `auth.py` for the exact allowlist — `/auth/`,

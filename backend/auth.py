@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -10,15 +11,65 @@ from google.auth.transport import requests as google_requests
 from .database import get_session
 from .metrics import record_external_call
 
+class ConfigError(RuntimeError):
+    """Raised at import when the auth configuration is unsafe. The process must
+    not start: the alternative is serving with authentication silently off, or
+    with a signing secret anyone can read in the source."""
+
+
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
-JWT_SECRET       = os.environ.get("JWT_SECRET", "dev-secret-change-in-production")
+_DEFAULT_JWT_SECRET = "dev-secret-change-in-production"
+JWT_SECRET       = os.environ.get("JWT_SECRET", _DEFAULT_JWT_SECRET)
 JWT_ALGORITHM    = "HS256"
 JWT_EXPIRE_DAYS  = int(os.environ.get("JWT_EXPIRE_DAYS", "30"))
 ALLOWED_EMAIL    = os.environ.get("ALLOWED_EMAIL", "").lower()
 
-# Auth is only enforced when GOOGLE_CLIENT_ID is configured.
-# Without it the app works as before (useful for local dev).
-AUTH_ENABLED = bool(GOOGLE_CLIENT_ID)
+
+def resolve_auth_enabled(env) -> bool:
+    """AUTH_ENABLED is an explicit setting that fails closed (fleet spec CFG-3).
+
+    It used to be derived from GOOGLE_CLIENT_ID being non-empty, so losing that
+    one line from .env switched authentication off with no error. Now:
+      AUTH_ENABLED=true/false  -> as stated.
+      unset, GOOGLE_CLIENT_ID set -> enabled, with a warning to set it
+        explicitly (keeps existing deployments working through the change).
+      unset, no GOOGLE_CLIENT_ID  -> refuse to start. Local dev must say
+        AUTH_ENABLED=false on purpose.
+    """
+    raw = (env.get("AUTH_ENABLED") or "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    if raw:
+        raise ConfigError(f"AUTH_ENABLED={raw!r} is not a boolean: use true or false.")
+    if env.get("GOOGLE_CLIENT_ID"):
+        logging.getLogger(__name__).warning(
+            "AUTH_ENABLED is not set; treating authentication as enabled because "
+            "GOOGLE_CLIENT_ID is set. Add AUTH_ENABLED=true to .env.")
+        return True
+    raise ConfigError(
+        "AUTH_ENABLED is not set and GOOGLE_CLIENT_ID is empty: refusing to start with "
+        "authentication silently off. Set AUTH_ENABLED=false for local development, or "
+        "set AUTH_ENABLED=true with GOOGLE_CLIENT_ID.")
+
+
+def validate_auth_config(enabled: bool, client_id: str, secret: str) -> None:
+    """With auth enabled the process needs a client id to verify logins and a
+    private signing secret (fleet spec CFG-2). The default secret is in the
+    source, so anyone could mint a valid token with it."""
+    if not enabled:
+        return
+    if not client_id:
+        raise ConfigError("AUTH_ENABLED=true but GOOGLE_CLIENT_ID is empty.")
+    if not secret or secret == _DEFAULT_JWT_SECRET:
+        raise ConfigError(
+            "JWT_SECRET is unset or still the public default: anyone could forge a login "
+            "token. Set it to a long random string, e.g. `openssl rand -hex 32`.")
+
+
+AUTH_ENABLED = resolve_auth_enabled(os.environ)
+validate_auth_config(AUTH_ENABLED, GOOGLE_CLIENT_ID, JWT_SECRET)
 
 _security = HTTPBearer(auto_error=False)
 

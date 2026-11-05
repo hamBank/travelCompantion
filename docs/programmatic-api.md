@@ -79,7 +79,7 @@ Response:
 - `expires_at` (here and in §2d's list) is a UTC ISO datetime with a `Z`
   suffix, same convention as every other timestamp the API returns.
 
-If auth isn't configured on the server (`GOOGLE_CLIENT_ID` unset — local dev),
+If auth is disabled on the server (`AUTH_ENABLED=false` — local dev),
 every request is already the `dev@local` user and no token is needed.
 
 ### 2c. Use the token
