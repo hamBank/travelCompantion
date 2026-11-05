@@ -86,6 +86,11 @@ jobs:
       - name: Run frontend tests
         run: npm test
 
+      # backend/static/ is no longer committed, so the deploy is the only thing
+      # that builds the frontend: prove here that it builds.
+      - name: Build frontend
+        run: npm run build
+
   # Fleet spec conformance (https://github.com/hamBank/fleetSpec). Pinned to the
   # spec version this repo declares in .fleet-spec.yml, so a spec change never
   # breaks this CI unexpectedly: bump `spec:` here when adopting a new version.

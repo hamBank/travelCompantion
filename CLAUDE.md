@@ -2,7 +2,8 @@
 
 ## Project
 FastAPI + SQLModel backend, React + Vite + Tailwind frontend.
-Frontend is compiled into `backend/static/` and served by the same FastAPI process.
+Frontend is compiled into `backend/static/` (on deploy; not committed) and served by the
+same FastAPI process.
 
 ## Running the app
 ```bash
@@ -24,77 +25,34 @@ The URL comes from `DATABASE_URL` via `alembic/env.py` (not alembic.ini). See
 speed; the drift guard keeps that in sync with the migrations.
 
 ## Frontend build
-The app bakes the current git SHA into the JS bundle so the SHA health-poller can
-detect stale clients. The build MUST run after the source commit so it captures the
-correct SHA. Always follow this order:
+`backend/static/` is **build output: gitignored, never committed** (fleet spec BLD-1).
+`deploy.sh --update` runs the frontend build on **every** deploy, after it has checked
+out the new commit, so the bundle always comes from the commit being deployed. Locally,
+`cd frontend && npm run build` produces it for you to look at (or just use `vite`
+dev); don't commit the result. CI builds the frontend too, so a build that would fail
+on the server fails the PR instead. (Until 2026-11-05 the bundle was committed, with a
+two-commit "source, then build" rule and a pre-push hook enforcing it; that is gone.
+Existing clones should run `bash scripts/install-hooks.sh` once to remove the old hook,
+which would otherwise block pushes that touch `frontend/src/`.)
 
-```bash
-# 1. Commit source changes (frontend/src/ and/or backend/)
-git add ...
-git commit -m "..."
-
-# 2. Build — HEAD is now the new commit, so the correct SHA is baked in
-cd frontend && npm run build
-
-# 3. Commit the build output as its OWN commit (do NOT amend — see below)
-cd ..
-git add backend/static/
-git commit -m "Build frontend for <short-sha-from-step-1>"
-
-# 4. Push
-git push origin main
-```
-
-**NEVER** skip steps 2–3 when `frontend/src/` files changed — the old compiled bundle
-will be served and the SHA health-poller will loop or show stale features.
-
-**Do not use `git commit --amend` for the build commit.** `npm run build` computes
-the baked SHA as `git log -1 --format=%h -- src` — the hash of the commit that last
-touched `frontend/src`. Amending that same commit to add `backend/static/` rewrites
-its own hash, so the SHA baked into `build-sha.txt` / `__BUILD_SHA__` ends up
-referring to a commit that no longer exists post-amend. This was silently wrong on
-every prior deploy (confirmed via git history 2026-07-05) — harmless for the actual
-stale-client-reload check (client and server both come from the same build, so they
-still agree with each other), but it means the SHA shown in the footer and `/health`
-never matched the real deployed commit, defeating its value for debugging deploys.
-Committing the build output separately means `build-sha.txt` will be one commit
-"behind" HEAD (pointing at the source commit, not the follow-up build commit) — that
-mismatch is expected and fine; the SHA it reports is a real, permanent, reachable
-commit that accurately represents the deployed code, which is what matters.
-
-A pre-push git hook enforces this automatically. Install it once per clone:
-```bash
-bash scripts/install-hooks.sh
-```
-The hook aborts the push with a clear error if `frontend/src/` changed but
-`backend/static/` was not rebuilt in the same set of commits.
-
-**PR-workflow caveat (squash-merge orphans baked SHAs).** The two-commit rule
-above was written for direct pushes to `main`. On the PR workflow (below), the
-squash-merge rewrites the branch's commits into one new commit on `main`, so
-whatever SHA got baked on the branch — amended or not — refers to a commit that
-no longer exists after merge. That's accepted: the baked SHA still does its real
-job (stale-client reload detection — client and server come from the same build,
-so they agree with each other), but it is NOT a deploy identifier. To verify
-what's actually deployed, use the `backend_sha` field in `/health` (the backend's
-`git rev-parse` at startup — always a real, reachable `main` commit), not the
-`sha` field, which is the frontend-bundle bake and lags/orphans as described.
-
-**Build identity (fleet spec BLD-2, OBS-1).** The build also writes
+**Build identity (fleet spec BLD-2, OBS-1).** The build writes
 `backend/static/version.json` = `{build_sha, frontend_sha, built_at}` and `/health`
-reports them next to `backend_sha`. `build_sha` is the HEAD the bundle was built
-from; after a deploy it must equal `backend_sha`, and `scripts/smoke_check.sh`
-asserts that — a build that was skipped or failed shows up as a mismatch instead of
-silently serving the old bundle. `frontend_sha` is the reload key; `sha` is a
-deprecated alias of it (already-deployed bundles read it). A production build with no
-git and no `BUILD_SHA` env var fails on purpose.
+reports them next to `backend_sha`:
+- `backend_sha` — HEAD of the running backend checkout. This is the deployed commit,
+  always a real, reachable `main` commit.
+- `build_sha` — the HEAD the bundle was built from. After a deploy it must equal
+  `backend_sha`; `scripts/smoke_check.sh` asserts that, so a build that was skipped or
+  failed shows up as a mismatch instead of silently serving an old bundle.
+- `frontend_sha` — last commit that touched `frontend/src`, baked into the bundle as
+  `__BUILD_SHA__`. It is the stale-client reload key and only changes when the frontend
+  does, so backend-only deploys don't make open clients reload. `sha` is a deprecated
+  alias of it (already-deployed bundles read it).
 
-`deploy.sh` runs the frontend **build on every deploy**; only the slow `npm ci` is
-skipped when `frontend/` is unchanged since the last build on the server. It used to
-skip the build too, which left `version.json` describing an older commit after every
-backend-only deploy, so the smoke check's `build_sha == deployed commit` assertion
-failed on all of them (2026-11-05, the first deploy after it was added). If you add a
-fast path to the deploy, it must still leave `build_sha` equal to HEAD.
+A production build with no git and no `BUILD_SHA` env var fails on purpose. `deploy.sh`
+skips only the slow `npm ci` when `frontend/` is unchanged, never the build; if you add
+a fast path to the deploy it must still leave `build_sha` equal to HEAD (the first
+deploy after this check was added failed every backend-only deploy for exactly that
+reason, 2026-11-05).
 
 ## Repository
 - Remote: https://github.com/hamBank/travelCompantion.git
@@ -103,11 +61,8 @@ fast path to the deploy, it must still leave `build_sha` equal to HEAD.
 
 ## Git workflow (PRs, not direct pushes)
 Work lands via pull requests, squash-merged to `main`:
-1. Develop on a feature branch cut from fresh `origin/main`. Commit source
-   first; if `frontend/src/` changed, build and include `backend/static/`
-   (on a squashed branch the amend-vs-separate distinction no longer matters —
-   see the caveat above — but the build must still happen AFTER the source
-   commit, and never be skipped).
+1. Develop on a feature branch cut from fresh `origin/main`. Don't commit
+   `backend/static/` (see "Frontend build").
 2. Run the test suites (`python -m pytest tests/ -q`, `cd frontend && npx
    vitest run`) before pushing.
 3. Push the branch, open the PR **non-draft** (draft PRs block auto-merge),
@@ -117,8 +72,8 @@ Work lands via pull requests, squash-merged to `main`:
 4. Merges to `main` auto-deploy via the server's webhook → `.deploy-trigger`
    path watcher (`deploy.sh --update`). If a merge doesn't appear on the
    server within a few minutes, it can be forced: `sudo ./deploy.sh --update`.
-5. Verify the deploy against `/health`'s `backend_sha` (and `scripts/
-   smoke_check.sh` on the server), not the `sha` field.
+5. Verify the deploy: `/health` `backend_sha` is the merged commit and `build_sha`
+   equals it (`scripts/smoke_check.sh` on the server checks both).
 6. After each squash-merge, reset the working branch onto `origin/main`
    before starting the next change (the old branch commits are orphaned).
 

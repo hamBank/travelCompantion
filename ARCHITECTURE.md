@@ -30,7 +30,7 @@ with role-based permissions, an **offline-capable PWA** with a write queue, and
   is the source of truth; every model change needs a migration (see CLAUDE.md).
   SQLite tests still use `create_all()` for speed; `test_alembic_drift.py`
   keeps that in sync with the migrations.
-- **Frontend:** React + Vite + Tailwind, built into `backend/static/` (committed)
+- **Frontend:** React + Vite + Tailwind, built into `backend/static/` by `deploy.sh` on every deploy (gitignored, not committed)
 - **Auth:** Google OAuth (JWT bearer tokens); auth can be disabled for local dev
   (`AUTH_ENABLED=False` — every request treated as `owner`)
 - **Server:** systemd unit `travelcomp` runs uvicorn behind an Apache vhost
@@ -420,8 +420,7 @@ this doc:
   before almost everything in this file existed — it predates permissions,
   email ingestion, packing, the document vault, budget, weather, and more.
   Kept as a historical snapshot, not a current reference.
-- The compiled `backend/static/` bundle is committed — always rebuild before
-  commit, and as a **separate commit** from the source change (see CLAUDE.md
-  for exactly why the ordering matters).
+- The compiled `backend/static/` bundle is build output: gitignored and produced by
+  `deploy.sh` on every deploy, never committed (see CLAUDE.md, "Frontend build").
 - Tests: `tests/` (pytest backend, ~650+ passing), `frontend/src/__tests__/`
   (vitest + testing-library, ~410+ passing).
