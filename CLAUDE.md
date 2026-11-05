@@ -80,6 +80,15 @@ what's actually deployed, use the `backend_sha` field in `/health` (the backend'
 `git rev-parse` at startup — always a real, reachable `main` commit), not the
 `sha` field, which is the frontend-bundle bake and lags/orphans as described.
 
+**Build identity (fleet spec BLD-2, OBS-1).** The build also writes
+`backend/static/version.json` = `{build_sha, frontend_sha, built_at}` and `/health`
+reports them next to `backend_sha`. `build_sha` is the HEAD the bundle was built
+from; after a deploy it must equal `backend_sha`, and `scripts/smoke_check.sh`
+asserts that — a build that was skipped or failed shows up as a mismatch instead of
+silently serving the old bundle. `frontend_sha` is the reload key; `sha` is a
+deprecated alias of it (already-deployed bundles read it). A production build with no
+git and no `BUILD_SHA` env var fails on purpose.
+
 ## Repository
 - Remote: https://github.com/hamBank/travelCompantion.git
 - PAT stored in Claude memory (project_travel_app.md)

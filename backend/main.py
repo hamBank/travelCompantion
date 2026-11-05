@@ -2,10 +2,12 @@ import os, hmac, hashlib, json, logging, logging.handlers, subprocess
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from .database import create_db_and_tables
+from sqlalchemy import text
+from sqlmodel import Session
+from .database import create_db_and_tables, get_session
 from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me, weather, packing, push, attachments, calendar, shared, vault, expenses, webhooks, travelers, deeplink
 from .routers.auth_router import router as auth_router
 from . import metrics as _metrics  # registers all travelcomp_* counters at startup
@@ -225,16 +227,45 @@ _BACKEND_SHA = _compute_backend_sha()
 _STARTED_AT  = datetime.now(timezone.utc).isoformat()
 
 
+def _read_version() -> dict:
+    """static/version.json, written by the frontend build (vite.config.js):
+    {build_sha, frontend_sha, built_at}. Read per request, never cached: the
+    deploy restarts the service BEFORE the frontend build finishes, so a value
+    cached at startup would describe the previous build. Tiny file; {} if absent
+    (a build from before it existed)."""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "static", "version.json")) as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 @app.get("/health")
-def health():
+def health(session: Session = Depends(get_session)):
+    """Fleet-spec OBS-1 contract. `frontend_sha` is the stale-client reload key
+    (last commit that touched the frontend); `build_sha` is the commit the
+    bundle was built from and must equal `backend_sha` after a deploy
+    (smoke_check.sh asserts it); `sha` is a deprecated alias of `frontend_sha`
+    because already-deployed bundles read it."""
     from .database import get_data_version
-    return {
+    version = _read_version()
+    frontend_sha = version.get("frontend_sha") or _frontend_sha()
+    body = {
         "status": "ok",
-        "sha": _frontend_sha(),
+        "sha": frontend_sha,
+        "frontend_sha": frontend_sha,
         "backend_sha": _BACKEND_SHA,
+        "build_sha": version.get("build_sha"),
+        "built_at": version.get("built_at"),
         "started_at": _STARTED_AT,
         "data_version": get_data_version(),
     }
+    try:
+        session.exec(text("SELECT 1"))
+    except Exception:
+        return JSONResponse({**body, "status": "error", "detail": "database unreachable"}, status_code=503)
+    return body
 
 
 @app.get("/currency/convert")

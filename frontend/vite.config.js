@@ -4,30 +4,58 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { execSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 
-let BUILD_SHA = 'dev'
-try {
-  // Use the SHA of the last commit touching this frontend's source so the value
-  // is stable across amends that only add backend/static/ files. Path is relative
-  // to cwd (frontend/), which is where vite.config.js executes from.
-  BUILD_SHA = execSync('git log -1 --format=%h -- src').toString().trim()
-  if (!BUILD_SHA) BUILD_SHA = execSync('git rev-parse --short HEAD').toString().trim()
-} catch {}
-
-// Writes build-sha.txt into the output dir so /health can return the frontend
-// build SHA rather than git HEAD — preventing backend-only commits from
-// triggering the SHA health-poller reload on all clients.
-const writeBuildSha = {
-  name: 'write-build-sha',
-  closeBundle() {
-    try { writeFileSync('../backend/static/build-sha.txt', BUILD_SHA) } catch {}
-  },
+// Build identity (fleet spec BLD-2). Two different questions, two values:
+//  - frontend_sha: last commit that touched this frontend's source. Baked into
+//    the bundle as __BUILD_SHA__ and compared by the stale-client poller, so a
+//    backend-only deploy doesn't make every open client reload. Stable across
+//    amends that only add backend/static/ files. Path is relative to cwd
+//    (frontend/), which is where vite.config.js executes from.
+//  - build_sha: HEAD when the build ran, i.e. the commit that was deployed.
+//    After a deploy it must equal the backend's own HEAD; smoke_check.sh
+//    asserts that, which catches a build that was skipped or failed.
+// BUILD_SHA / FRONTEND_SHA env vars cover builds with no .git (CI, Docker).
+function resolveVersion() {
+  let build = process.env.BUILD_SHA || ''
+  let frontend = process.env.FRONTEND_SHA || ''
+  try {
+    if (!build) build = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    if (!frontend) frontend = execSync('git log -1 --format=%h -- src', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  } catch {}
+  return { build, frontend: frontend || build }
 }
 
-export default defineConfig({
-  define: { __BUILD_SHA__: JSON.stringify(BUILD_SHA) },
+// Writes version.json (and the older build-sha.txt, still read by the
+// pre-push hook and /health's fallback) into the output dir so /health can
+// report what this bundle is, read fresh per request.
+function writeVersion(version) {
+  return {
+    name: 'write-version',
+    closeBundle() {
+      try {
+        writeFileSync('../backend/static/version.json', JSON.stringify({
+          build_sha: version.build,
+          frontend_sha: version.frontend,
+          built_at: new Date().toISOString(),
+        }))
+        writeFileSync('../backend/static/build-sha.txt', version.frontend)
+      } catch {}
+    },
+  }
+}
+
+export default defineConfig(({ command }) => {
+  const version = resolveVersion()
+  // No silent 'unknown': a production build with no way to tell which commit
+  // it is would make the post-deploy identity check meaningless (BLD-3).
+  // `vite dev` and vitest keep working without git.
+  if (command === 'build' && !version.build) {
+    throw new Error('Cannot determine the commit being built: no git checkout and no BUILD_SHA env var')
+  }
+  return {
+  define: { __BUILD_SHA__: JSON.stringify(command === 'build' ? version.frontend : 'dev') },
   plugins: [
     react(),
-    writeBuildSha,
+    writeVersion(version),
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
@@ -182,4 +210,5 @@ export default defineConfig({
       '/me': 'http://localhost:8000',
     },
   },
+  }
 })
