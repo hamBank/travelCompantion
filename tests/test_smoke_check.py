@@ -21,12 +21,16 @@ SHA = "abc1234"
 
 
 class _Handler(BaseHTTPRequestHandler):
+    BUILD = SHA  # what /health reports as build_sha; None = field absent
+
     def log_message(self, *a):
         pass
 
     def do_GET(self):
         if self.path.startswith("/health"):
             body = {"status": "ok", "backend_sha": SHA}
+            if self.BUILD is not None:
+                body["build_sha"] = self.BUILD
         else:
             body = {"weather": {"2026-01-01": {"source": "forecast"}}}
         data = json.dumps(body).encode()
@@ -115,3 +119,39 @@ def test_fails_on_sha_mismatch(tmp_path):
     r = _run(port, _stub_systemctl(tmp_path, "success"), "deadbee")
     assert r.returncode == 1
     assert "expected 'deadbee'" in r.stdout
+
+
+def test_passes_only_when_the_frontend_was_built_from_the_deployed_commit(tmp_path):
+    port = _free_port()
+    _serve(port)
+    r = _run(port, _stub_systemctl(tmp_path, "success"), SHA)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Build check" in r.stdout and "matches expected" in r.stdout
+
+
+def test_fails_when_the_frontend_build_is_stale(tmp_path, monkeypatch):
+    # A skipped or failed build keeps serving the previous bundle: backend is
+    # on the new commit, the bundle was built from an older one.
+    monkeypatch.setattr(_Handler, "BUILD", "0ld0000")
+    port = _free_port()
+    _serve(port)
+    r = _run(port, _stub_systemctl(tmp_path, "success"), SHA)
+    assert r.returncode == 1
+    assert "built from '0ld0000'" in r.stdout
+
+
+def test_fails_when_health_has_no_build_sha(tmp_path, monkeypatch):
+    monkeypatch.setattr(_Handler, "BUILD", None)
+    port = _free_port()
+    _serve(port)
+    r = _run(port, _stub_systemctl(tmp_path, "success"), SHA)
+    assert r.returncode == 1
+    assert "not rebuilt" in r.stdout
+
+
+def test_build_check_is_skipped_without_an_expected_sha(tmp_path, monkeypatch):
+    monkeypatch.setattr(_Handler, "BUILD", None)
+    port = _free_port()
+    _serve(port)
+    r = _run(port, _stub_systemctl(tmp_path, "success"))
+    assert r.returncode == 0, r.stdout + r.stderr

@@ -10,9 +10,8 @@
 #   scripts/smoke_check.sh [BASE_URL] [EXPECTED_SHA]
 #
 #   BASE_URL      Defaults to http://127.0.0.1:8000 (the on-server case).
-#   EXPECTED_SHA  Optional (positional, NOT an env var). If given, compared against the health response's
-#                 backend_sha field (falling back to sha if backend_sha is
-#                 absent — that field is landing in a parallel change).
+#   EXPECTED_SHA  Optional (positional, NOT an env var). If given, both the health
+#                 response's backend_sha and its build_sha must equal it.
 #
 # Before check 1 it waits (SMOKE_CHECK_WAIT seconds, default 60) for /health
 # to answer 200: this runs right after a service restart, and uvicorn takes a
@@ -20,7 +19,7 @@
 #
 # Checks:
 #   1. GET /health            → HTTP 200, {"status":"ok"}       (hard FAIL)
-#   2. sha comparison          (if EXPECTED_SHA given)          (hard FAIL)
+#   2. backend_sha and build_sha equal EXPECTED_SHA (if given)  (hard FAIL)
 #   3. GET /weather (near-term range) → HTTP 200, non-empty     (hard FAIL)
 #      weather object; WARN (not FAIL) if any day in range is
 #      still climatology-sourced (near-term days should be live
@@ -105,29 +104,45 @@ except Exception:
 fi
 
 # ── 2. SHA comparison (only if EXPECTED_SHA given and /health succeeded) ────
+# Two things must both equal the commit that was just deployed:
+#   backend_sha  the running backend's HEAD, and
+#   build_sha    the commit the frontend bundle was built from (version.json).
+# The second is what catches a frontend build that was skipped or failed: the
+# service would otherwise keep serving the previous bundle and look healthy.
 if [[ -n "$EXPECTED_SHA" ]]; then
   if [[ "$HEALTH_HTTP_CODE" != "200" ]]; then
     fail "SHA check skipped — /health did not return a usable response"
   else
-    ACTUAL_SHA="$(printf '%s' "$HEALTH_BODY" | python3 -c '
+    read_health_field() {
+      printf '%s' "$HEALTH_BODY" | python3 -c '
 import sys, json
 try:
-    d = json.load(sys.stdin)
-    sha = d.get("backend_sha") or d.get("sha") or ""
-    print(sha)
+    v = json.load(sys.stdin).get(sys.argv[1])
+    print(v if isinstance(v, str) else "")
 except Exception:
     print("")
-' 2>/dev/null || true)"
+' "$1" 2>/dev/null || true
+    }
+    ACTUAL_SHA="$(read_health_field backend_sha)"
+    [[ -z "$ACTUAL_SHA" ]] && ACTUAL_SHA="$(read_health_field sha)"
+    BUILD_SHA="$(read_health_field build_sha)"
     if [[ -z "$ACTUAL_SHA" ]]; then
       fail "SHA check → /health response had no backend_sha or sha field"
     elif [[ "$ACTUAL_SHA" == "$EXPECTED_SHA" ]]; then
-      pass "SHA check → $ACTUAL_SHA matches expected"
+      pass "SHA check → backend $ACTUAL_SHA matches expected"
     else
-      fail "SHA check → got '$ACTUAL_SHA', expected '$EXPECTED_SHA'"
+      fail "SHA check → backend is '$ACTUAL_SHA', expected '$EXPECTED_SHA'"
+    fi
+    if [[ -z "$BUILD_SHA" ]]; then
+      fail "Build check → /health has no build_sha: the frontend was not rebuilt (is static/version.json missing?)"
+    elif [[ "$BUILD_SHA" == "$EXPECTED_SHA" ]]; then
+      pass "Build check → frontend built from $BUILD_SHA, matches expected"
+    else
+      fail "Build check → frontend was built from '$BUILD_SHA', expected '$EXPECTED_SHA' — the build was skipped or failed and an old bundle is being served"
     fi
   fi
 else
-  echo "  (no EXPECTED_SHA given — skipping SHA check)"
+  echo "  (no EXPECTED_SHA given — skipping SHA and build checks)"
 fi
 
 # ── 3. /weather ──────────────────────────────────────────────────────────────
