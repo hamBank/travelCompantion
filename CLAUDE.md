@@ -167,7 +167,9 @@ deploy died in `alembic upgrade head` importing `models.py` (`ValueError:
 <class 'pydantic.types.NaiveDatetime'> has no matching SQLAlchemy type`) —
 before the service restart, so prod stayed up on the old code. CI never saw it
 because CI builds a fresh venv every run. `tests/test_requirements_floor.py`
-guards the declared floor; if models.py ever starts needing a newer SQLModel
+guards the declared floor **and the cap** (`<0.0.49`, fleet spec STK-5: sqlmodel is pre-1.0, so
+the next release is untested until the suite has run on it — bump the cap on purpose, in the
+same commit that proves it); if models.py ever starts needing a newer SQLModel
 feature, raise the floor (and that test's `MIN_SQLMODEL`) in the same commit.
 
 When adding a new `datetime` field: decide which category it's in *before*
