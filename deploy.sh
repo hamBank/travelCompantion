@@ -546,9 +546,9 @@ else
 fi
 
 # ── 6b. Frontend build ──────────────────────────────────────────────────────────
-# Rebuild whenever anything under frontend/ has changed since the last build THIS
-# SERVER actually completed — not just "the very first time node_modules doesn't
-# exist yet". That older assumption ("backend/static/ is committed to git, so the
+# Build on EVERY deploy (dependencies are reinstalled only when frontend/ changed
+# since the last build THIS SERVER completed — see the block below). The build was
+# once gated on "the very first time node_modules doesn't exist yet"; that assumption ("backend/static/ is committed to git, so the
 # correct build is already on disk after git reset --hard") relies on whoever
 # merges a frontend change first rebuilding and committing backend/static/ as its
 # own commit (CLAUDE.md's documented flow). Every merge to main goes through
@@ -565,36 +565,47 @@ FRONTEND_COMMIT="$(git -C "$APP_DIR" log -1 --format=%H -- frontend 2>/dev/null 
 BUILT_COMMIT_FILE="$APP_DIR/.frontend-built-commit"
 BUILT_COMMIT="$(cat "$BUILT_COMMIT_FILE" 2>/dev/null || true)"
 
-if [[ ! -d "$APP_DIR/frontend/node_modules" ]] || [[ "$FRONTEND_COMMIT" != "$BUILT_COMMIT" ]]; then
-  if [[ ! -d "$APP_DIR/frontend/node_modules" ]]; then
-    info "Installing Node dependencies (node_modules absent)"
-  else
-    info "frontend/ changed since the last build on this server (${BUILT_COMMIT:-none} -> $FRONTEND_COMMIT) — rebuilding"
-  fi
-  # npm ci deletes node_modules before reinstalling, so a failed/interrupted
-  # run (registry hiccup, disk full, OOM) still leaves the directory behind —
-  # just incomplete. The `-d node_modules` check below used to be the only
-  # gate on attempting a build, so a partial install fell straight through
-  # into `npm run build` anyway, failing on whatever package happened to be
-  # mid-extraction (confirmed live 2026-09-16: a missing @fontsource/inter
-  # CSS file wasted every deploy attempt until node_modules was fixed by
-  # hand). Track ci's own exit status explicitly so a failed install skips
-  # the build cleanly, matching what the warning below already promises.
-  npm_ci_ok=true
+# The BUILD always runs; only the slow `npm ci` is gated on frontend/ having
+# changed. Skipping the build too when frontend/ was unchanged (what this did
+# until 2026-11-05) left static/version.json describing an older commit after
+# every backend-only deploy, so smoke_check.sh's "build_sha == deployed commit"
+# check (the guard against a skipped or failed build) failed on all of them.
+# A vite build is a couple of seconds and deterministic: unchanged sources give
+# identical content-hashed files and the same frontend_sha, so open clients
+# are not asked to reload.
+need_npm_ci=false
+if [[ ! -d "$APP_DIR/frontend/node_modules" ]]; then
+  info "Installing Node dependencies (node_modules absent)"
+  need_npm_ci=true
+elif [[ "$FRONTEND_COMMIT" != "$BUILT_COMMIT" ]]; then
+  info "frontend/ changed since the last build on this server (${BUILT_COMMIT:-none} -> $FRONTEND_COMMIT) — reinstalling dependencies"
+  need_npm_ci=true
+fi
+
+# npm ci deletes node_modules before reinstalling, so a failed/interrupted
+# run (registry hiccup, disk full, OOM) still leaves the directory behind —
+# just incomplete. The `-d node_modules` check below used to be the only
+# gate on attempting a build, so a partial install fell straight through
+# into `npm run build` anyway, failing on whatever package happened to be
+# mid-extraction (confirmed live 2026-09-16: a missing @fontsource/inter
+# CSS file wasted every deploy attempt until node_modules was fixed by
+# hand). Track ci's own exit status explicitly so a failed install skips
+# the build cleanly, matching what the warning below already promises.
+npm_ci_ok=true
+if $need_npm_ci; then
   $NPM --prefix "$APP_DIR/frontend" ci --silent \
     || { npm_ci_ok=false; warn "npm ci failed — frontend static files from git (or a previous successful build) will still be served"; }
+fi
 
-  if $npm_ci_ok && [[ -d "$APP_DIR/frontend/node_modules" ]]; then
-    info "Building frontend"
-    if $NPM --prefix "$APP_DIR/frontend" run build; then
-      ok "Frontend built → backend/static"
-      sudo -u "$APP_USER" sh -c "echo '$FRONTEND_COMMIT' > '$BUILT_COMMIT_FILE'"
-    else
-      warn "Frontend build failed — static files from git (or a previous successful build) will still be served"
-    fi
+if $npm_ci_ok && [[ -d "$APP_DIR/frontend/node_modules" ]]; then
+  info "Building frontend"
+  if $NPM --prefix "$APP_DIR/frontend" run build; then
+    ok "Frontend built → backend/static"
+    # Marks that dependencies match this frontend/ state (gates npm ci above).
+    sudo -u "$APP_USER" sh -c "echo '$FRONTEND_COMMIT' > '$BUILT_COMMIT_FILE'"
+  else
+    warn "Frontend build failed — static files from git (or a previous successful build) will still be served; smoke_check.sh will flag the stale build"
   fi
-else
-  ok "frontend/ unchanged since the last build on this server ($FRONTEND_COMMIT) — skipping npm"
 fi
 
 # ── 6c. Coverage reports → /coverage (best-effort; never abort the deploy) ──────
