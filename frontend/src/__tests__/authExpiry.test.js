@@ -47,6 +47,35 @@ describe('expired-session handling in api.req', () => {
     expect(dispatched).toHaveLength(0)
   })
 
+  it('does NOT sign out a newer session when a stale request 401s (response lands late)', async () => {
+    // A request sent with the old token is in flight; the user signs in again
+    // (new token stored); the old request then comes back 401. That 401 is
+    // about the old token, so it must not log out the fresh session.
+    localStorage.setItem('tc-token', 'old-jwt')
+    global.fetch = vi.fn().mockImplementation(async () => {
+      localStorage.setItem('tc-token', 'new-jwt')
+      return {
+        ok: false, status: 401, statusText: 'Unauthorized',
+        text: async () => JSON.stringify({ detail: 'Invalid or expired token' }),
+      }
+    })
+    await expect(getTrips()).rejects.toThrow('Invalid or expired token')
+    expect(dispatched).toHaveLength(0)
+  })
+
+  it('does NOT dispatch when the user already signed out before the 401 lands', async () => {
+    localStorage.setItem('tc-token', 'old-jwt')
+    global.fetch = vi.fn().mockImplementation(async () => {
+      localStorage.removeItem('tc-token')
+      return {
+        ok: false, status: 401, statusText: 'Unauthorized',
+        text: async () => JSON.stringify({ detail: 'Invalid or expired token' }),
+      }
+    })
+    await expect(getTrips()).rejects.toThrow()
+    expect(dispatched).toHaveLength(0)
+  })
+
   it('does NOT dispatch on non-401 errors even with a token', async () => {
     localStorage.setItem('tc-token', 'valid-jwt')
     global.fetch = vi.fn().mockResolvedValue({
