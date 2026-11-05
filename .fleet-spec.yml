@@ -3,7 +3,4 @@
 # debt with a deadline: it expires on `until` (the check then fails), and a
 # deviation whose check now passes must be deleted. Plan: fleetSpec/MIGRATION.md.
 spec: 0.2
-deviations:
-  - rule: STK-5
-    reason: sqlmodel has a floor (>=0.0.45) but no cap; the range is waiting on decision D3 (recipeFlood check)
-    until: 2026-12-15
+deviations: []

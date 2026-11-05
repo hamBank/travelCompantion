@@ -3,7 +3,10 @@ uvicorn[standard]>=0.29.0
 # >=0.0.45: first release that maps pydantic NaiveDatetime (used by models.py).
 # A lower floor lets pip treat an old existing venv as "satisfied" and skip the
 # upgrade — prod sat on 0.0.39 and the deploy's alembic step died importing models.
-sqlmodel>=0.0.45
+# <0.0.49: sqlmodel is pre-1.0, so any release can change datetime/column mapping
+# (0.0.45 did, and broke every write). Tested on 0.0.48, the fleet's version
+# (fleet spec STK-5); raise the cap deliberately, after running the suite on it.
+sqlmodel>=0.0.45,<0.0.49
 aiofiles>=23.2.1
 python-multipart>=0.0.9
 google-auth>=2.29.0

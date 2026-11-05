@@ -49,3 +49,14 @@ def test_sqlmodel_floor_still_allows_the_minimum_and_newer():
     spec = _sqlmodel_specifier()
     assert spec.contains(MIN_SQLMODEL)
     assert spec.contains(Version("0.0.48"))
+
+
+def test_sqlmodel_is_capped_below_the_next_untested_release():
+    # Fleet spec STK-5: pre-1.0 sqlmodel can change datetime mapping in any
+    # release, so a floor alone lets the next deploy pull in an untested one.
+    spec = _sqlmodel_specifier()
+    assert spec.contains(Version("0.0.48")), "cap must still allow the tested release"
+    assert not spec.contains(Version("0.0.49")), (
+        "requirements.txt has no cap below the next untested sqlmodel release; "
+        "run the suite on the new version, then raise the cap on purpose."
+    )
