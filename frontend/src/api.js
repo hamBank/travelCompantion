@@ -56,7 +56,8 @@ const REFRESHED_TOKEN_HEADER = 'X-Refreshed-Token'
 // download helpers below — so the two session behaviours can't be missed by
 // one of them:
 //  - a refreshed token in the response is stored, and
-//  - a 401 on a request that carried a token announces AUTH_EXPIRED_EVENT.
+//  - a 401 on a request that carried a token announces AUTH_EXPIRED_EVENT,
+//    both only while that token is still the stored one.
 // A 401 on a token-less request (e.g. a failed login attempt on the login
 // page) is not an expired session.
 async function authFetch(path, opts = {}) {
@@ -68,8 +69,12 @@ async function authFetch(path, opts = {}) {
     // Only if the token we sent is still the stored one: a response that lands
     // after sign-out (or after another tab signed in as someone else) must not
     // write its token back.
-    if (fresh && getToken() === token) localStorage.setItem('tc-token', fresh)
-    if (r.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+    const unchanged = getToken() === token
+    if (fresh && unchanged) localStorage.setItem('tc-token', fresh)
+    // Same rule for a 401: it is about the token we sent. If the user has
+    // since signed out or signed in again, a late 401 must not sign out the
+    // newer session.
+    if (r.status === 401 && unchanged) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
   }
   return r
 }
