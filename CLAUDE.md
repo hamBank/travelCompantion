@@ -245,6 +245,20 @@ comparing against actually uses. When adding a new "what time is it"
 decision, work out which of these two categories it's in before picking an
 implementation.
 
+## Fleet spec — conformance is checked in CI
+This app follows the shared design in `hamBank/fleetSpec` (`SPEC.md`: numbered rules,
+each with the incident behind it). `.fleet-spec.yml` declares the spec version and the
+**deviations**: rules we know we don't meet yet, each with a reason and an `until`
+date. The `fleet-spec` CI job runs fleetSpec's `conformance/check.py` pinned to that
+version and fails when:
+- a MUST rule fails with no deviation (new drift — fix it, don't add a deviation to
+  get green unless it is genuinely planned debt),
+- a deviation has expired (fix it or renew it with a reason), or
+- a deviation is **stale** — its check passes now, so delete the entry.
+
+Run it locally: `python <fleetSpec checkout>/conformance/check.py --app .`. The
+migration plan for getting this app to the current spec is `MIGRATION.md` in fleetSpec.
+
 ## Monitoring
 `docs/prometheus-alerts.yml` is the canonical alert-rules file (external-API
 error rate on `travelcomp_external_requests_total`) — **it does not

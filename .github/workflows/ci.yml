@@ -85,3 +85,29 @@ jobs:
 
       - name: Run frontend tests
         run: npm test
+
+  # Fleet spec conformance (https://github.com/hamBank/fleetSpec). Pinned to the
+  # spec version this repo declares in .fleet-spec.yml, so a spec change never
+  # breaks this CI unexpectedly: bump `spec:` here when adopting a new version.
+  # Fails on a MUST rule that fails without a recorded, unexpired deviation.
+  # While fleetSpec is private this needs a read-only token for it, stored as the
+  # FLEETSPEC_TOKEN repo secret.
+  fleet-spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: spec
+        run: echo "version=$(awk '/^spec:/ {print $2}' .fleet-spec.yml)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: hamBank/fleetSpec
+          ref: v${{ steps.spec.outputs.version }}
+          path: .fleetspec
+          token: ${{ secrets.FLEETSPEC_TOKEN || github.token }}
+
+      - run: pip install pyyaml
+
+      - name: Check conformance
+        run: python .fleetspec/conformance/check.py --app . --summary "$GITHUB_STEP_SUMMARY"

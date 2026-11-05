@@ -1,0 +1,21 @@
+# Conformance to the hamBank fleet spec (https://github.com/hamBank/fleetSpec).
+# CI runs fleetSpec's conformance/check.py against this file. A deviation is
+# debt with a deadline: it expires on `until` (the check then fails), and a
+# deviation whose check now passes must be deleted. Plan: fleetSpec/MIGRATION.md.
+spec: 0.2
+deviations:
+  - rule: CFG-3
+    reason: AUTH_ENABLED is derived from GOOGLE_CLIENT_ID; needs AUTH_ENABLED added to the prod .env first, then fail closed
+    until: 2026-12-01
+  - rule: CFG-2
+    reason: JWT_SECRET still defaults to a public string; do together with CFG-3 so the startup guard has an explicit AUTH_ENABLED to key off
+    until: 2026-12-01
+  - rule: BLD-1
+    reason: backend/static is still committed; next step now that /health reports build_sha and the smoke check asserts it
+    until: 2026-12-15
+  - rule: DEP-1
+    reason: deploy.sh has set -euo pipefail but no ERR trap logging file:line
+    until: 2026-12-15
+  - rule: STK-5
+    reason: sqlmodel has a floor (>=0.0.45) but no cap; the range is waiting on decision D3 (recipeFlood check)
+    until: 2026-12-15
