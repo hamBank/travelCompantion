@@ -45,10 +45,12 @@ def test_sqlmodel_floor_excludes_versions_without_naivedatetime_support():
         )
 
 
-def test_sqlmodel_floor_still_allows_the_minimum_and_newer():
+def test_sqlmodel_range_allows_what_the_code_needs_and_the_tested_release():
+    # MIN_SQLMODEL is what models.py needs; the declared floor (fleet range) is
+    # higher, so every release the range allows is >= it.
     spec = _sqlmodel_specifier()
-    assert spec.contains(MIN_SQLMODEL)
     assert spec.contains(Version("0.0.48"))
+    assert Version("0.0.48") >= MIN_SQLMODEL
 
 
 def test_sqlmodel_is_capped_below_the_next_untested_release():
@@ -60,3 +62,12 @@ def test_sqlmodel_is_capped_below_the_next_untested_release():
         "requirements.txt has no cap below the next untested sqlmodel release; "
         "run the suite on the new version, then raise the cap on purpose."
     )
+
+
+def test_sqlmodel_range_is_the_fleet_range():
+    # Fleet spec DB-8: one range across the fleet, moved together. 0.0.45-0.0.47
+    # would still import models.py, but the instants-as-timestamptz migration
+    # and the drift guard are written against 0.0.48.
+    spec = _sqlmodel_specifier()
+    assert not spec.contains(Version("0.0.47"))
+    assert spec.contains(Version("0.0.48"))
