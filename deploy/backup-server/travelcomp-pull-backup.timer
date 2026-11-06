@@ -1,0 +1,14 @@
+# /etc/systemd/system/travelcomp-pull-backup.timer   (on the BACKUP server)
+# The app server dumps its database at about 00:00-00:10 (its own timer, `daily` plus up
+# to 10 minutes). Pulling at 03:30 Berlin time leaves hours of margin whatever zone this
+# server is in. Persistent=true runs a pull missed while this server was off.
+[Unit]
+Description=Pull Travel Companion backups daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Europe/Berlin
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target
