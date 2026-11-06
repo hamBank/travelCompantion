@@ -7,6 +7,8 @@ import { KIND_VAR, KIND_LABEL, KIND_OPTIONS } from '../kinds.js'
 import { parseCost, convertCurrency, getHomeCurrency } from '../currency.js'
 import { fmtDay } from '../dates.js'
 import RailLookupModal from './RailLookupModal.jsx'
+import { buildMapsUrl } from '../mapsUrl.js'
+export { buildMapsUrl }
 
 // Parse a timezone field like "GMT+8", "UTC+5:30", "+08:00" → offset in minutes.
 // Returns null if it can't be parsed (so we know whether TZ info is available).
@@ -1386,18 +1388,6 @@ function parseMapsUrl(url) {
 // Build a Google Maps directions URL through an ordered list of points (start,
 // intermediate waypoints, end). `mode` is 'w' (walk), 'd' (drive), 'b' (bike).
 // Pass embed=true for the iframe-embeddable variant.
-export function buildMapsUrl(points, mode = 'w', embed = false) {
-  const pts = (points || []).filter(Boolean)
-  if (!pts.length) return null
-  const base = 'https://maps.google.com/maps?'
-  const suffix = embed ? '&output=embed' : ''
-  if (pts.length === 1) return base + new URLSearchParams({ q: pts[0] }).toString() + suffix
-  // Keep the literal "to:" keyword Google uses for multi-stop routes.
-  const saddr = encodeURIComponent(pts[0])
-  const daddr = pts.slice(1).map(encodeURIComponent).join('+to:')
-  return `${base}saddr=${saddr}&daddr=${daddr}&dirflg=${mode}${suffix}`
-}
-
 function haversineKm(c1, c2) {
   const R = 6371
   const dLat = (c2.lat - c1.lat) * Math.PI / 180

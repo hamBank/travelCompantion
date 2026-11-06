@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { deleteItem, createItem, uploadGpx } from '../api.js'
-import ItemEditModal from './ItemEditModal.jsx'
+import { ItemEditModal } from './lazyModals.js'
 import { KIND_VAR, KIND_OPTIONS } from '../kinds.js'
 import { parseKmlRoutes, routeToGpx } from '../kml.js'
 
