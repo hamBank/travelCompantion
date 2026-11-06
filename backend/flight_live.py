@@ -4,15 +4,15 @@ Extracted from backend/routers/items.py's check_flight so both the flight-
 check endpoint and the notifications cron (backend/notifications.py) can
 fetch live status without a circular import between those two modules.
 """
-import os
 from datetime import datetime
 from typing import Optional
 import httpx
 
 from .metrics import record_external_call
+from .config import get_settings
 from .rate_limit import throttle
 
-AERODATABOX_KEY = os.getenv("AERODATABOX_KEY", "")
+AERODATABOX_KEY = get_settings().aerodatabox_key
 _AERODATABOX_BASE = "https://aerodatabox.p.rapidapi.com"
 
 

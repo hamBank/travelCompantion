@@ -137,3 +137,10 @@ def test_check_config_reads_the_file_like_systemd_not_like_bash(tmp_path):
     text = ('AUTH_ENABLED="true"\nGOOGLE_CLIENT_ID=\'c\'\n# a comment\n\n'
             f"SHEET_NAMES=Itinerary 2026 and more\nJWT_SECRET={GOOD_SECRET}\n")
     assert _check(tmp_path, text).returncode == 0
+
+
+def test_check_config_aborts_on_a_malformed_setting_and_names_it(tmp_path):
+    # Settings validates every field at startup (fleet spec CFG-1): a typo in a
+    # number must stop the deploy here, not surface later as a 500 in production.
+    r = _check(tmp_path, f"AUTH_ENABLED=false\nJWT_EXPIRE_DAYS=thirty\nJWT_SECRET={GOOD_SECRET}\n")
+    assert r.returncode == 1 and "jwt_expire_days" in r.stderr

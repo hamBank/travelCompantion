@@ -18,6 +18,16 @@ still runs enabled, with a warning, so older `.env` files keep working. The test
 sets `AUTH_ENABLED=false` in `tests/conftest.py`; `deploy.sh` checks the config before
 restarting so a bad `.env` aborts the deploy instead of taking the site down.
 
+**Configuration (fleet spec CFG-1).** Every environment variable the backend reads is a field on
+`backend.config.Settings` (pydantic-settings); nothing else under `backend/` may touch
+`os.environ`/`os.getenv` — `tests/test_config.py` fails if it does, and fails if a field is missing from
+`.env.example`. Read it with `get_settings()`, which builds a fresh `Settings` from the live environment
+on every call (no cache), so module-level constants behave as before and `monkeypatch.setenv` works.
+Adding a setting = add the field, document it in `.env.example`, use `get_settings().field`. A malformed
+value (`JWT_EXPIRE_DAYS=thirty`) stops startup naming the field, and the deploy's config preflight
+(`scripts/check_config.py`) catches it before the restart. `.env` is loaded by systemd's
+`EnvironmentFile`; there is no dotenv reading in the app.
+
 **JWT library (fleet spec AUTH-8).** Tokens are signed and verified with PyJWT (it replaced
 python-jose, 2026-11-06). Catch `jwt.PyJWTError`, never a library-specific base class, and always
 pass `algorithms=[...]` to `decode`. `tests/test_jwt_contract.py` builds and checks tokens by hand

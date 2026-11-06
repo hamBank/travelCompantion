@@ -44,8 +44,8 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 # Interactive OAuth (browser consent) only runs when explicitly allowed — never on
 # a headless server, where it would hang/500. Set SHEETS_ALLOW_INTERACTIVE=1 locally
 # to mint a token.
-import os as _os
-_ALLOW_INTERACTIVE = _os.getenv("SHEETS_ALLOW_INTERACTIVE") == "1"
+from .config import get_settings
+_ALLOW_INTERACTIVE = get_settings().sheets_allow_interactive
 
 
 def _get_credentials():

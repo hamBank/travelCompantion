@@ -17,7 +17,6 @@ Webhook mode is enabled only when AERODATABOX_KEY, AERODATABOX_WEBHOOK_SECRET
 and PUBLIC_BASE_URL are all set; otherwise the existing polling path in
 backend/notifications.py covers everything, unchanged.
 """
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -26,11 +25,13 @@ from sqlmodel import Session, select
 
 from .flight_live import AERODATABOX_KEY, _AERODATABOX_BASE
 from .metrics import record_external_call, flight_alert_credits
+from .config import get_settings
 from .models import AirportCoverage, ItineraryItem, ItemKind
 from .rate_limit import throttle
 
-WEBHOOK_SECRET = os.getenv("AERODATABOX_WEBHOOK_SECRET", "")
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+_cfg = get_settings()
+WEBHOOK_SECRET = _cfg.aerodatabox_webhook_secret
+PUBLIC_BASE_URL = _cfg.public_base_url.rstrip("/")
 
 # Subscribe flights departing within this window. AeroDataBox notifications
 # cover flights from 6h in the past to 72h in the future, so 72h captures the
@@ -40,15 +41,15 @@ SUBSCRIBE_WINDOW_HOURS = 72
 # Keep the alert-credit balance at or above this floor; refill (from the API
 # quota, 1 unit = 1 credit) in this increment when it dips below. A zero
 # balance silently pauses ALL subscriptions, so the floor is load-bearing.
-CREDIT_FLOOR = int(os.getenv("FLIGHT_ALERT_CREDIT_FLOOR", "20"))
-CREDIT_REFILL = int(os.getenv("FLIGHT_ALERT_CREDIT_REFILL", "40"))
+CREDIT_FLOOR = _cfg.flight_alert_credit_floor
+CREDIT_REFILL = _cfg.flight_alert_credit_refill
 # AeroDataBox rejects a refill outside 1..N credits per call, N depending on the
 # pricing plan ("not more than 40 per single API call for your pricing plan" on
 # the current one). The default used to be 50, so every reconcile's top-up was
 # rejected, the error was swallowed, and the balance was never replenished
 # (seen in the cron log from at least 2026-11-04). CREDIT_REFILL is clamped to
 # this, so an env value above the plan's limit can't recreate that.
-CREDIT_REFILL_MAX = int(os.getenv("FLIGHT_ALERT_CREDIT_REFILL_MAX", "40"))
+CREDIT_REFILL_MAX = _cfg.flight_alert_credit_refill_max
 
 # Feed statuses that mean "there's a real chance of getting live updates" —
 # only Down/Unavailable are a confident "this subscription would never fire"
@@ -60,7 +61,7 @@ _COVERAGE_OK_STATUSES = {"OK", "OKPartial", "Degraded", "Unknown"}
 # How long a cached coverage check is trusted before re-checking (the FREE
 # TIER feed-status call, not the ICAO lookup — that's cached forever once
 # resolved, since airport codes don't change).
-COVERAGE_RECHECK_DAYS = int(os.getenv("FLIGHT_ALERT_COVERAGE_RECHECK_DAYS", "7"))
+COVERAGE_RECHECK_DAYS = _cfg.flight_alert_coverage_recheck_days
 
 
 class FlightAlertApiError(Exception):

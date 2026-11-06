@@ -8,8 +8,9 @@ VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY env vars — both raw base64url (no padding
     exact format the browser's PushManager.subscribe({applicationServerKey}) needs
 """
 import base64
-import os
 from typing import Optional
+
+from .config import get_settings
 
 from cryptography.hazmat.primitives.asymmetric import ec
 
@@ -32,16 +33,16 @@ def generate_vapid_keypair() -> tuple[str, str]:
 
 
 def get_vapid_public_key() -> Optional[str]:
-    return os.environ.get("VAPID_PUBLIC_KEY") or None
+    return get_settings().vapid_public_key or None
 
 
 def get_vapid_private_key() -> Optional[str]:
-    return os.environ.get("VAPID_PRIVATE_KEY") or None
+    return get_settings().vapid_private_key or None
 
 
 def vapid_claims_for(endpoint: str) -> dict:
     """Minimal VAPID claims. pywebpush fills in 'aud' from the endpoint if absent."""
-    contact = os.environ.get("VAPID_CONTACT_EMAIL", "admin@tripplan.hups.club")
+    contact = get_settings().vapid_contact_email
     return {"sub": f"mailto:{contact}"}
 
 
