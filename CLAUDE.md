@@ -60,6 +60,14 @@ alembic revision --autogenerate -m "describe change"   # review the file
 alembic upgrade head
 python -m pytest tests/test_alembic_drift.py            # must stay green
 ```
+**Postgres driver (fleet spec D4/STK-6): psycopg3, `postgresql+psycopg://`.** The URL's `+driver`
+part must name a driver installed in the venv. `scripts/check_config.py` builds the engine (without
+connecting) before the restart, so a mismatch such as a leftover `+psycopg2` aborts the deploy with a
+clear message and leaves the running service up. psycopg3 caches prepared statements per connection,
+so after a migration that changes a column's *type* an old process can fail with "cached plan must not
+change result type" until it reconnects: keep the deploy order migrate, then restart, and keep
+`engine.dispose()` after `create_all()` in tests that rebuild the schema (DB-6).
+
 The URL comes from `DATABASE_URL` via `alembic/env.py` (not alembic.ini). See
 `docs/postgres-migration.md` for the full runbook. Tests use `create_all()` for
 speed; the drift guard keeps that in sync with the migrations.
