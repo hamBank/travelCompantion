@@ -47,20 +47,20 @@ def test_verify_ical_token_rejects_garbage():
 
 
 def test_verify_ical_token_rejects_wrong_scope():
-    from jose import jwt as jose_jwt
-    token = jose_jwt.encode({"trip_id": 1, "scope": "something_else"}, auth.JWT_SECRET, algorithm=auth.JWT_ALGORITHM)
+    import jwt as pyjwt
+    token = pyjwt.encode({"trip_id": 1, "scope": "something_else"}, auth.JWT_SECRET, algorithm=auth.JWT_ALGORITHM)
     assert auth.verify_ical_token(token) is None
 
 
 def test_verify_ical_token_rejects_wrong_secret():
-    from jose import jwt as jose_jwt
-    token = jose_jwt.encode({"trip_id": 1, "scope": "ical"}, "not-the-real-secret", algorithm=auth.JWT_ALGORITHM)
+    import jwt as pyjwt
+    token = pyjwt.encode({"trip_id": 1, "scope": "ical"}, "not-the-real-secret", algorithm=auth.JWT_ALGORITHM)
     assert auth.verify_ical_token(token) is None
 
 
 def test_verify_ical_token_rejects_missing_trip_id():
-    from jose import jwt as jose_jwt
-    token = jose_jwt.encode({"scope": "ical"}, auth.JWT_SECRET, algorithm=auth.JWT_ALGORITHM)
+    import jwt as pyjwt
+    token = pyjwt.encode({"scope": "ical"}, auth.JWT_SECRET, algorithm=auth.JWT_ALGORITHM)
     assert auth.verify_ical_token(token) is None
 
 
@@ -115,8 +115,8 @@ def test_feed_rejects_garbage_token_with_404(client: TestClient):
 
 
 def test_feed_rejects_forged_token_with_404(client: TestClient):
-    from jose import jwt as jose_jwt
-    forged = jose_jwt.encode({"trip_id": 1, "scope": "ical"}, "wrong-secret", algorithm=auth.JWT_ALGORITHM)
+    import jwt as pyjwt
+    forged = pyjwt.encode({"trip_id": 1, "scope": "ical"}, "wrong-secret", algorithm=auth.JWT_ALGORITHM)
     r = client.get(f"/calendar/{forged}.ics")
     assert r.status_code == 404
 

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+import jwt
 from sqlmodel import Session
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -201,7 +201,7 @@ def get_current_user(
         payload = jwt.decode(
             credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM]
         )
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Personal access tokens (scope "api") are revocable — reject one whose jti
@@ -273,7 +273,7 @@ def verify_ical_token(token: str) -> Optional[int]:
     """
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except JWTError:
+    except jwt.PyJWTError:
         return None
     if payload.get("scope") != ICAL_SCOPE:
         return None

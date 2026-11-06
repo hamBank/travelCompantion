@@ -18,6 +18,15 @@ still runs enabled, with a warning, so older `.env` files keep working. The test
 sets `AUTH_ENABLED=false` in `tests/conftest.py`; `deploy.sh` checks the config before
 restarting so a bad `.env` aborts the deploy instead of taking the site down.
 
+**JWT library (fleet spec AUTH-8).** Tokens are signed and verified with PyJWT (it replaced
+python-jose, 2026-11-06). Catch `jwt.PyJWTError`, never a library-specific base class, and always
+pass `algorithms=[...]` to `decode`. `tests/test_jwt_contract.py` builds and checks tokens by hand
+with `hmac`/`base64`, so it pins the wire behaviour independent of the library: already-issued
+30-day login tokens and exp-less calendar-feed (`ical`) links must keep verifying, and expired,
+forged, unsigned and wrong-algorithm tokens must keep failing. PyJWT warns on HMAC keys under 32
+bytes; `deploy.sh` generates a 64-character `JWT_SECRET`, and the tests silence the warning
+because they use short secrets on purpose.
+
 **Sign-in allowlist (fleet spec CFG-4/CFG-5).** `ALLOWED_EMAILS` is a comma-separated list
 (`backend/allowlist.py`); the first entry is also the owner given pre-sharing trips. The old
 singular `ALLOWED_EMAIL` is still read, with a warning, only while `ALLOWED_EMAILS` is
