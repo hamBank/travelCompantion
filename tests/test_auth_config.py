@@ -144,3 +144,46 @@ def test_check_config_aborts_on_a_malformed_setting_and_names_it(tmp_path):
     # number must stop the deploy here, not surface later as a 500 in production.
     r = _check(tmp_path, f"AUTH_ENABLED=false\nJWT_EXPIRE_DAYS=thirty\nJWT_SECRET={GOOD_SECRET}\n")
     assert r.returncode == 1 and "jwt_expire_days" in r.stderr
+
+
+
+# ── the database driver must be loadable (fleet spec D4: psycopg3 across the fleet) ──
+
+def _env(*lines: str) -> str:
+    return "\n".join(["AUTH_ENABLED=false", f"JWT_SECRET={GOOD_SECRET}", *lines]) + "\n"
+
+
+def test_check_config_aborts_when_the_database_driver_is_not_installed(tmp_path):
+    # `mysql+pymysql` stands for "a +driver this venv does not have", e.g. +psycopg2 left
+    # in .env after the requirements moved to psycopg3. Without this check the service
+    # would crash after the restart.
+    r = _check(tmp_path, _env("DATABASE_URL=mysql+pymysql://u:p@localhost/db"))
+    assert r.returncode == 1
+    assert "database driver cannot be loaded" in r.stderr and "pymysql" in r.stderr
+
+
+def test_check_config_aborts_on_a_misspelt_driver(tmp_path):
+    r = _check(tmp_path, _env("DATABASE_URL=postgresql+psycopg9://u:p@localhost/db"))
+    assert r.returncode == 1 and "database driver cannot be loaded" in r.stderr
+
+
+@pytest.mark.parametrize("url", [
+    "sqlite:///./travel.db",
+    "postgresql+psycopg://travelcomp:secret@localhost/travelcomp",
+])
+def test_check_config_accepts_loadable_drivers_without_connecting(tmp_path, url):
+    # The Postgres URL points at nothing: the check imports the driver, it does not connect.
+    r = _check(tmp_path, _env(f"DATABASE_URL={url}"))
+    assert r.returncode == 0, r.stderr
+
+
+def test_check_config_uses_the_env_files_database_url_not_the_deploys(tmp_path):
+    # A DATABASE_URL leaked from the deploy's shell must not hide a bad one in .env.
+    r = _check(tmp_path, _env("DATABASE_URL=mysql+pymysql://u:p@h/db"), {"DATABASE_URL": "sqlite://"})
+    assert r.returncode == 1
+
+
+def test_a_validation_failure_never_echoes_the_value(tmp_path):
+    r = _check(tmp_path, _env("JWT_EXPIRE_DAYS=hunter2-not-a-number"))
+    assert r.returncode == 1 and "jwt_expire_days" in r.stderr
+    assert "hunter2" not in r.stderr

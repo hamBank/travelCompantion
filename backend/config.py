@@ -23,7 +23,9 @@ class Settings(BaseSettings):
     # env_ignore_empty: a line like `FLIGHT_ALERT_CREDIT_FLOOR=` (blank value, as the
     # .env template writes for secrets) means "unset", so numbers and flags fall back
     # to their defaults instead of failing to parse "".
-    model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
+    # hide_input_in_errors: a validation error must name the field, never quote the
+    # value (the text lands in the deploy log and the journal; fleet spec lesson 15).
+    model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True, hide_input_in_errors=True)
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./travel.db"
