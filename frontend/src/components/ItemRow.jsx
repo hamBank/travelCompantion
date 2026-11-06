@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { updateItemStatus } from '../api.js'
-import ItemEditModal from './ItemEditModal.jsx'
+import { ItemEditModal } from './lazyModals.js'
 import CostDisplay from './CostDisplay.jsx'
 import { isFullyPaid } from '../currency.js'
 import { fmtDayTime } from '../dates.js'

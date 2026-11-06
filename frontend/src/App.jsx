@@ -5,19 +5,10 @@ import TripTimeline from './components/TripTimeline.jsx'
 import EditTrip from './components/EditTrip.jsx'
 import ThemePicker from './components/ThemePicker.jsx'
 import LoginPage from './components/LoginPage.jsx'
-import UserSettings from './components/UserSettings.jsx'
-import ShareModal from './components/ShareModal.jsx'
-import SharedTripView from './components/SharedTripView.jsx'
-import PendingReview from './components/PendingReview.jsx'
-import PackingList from './components/PackingList.jsx'
 import OfflineQueueBanner from './components/OfflineQueueBanner.jsx'
-import BudgetSummary from './components/BudgetSummary.jsx'
-import DistanceSummary from './components/DistanceSummary.jsx'
-import DocumentsModal from './components/DocumentsModal.jsx'
-import TravelersModal from './components/TravelersModal.jsx'
 import MenuDropdown from './components/MenuDropdown.jsx'
-import TripCalendar from './components/TripCalendar.jsx'
 import { itemDateKey } from './components/StopCard.jsx'
+import { lazyComponent } from './lazyWithReload.jsx'
 import { shiftPeriod, emptyDraft, draftChangeCount, draftToRequest } from './calendarModel.js'
 import { DEFAULT_THEME } from './themes.js'
 import {
@@ -31,10 +22,21 @@ import { getSavedNav, saveNav, clearNav } from './navState.js'
 import { useSwipeNav } from './swipeNav.js'
 import { KIND_OPTIONS, KIND_LABEL } from './kinds.js'
 import { useOnline } from './online.js'
-import ItemEditModal from './components/ItemEditModal.jsx'
+import { ItemEditModal, PendingReview } from './components/lazyModals.js'
 import { rootSnapshot, pushNav, replaceNav, back, backSteps, onPopNav, registerNavGuard } from './historyNav.js'
 import { parseDeepLinkPath } from './urlPath.js'
 import { NavBaseContext } from './navContext.js'
+
+// Opened on demand, so kept out of the initial bundle (each becomes its own chunk).
+const UserSettings = lazyComponent(() => import('./components/UserSettings.jsx'))
+const ShareModal = lazyComponent(() => import('./components/ShareModal.jsx'))
+const SharedTripView = lazyComponent(() => import('./components/SharedTripView.jsx'))
+const PackingList = lazyComponent(() => import('./components/PackingList.jsx'), <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading…</p>)
+const BudgetSummary = lazyComponent(() => import('./components/BudgetSummary.jsx'))
+const DistanceSummary = lazyComponent(() => import('./components/DistanceSummary.jsx'))
+const DocumentsModal = lazyComponent(() => import('./components/DocumentsModal.jsx'))
+const TravelersModal = lazyComponent(() => import('./components/TravelersModal.jsx'))
+const TripCalendar = lazyComponent(() => import('./components/TripCalendar.jsx'), <p style={{ color: 'var(--text-faint)' }} className="text-center py-12 text-sm">Loading calendar…</p>)
 
 // Apply saved font scale before first render
 applyFontScale()
