@@ -169,12 +169,12 @@ async def auth_middleware(request: Request, call_next):
     if not auth_header.startswith("Bearer "):
         return JSONResponse({"detail": "Not authenticated"}, status_code=401)
 
-    from jose import JWTError, jwt
+    import jwt
     try:
         # Signature/expiry gate only. Personal-access-token revocation is checked
         # in get_current_user, which has the request-scoped DB session.
         jwt.decode(auth_header[7:], JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except JWTError:
+    except jwt.PyJWTError:
         return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)
 
     return _with_refreshed_token(request, await call_next(request))

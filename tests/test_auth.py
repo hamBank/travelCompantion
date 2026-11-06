@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 from sqlmodel import Session
 
 from backend import auth

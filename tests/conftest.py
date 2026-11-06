@@ -5,6 +5,8 @@ import os
 os.environ.setdefault("AUTH_ENABLED", "false")
 
 import pytest  # noqa: E402
+
+
 from fastapi.testclient import TestClient
 from sqlmodel import create_engine, Session, SQLModel
 from sqlmodel.pool import StaticPool
@@ -22,6 +24,14 @@ from backend.routers import deeplink as deeplink_router, shared as shared_router
 # sqlite engine, so this one env var switches the whole suite's backend —
 # same fixtures, same tests, different engine underneath.
 _USE_POSTGRES = database_mod.DATABASE_URL.startswith("postgresql")
+
+
+def pytest_configure(config):
+    # PyJWT warns on HMAC keys under 32 bytes. The tests deliberately use the
+    # 31-byte dev default and short "wrong secret" strings; production's
+    # JWT_SECRET is `openssl rand -hex 32` (64 chars, see deploy.sh), so this is
+    # noise here only.
+    config.addinivalue_line("filterwarnings", "ignore:The HMAC key is:Warning")
 
 
 def make_test_session() -> Session:
