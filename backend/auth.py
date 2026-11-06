@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
@@ -9,6 +8,7 @@ from sqlmodel import Session
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from .allowlist import parse_allowed_emails
+from .config import get_settings
 from .database import get_session
 from .metrics import record_external_call
 
@@ -18,12 +18,13 @@ class ConfigError(RuntimeError):
     with a signing secret anyone can read in the source."""
 
 
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+_cfg = get_settings()
+GOOGLE_CLIENT_ID = _cfg.google_client_id
 _DEFAULT_JWT_SECRET = "dev-secret-change-in-production"
-JWT_SECRET       = os.environ.get("JWT_SECRET", _DEFAULT_JWT_SECRET)
+JWT_SECRET       = _cfg.jwt_secret or _DEFAULT_JWT_SECRET
 JWT_ALGORITHM    = "HS256"
-JWT_EXPIRE_DAYS  = int(os.environ.get("JWT_EXPIRE_DAYS", "30"))
-ALLOWED_EMAILS  = parse_allowed_emails(os.environ)
+JWT_EXPIRE_DAYS  = _cfg.jwt_expire_days
+ALLOWED_EMAILS  = parse_allowed_emails({"ALLOWED_EMAILS": _cfg.allowed_emails, "ALLOWED_EMAIL": _cfg.allowed_email})
 # Identity used when auth is disabled (local dev / tests). Fleet spec CFG-5.
 DEV_USER_EMAIL  = "dev@localhost"
 
@@ -71,7 +72,7 @@ def validate_auth_config(enabled: bool, client_id: str, secret: str) -> None:
             "token. Set it to a long random string, e.g. `openssl rand -hex 32`.")
 
 
-AUTH_ENABLED = resolve_auth_enabled(os.environ)
+AUTH_ENABLED = resolve_auth_enabled({"AUTH_ENABLED": _cfg.auth_enabled, "GOOGLE_CLIENT_ID": _cfg.google_client_id})
 validate_auth_config(AUTH_ENABLED, GOOGLE_CLIENT_ID, JWT_SECRET)
 
 _security = HTTPBearer(auto_error=False)
@@ -154,7 +155,7 @@ def token_refresh_due(payload: dict, now: Optional[datetime] = None) -> bool:
 import secrets  # noqa: E402
 
 API_TOKEN_SCOPE       = "api"
-API_TOKEN_EXPIRE_DAYS = int(os.environ.get("API_TOKEN_EXPIRE_DAYS", "365"))
+API_TOKEN_EXPIRE_DAYS = _cfg.api_token_expire_days
 
 
 def create_api_token(user: dict, days: Optional[int] = None) -> tuple[str, str, datetime]:

@@ -11,7 +11,6 @@ import io
 import re
 import json as _json
 import time
-import os
 import urllib.request
 import urllib.parse as _urlparse
 from datetime import datetime
@@ -22,6 +21,7 @@ from sqlmodel import Session, select
 _TIME_RE = re.compile(r'^(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?$', re.IGNORECASE)
 
 from .models import Trip, Stop, ItineraryItem, StopStatus, ItemKind, ItemStatus
+from .config import get_settings
 from .metrics import record_external_call
 
 # Sheet names that contain tabular flight data (one row per flight, first row is headers)
@@ -867,7 +867,7 @@ def enrich_accommodations(session: Session, trip_id: int) -> dict:
     via Google Places API (if GOOGLE_PLACES_API_KEY is set) or Nominatim.
     Only fills gaps — never overwrites values already present from the sheet.
     """
-    api_key = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+    api_key = get_settings().google_places_api_key
     stops = list(session.exec(select(Stop).where(Stop.trip_id == trip_id)).all())
     if not stops:
         raise ValueError(f"No stops found for trip {trip_id}")

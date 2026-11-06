@@ -4,7 +4,6 @@ lead time before other-transport (rail/transfer) departure.
 Idempotent via NotificationLog — running any number of times per real-world
 event sends at most one notification per (item, kind).
 """
-import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -13,6 +12,7 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, select
 
 from . import flight_live, rail_live
+from .config import get_settings
 from .models import (
     ItineraryItem, ItemKind, ItemStatus, Stop, Trip, TripMembership, PushSubscription,
     NotificationLog, UserDocument,
@@ -27,7 +27,8 @@ from .tzutil import approx_utc_offset_hours
 # this cron job can't reach at all). An env var matches the tuning knobs
 # already used for the flight/rail live-alert windows just below, without
 # introducing that new surface for a single number.
-DEPARTURE_LEAD_HOURS = float(os.getenv("DEPARTURE_LEAD_HOURS", "3"))
+_cfg = get_settings()
+DEPARTURE_LEAD_HOURS = _cfg.departure_lead_hours
 
 # How long before check-in actually opens to send a "get ready" heads-up. Some
 # airlines assign seats in check-in order, so arriving even a few minutes late
@@ -43,9 +44,9 @@ GRACE_HOURS = 6
 # Only poll flights departing within this many hours (AeroDataBox's free tier
 # is 600 units/month — this keeps the ceiling to roughly WINDOW/POLL_MINUTES*60
 # calls per tracked flight, e.g. 24h/45min ≈ 32).
-FLIGHT_ALERT_WINDOW_HOURS = float(os.getenv("FLIGHT_ALERT_WINDOW_HOURS", "24"))
+FLIGHT_ALERT_WINDOW_HOURS = _cfg.flight_alert_window_hours
 # Minimum gap between polls of the same flight.
-FLIGHT_ALERT_POLL_MINUTES = float(os.getenv("FLIGHT_ALERT_POLL_MINUTES", "45"))
+FLIGHT_ALERT_POLL_MINUTES = _cfg.flight_alert_poll_minutes
 # Delay-alert escalation thresholds (minutes). Only the largest bucket the
 # current delay clears is sent, so a steady 45m delay doesn't re-alert every
 # poll, but a growing delay (45m → 70m) still gets a fresh, more urgent alert.
@@ -58,8 +59,8 @@ DELAY_BUCKETS_MIN = [15, 30, 60, 120, 240]
 # window/poll-gap comment above does. Defaults are still deliberately bounded
 # (not "poll every train every minute") so a misbehaving cron doesn't hammer
 # someone else's free infrastructure.
-RAIL_ALERT_WINDOW_HOURS = float(os.getenv("RAIL_ALERT_WINDOW_HOURS", "24"))
-RAIL_ALERT_POLL_MINUTES = float(os.getenv("RAIL_ALERT_POLL_MINUTES", "30"))
+RAIL_ALERT_WINDOW_HOURS = _cfg.rail_alert_window_hours
+RAIL_ALERT_POLL_MINUTES = _cfg.rail_alert_poll_minutes
 
 
 def _parse_checkin_window(s) -> Optional[float]:

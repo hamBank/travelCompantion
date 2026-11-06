@@ -18,13 +18,14 @@ from fastapi import APIRouter, Request, Depends
 from sqlmodel import Session, select
 
 from ..database import get_session
+from ..config import get_settings
 from ..models import IngestedEmail, UserImportToken, ItemKind
 
 router = APIRouter()
 
-_INGEST_SECRET = os.getenv("MAIL_INGEST_SECRET", "")
+_INGEST_SECRET = get_settings().mail_ingest_secret
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_MAIL_STORE = os.getenv("MAIL_STORE_DIR", os.path.join(_APP_ROOT, "mail_store"))
+_MAIL_STORE = get_settings().mail_store_dir or os.path.join(_APP_ROOT, "mail_store")
 
 
 def _token_from_recipient(addr: str) -> str:
@@ -71,7 +72,7 @@ def parse_ingested(session: Session, ingested: IngestedEmail, raw: bytes, attach
     from .documents import _text_from_eml, _build_prompt, _call_claude, build_pending_changes
     import base64
 
-    if not os.getenv("ANTHROPIC_API_KEY", ""):
+    if not get_settings().anthropic_api_key:
         ingested.status = "received"
         ingested.parse_error = "parser not configured"
         session.add(ingested); session.commit()

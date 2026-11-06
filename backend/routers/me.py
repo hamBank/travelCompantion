@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session, SQLModel, select
 
 from ..database import get_session
+from ..config import get_settings
 from ..auth import get_current_user, create_api_token
 from ..models import (
     UserImportToken, IngestedEmail, IngestedEmailRead, ApiToken, ApiTokenRead,
@@ -100,9 +101,9 @@ def revoke_personal_api_token(
         session.commit()
     return Response(status_code=204)
 
-_MAIL_DOMAIN = os.getenv("MAIL_DOMAIN", "tripplan.hups.club")
+_MAIL_DOMAIN = get_settings().mail_domain
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_MAIL_STORE = os.getenv("MAIL_STORE_DIR", os.path.join(_APP_ROOT, "mail_store"))
+_MAIL_STORE = get_settings().mail_store_dir or os.path.join(_APP_ROOT, "mail_store")
 
 
 @router.get("/me/import-address")

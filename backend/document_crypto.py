@@ -8,12 +8,13 @@ destroys every stored document (there is no reset path, unlike JWT_SECRET or
 VAPID_PRIVATE_KEY). Generate it with scripts/gen_document_key.py, set it
 before first use, and back it up outside the server — see .env.example.
 """
-import os
 
 from cryptography.fernet import Fernet, InvalidToken  # noqa: F401  (re-exported for callers)
 from fastapi import HTTPException
 
-DOCUMENT_ENCRYPTION_KEY = os.environ.get("DOCUMENT_ENCRYPTION_KEY", "")
+from .config import get_settings
+
+DOCUMENT_ENCRYPTION_KEY = get_settings().document_encryption_key
 
 
 class DocumentVaultNotConfigured(Exception):

@@ -7,6 +7,7 @@ from typing import List, Optional
 import os, io, math, time, re, json, hashlib, urllib.request, urllib.error, urllib.parse, xml.etree.ElementTree as ET, httpx
 from pydantic import BaseModel
 from ..database import get_session
+from ..config import get_settings
 from ..auth import get_current_user
 from ..permissions import require_stop_role, require_item_role
 from ..models import ItineraryItem, ItemCreate, ItemRead, ItemUpdate, ItemHistory, ItemHistoryRead, ItemAttachment, ItemKind, Stop, StopRead, TripRole, Expense
@@ -241,9 +242,9 @@ def move_item(item_id: int, req: MoveItemRequest, session: Session = Depends(get
     return item
 
 
-_PLACES_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
+_PLACES_KEY = get_settings().google_places_api_key
 # Routes API can use a dedicated key; falls back to the Places key if unset.
-_ROUTES_KEY = os.getenv("GOOGLE_ROUTE_API_KEY", "") or _PLACES_KEY
+_ROUTES_KEY = get_settings().google_route_api_key or _PLACES_KEY
 _PLACES_BASE = "https://maps.googleapis.com/maps/api/place"
 
 @router.get("/items/{item_id}/flight-check")
@@ -859,7 +860,7 @@ def river_path(req: RiverPathRequest, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=503, detail=f"River path lookup failed: {e}")
 
 
-_STATIC_MAPS_KEY = os.getenv("GOOGLE_STATIC_MAPS_API_KEY", "") or _ROUTES_KEY
+_STATIC_MAPS_KEY = get_settings().google_static_maps_api_key or _ROUTES_KEY
 _STATIC_MAPS_API = "https://maps.googleapis.com/maps/api/staticmap"
 
 
@@ -1503,7 +1504,7 @@ def _claude_enhance_washing(entries: list, city: str = "") -> list:
 
     Skips silently if ANTHROPIC_API_KEY is unset or on any error.
     """
-    _key = os.getenv("ANTHROPIC_API_KEY", "")
+    _key = get_settings().anthropic_api_key
     if not _key or not entries:
         _apply_claude_enhancements(entries, [])
         return entries

@@ -660,10 +660,6 @@ GOOGLE_CLIENT_ID=
 ALLOWED_EMAILS=
 JWT_SECRET=$(openssl rand -hex 32)
 
-# Google Sheets (required for sheet import)
-SPREADSHEET_ID=
-SHEET_NAMES=
-
 # Optional: Google Places API for accommodation/restaurant/activity enrichment
 # GOOGLE_PLACES_API_KEY=
 

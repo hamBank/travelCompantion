@@ -8,13 +8,14 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlmodel import Session
 from .database import create_db_and_tables, get_session
+from .config import get_settings
 from .routers import trips, stops, items, sheets_import, documents, pending, ingest, me, weather, packing, push, attachments, calendar, shared, vault, expenses, webhooks, travelers, deeplink
 from .routers.auth_router import router as auth_router
 from . import metrics as _metrics  # registers all travelcomp_* counters at startup
 
 # ── Structured logging ────────────────────────────────────────────────────────
 
-_LOG_DIR  = os.getenv("LOG_DIR", "/var/log/travelcomp")
+_LOG_DIR  = get_settings().log_dir
 _LOG_FILE = os.path.join(_LOG_DIR, "app.log")
 
 
@@ -81,7 +82,7 @@ _PUBLIC_EXACT    = {"/", "/index.html", "/privacy.html", "/tos.html",
                     "/favicon.ico", "/icon-192.png", "/icon-512.png",
                     "/apple-touch-icon.png", "/deploy"}
 
-_DEPLOY_SECRET = os.getenv("DEPLOY_SECRET", "").encode()
+_DEPLOY_SECRET = get_settings().deploy_secret.encode()
 _TRIGGER       = Path(__file__).parent.parent / ".deploy-trigger"
 
 

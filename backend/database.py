@@ -1,12 +1,12 @@
-import os
 import time
 from sqlmodel import create_engine, Session, SQLModel
 from sqlalchemy import text, event
 from sqlalchemy.orm import Session as _SASession
+from .config import get_settings
 
 # Default to the local SQLite file; override with DATABASE_URL in production
 # (e.g. postgresql+psycopg://user:pass@host/travelcomp).
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./travel.db")
+DATABASE_URL = get_settings().database_url
 
 
 def _connect_args(url: str) -> dict:
@@ -150,12 +150,12 @@ def _backfill_trip_ownership():
     ALLOWED_EMAILS entry (the original single user) so pre-permissions trips
     remain accessible."""
     try:
-        import os
         from .models import Trip, TripMembership, TripRole
         from sqlmodel import select
 
         from .allowlist import parse_allowed_emails
-        emails = parse_allowed_emails(os.environ)
+        s = get_settings()
+        emails = parse_allowed_emails({"ALLOWED_EMAILS": s.allowed_emails, "ALLOWED_EMAIL": s.allowed_email})
         owner_email = emails[0] if emails else ""
         if not owner_email:
             return  # nothing to assign to (auth-disabled / no configured user)

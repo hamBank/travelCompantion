@@ -14,7 +14,7 @@ The endpoint never writes anything — it returns a *preview*. The frontend show
 it for review/edit and then creates the record through the normal item endpoint
 (which enforces editor permission on the chosen stop).
 """
-import os, json, base64, re, html
+import json, base64, re, html
 from datetime import datetime
 from email import message_from_bytes
 from email.policy import default as email_default
@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlmodel import Session, select
 
 from ..database import get_session
+from ..config import get_settings
 from ..auth import get_current_user
 from ..permissions import require_trip_role
 from ..models import Trip, Stop, ItemKind, TripRole
@@ -66,7 +67,7 @@ def _record_doc_cache(session, cache_key: str, trip_id, item_count: int):
     session.add(ProcessedDocument(cache_key=cache_key, trip_id=trip_id, item_count=item_count))
     session.commit()
 
-_ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+_ANTHROPIC_KEY = get_settings().anthropic_api_key
 _MODEL = "claude-sonnet-4-6"
 _MAX_TEXT_CHARS = 60_000  # bound token usage on huge HTML emails
 

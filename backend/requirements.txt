@@ -8,6 +8,7 @@ uvicorn[standard]>=0.29.0
 # broke every write). Move the range together with PM and RF, after running the
 # suite on the new version. models.py itself only needs >=0.0.45 (NaiveDatetime).
 sqlmodel>=0.0.48,<0.0.49
+pydantic-settings>=2.3,<3
 aiofiles>=23.2.1
 python-multipart>=0.0.9
 google-auth>=2.29.0
