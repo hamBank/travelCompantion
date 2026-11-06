@@ -1,0 +1,28 @@
+# /etc/systemd/system/travelcomp-pull-backup.service   (on the BACKUP server)
+# Oneshot, so `systemctl status` / `systemctl show -p Result` say whether the last pull
+# worked (fleet spec DEP-5). The script exits non-zero if the pull fails, a dump is
+# unsound, or the newest dump is stale: a failed run stays visible in `systemctl --failed`.
+[Unit]
+Description=Pull Travel Companion backups from the app server
+After=network-online.target
+Wants=network-online.target
+# Alert on failure, e.g. point this at a unit that mails you:
+# OnFailure=notify-failure@%n.service
+
+[Service]
+Type=oneshot
+User=tcpull
+# /var/lib/travelcomp-backup: the ssh key, known_hosts and the backups (data/) live here.
+StateDirectory=travelcomp-backup
+StateDirectoryMode=0700
+ExecStart=/usr/local/sbin/travelcomp-pull-backup.sh
+TimeoutStartSec=2h
+# Hardening: it only needs the network and its own state directory. If you point DEST
+# at another disk, add ReadWritePaths=<that path> in a drop-in.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true

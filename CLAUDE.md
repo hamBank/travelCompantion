@@ -68,6 +68,13 @@ so after a migration that changes a column's *type* an old process can fail with
 change result type" until it reconnects: keep the deploy order migrate, then restart, and keep
 `engine.dispose()` after `create_all()` in tests that rebuild the schema (DB-6).
 
+**Off-box backups (fleet spec DEP-6).** `pg_backup.sh` keeps 14 days on the app server; a *pull* job on a
+separate backup server copies them over rsync/ssh: `deploy/backup-server/` (script, systemd service + timer,
+installer) and `scripts/add_backup_reader.sh` (the app-side read-only `rrsync -ro` key). `.env` is
+deliberately not pulled, but it holds `DOCUMENT_ENCRYPTION_KEY`, without which the vault in a restored
+dump is unreadable: keep it in a password manager. Setup, failure messages and the restore drill are in
+`docs/offsite-backup.md`; `tests/test_pull_backup.py` covers the pull end to end.
+
 The URL comes from `DATABASE_URL` via `alembic/env.py` (not alembic.ini). See
 `docs/postgres-migration.md` for the full runbook. Tests use `create_all()` for
 speed; the drift guard keeps that in sync with the migrations.
