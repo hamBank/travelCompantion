@@ -20,7 +20,7 @@ def test_multi_item_creates_one_pending_per_leg(client, session):
         {"kind": "flight", "name": "Helsinki → Paris", "matched_stop_id": stop["id"], "confidence": "high",
          "details": {"flight_number": "AY1571", "depart_time": "2026-07-25T07:35", "arrive_time": "2026-07-25T09:40", "origin": "HEL", "destination": "CDG"}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 2
     # flight numbers are normalised: "AY132" → "AY 132"
     assert {pc.payload["details"]["flight_number"] for pc in pcs} == {"AY 132", "AY 1571"}
@@ -42,7 +42,7 @@ def test_matches_existing_flight_as_update_with_diff(client, session):
         {"kind": "flight", "name": "Helsinki → Paris", "matched_stop_id": stop["id"], "confidence": "high",
          "details": {"flight_number": "AY1571", "depart_time": "2026-07-25T07:35", "origin": "HEL", "destination": "CDG"}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert sorted(pc.op for pc in pcs) == ["create", "update"]
     upd = next(pc for pc in pcs if pc.op == "update")
     assert upd.target_item_id is not None
@@ -63,7 +63,7 @@ def test_no_match_when_flight_number_differs(client, session):
         {"kind": "flight", "name": "AY132", "matched_stop_id": stop["id"],
          "details": {"flight_number": "AY132", "depart_time": "2026-07-24T21:35"}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 1 and pcs[0].op == "create"
 
 
@@ -71,14 +71,14 @@ def test_legacy_single_object_shape_tolerated(client, session):
     trip, stop = _trip_with_stop(client)
     stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
     parsed = {"kind": "note", "name": "Reminder", "matched_stop_id": stop["id"], "details": {"description": "x"}}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 1 and pcs[0].kind.value == "note"
 
 
 def test_empty_result_creates_nothing(client, session):
     trip, stop = _trip_with_stop(client)
     stops = session.exec(select(Stop).where(Stop.trip_id == trip["id"])).all()
-    assert build_pending_changes(session, "dev@local", trip["id"], stops, {"items": []}) == []
+    assert build_pending_changes(session, "dev@localhost", trip["id"], stops, {"items": []}) == []
 
 
 def test_normalize_tz_offsets_passthrough():
@@ -113,7 +113,7 @@ def test_build_pending_normalizes_flight_tz(client, session):
                      "arrive_time": "2026-07-25T06:00", "depart_tz": "Asia/Singapore",
                      "arrive_tz": "Helsinki"}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     d = pcs[0].payload["details"]
     assert d["depart_tz"] == "GMT+8"
     assert d["arrive_tz"] == "GMT+3"
@@ -151,7 +151,7 @@ def test_transit_leg_assigned_to_departing_stop_not_destination(client, session)
         },
     }]}
 
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 1
     # Should be corrected to stop A (Paris, last stop whose depart ≤ flight date)
     assert pcs[0].suggested_stop_id == stop_a["id"], (
@@ -179,7 +179,7 @@ def test_passenger_fields_merged_not_replaced(client, session):
                         {"name": "Mrs Nicole Wuth", "seat": "14A", "loyalty": "1184071914"},
                     ]},
     }]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 1
     pc = pcs[0]
     assert pc.op == "update"
@@ -205,7 +205,7 @@ def test_passenger_fields_not_duplicated_if_same(client, session):
         "details": {"flight_number": "AY132", "depart_time": "2026-07-24T21:35",
                     "passengers": [{"name": "Mr Antony Wuth", "seat": "12E"}]},
     }]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     # Identical — no pending change created (empty diff is skipped)
     assert len(pcs) == 0
 
@@ -307,7 +307,7 @@ def test_river_cruise_creates_one_accommodation_item_per_stay(client, session):
         }
         for loc, checkin, checkout, stop_town in stays
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
 
     assert len(pcs) == 6  # a shared booking_ref across stays must NOT collapse them
     assert all(pc.op == "create" for pc in pcs)
@@ -344,7 +344,7 @@ def test_accommodation_same_booking_ref_different_checkin_not_deduped(client, se
          "details": {"location": "Paris", "checkin": "2026-08-02", "checkout": "2026-08-03",
                      "booking_ref": "REF1"}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 2
 
 
@@ -364,7 +364,7 @@ def test_matches_existing_river_transfer_by_booking_ref(client, session):
                      "depart_time": "2026-08-09T09:00", "booking_ref": "FER123",
                      "provider": "Rhône Cruises"}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 1
     assert pcs[0].op == "update"
     assert pcs[0].diff["after"]["provider"] == "Rhône Cruises"
@@ -385,7 +385,7 @@ def test_matches_existing_river_transfer_by_time_and_location_fallback(client, s
          "details": {"start_location": "Lyon", "end_location": "Valence",
                      "depart_time": "2026-08-09T09:00", "duration": "3h 30m"}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 1
     assert pcs[0].op == "update"
     assert pcs[0].diff["after"]["duration"] == "3h 30m"
@@ -404,6 +404,6 @@ def test_river_transfer_no_match_when_location_differs(client, session):
          "details": {"start_location": "Avignon", "end_location": "Arles",
                      "depart_time": "2026-08-09T09:00"}},
     ]}
-    pcs = build_pending_changes(session, "dev@local", trip["id"], stops, parsed)
+    pcs = build_pending_changes(session, "dev@localhost", trip["id"], stops, parsed)
     assert len(pcs) == 1
     assert pcs[0].op == "create"

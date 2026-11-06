@@ -1,7 +1,7 @@
 """Packing list: visibility (mine + shared), counts, CRUD, ownership, bags."""
 from backend.models import PackingItem, Bag
 
-ME = "dev@local"   # get_current_user returns this when auth is disabled
+ME = "dev@localhost"   # get_current_user returns this when auth is disabled
 
 
 def _trip(client) -> int:

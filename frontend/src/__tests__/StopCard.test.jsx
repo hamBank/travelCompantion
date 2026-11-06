@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { useContext } from 'react'
 import { HideTimeCtx, itemTimeStr, itemDateKey, itemEndMs, itemOccursOn, itemSortKey, computeLayovers, computeCrossStopLayover, fmtConnectionDur, toUtcMs, latestCheckoutAccommodation, weatherSegments, routeMapSource, itemLocations, dayLocations, dayMapPoints, DayBanner, closedOnDay, isPastPending, PastPendingFrame, PAST_PENDING_GRACE_HOURS, isHiddenWhenCompleted } from '../components/StopCard.jsx'
@@ -98,7 +98,21 @@ describe('itemEndMs', () => {
 // catch-up banner (TripTimeline.jsx) says how many, this is what marks
 // *which* one(s) so they're findable in a long itinerary.
 
+
+// These tests build timestamps relative to "now". Unpinned, they failed for an
+// hour every day: at 07:00-07:59 UTC, now-7h is 00:xx, and a time of exactly
+// 00:00 is (by design) treated as a date-only value that ends at end-of-day.
+// Pin the clock to midday so no offset can land on midnight.
+function pinClock() {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-06-15T12:00:00Z'))
+  })
+  afterEach(() => { vi.useRealTimers() })
+}
+
 describe('isPastPending', () => {
+  pinClock()
   it('is true for a pending item well past its grace period', () => {
     const longAgo = new Date(Date.now() - (PAST_PENDING_GRACE_HOURS + 1) * 3600_000).toISOString().slice(0, 19)
     const item = { kind: 'activity', status: 'pending', details: {}, scheduled_at: longAgo }
@@ -130,6 +144,7 @@ describe('isPastPending', () => {
 })
 
 describe('PastPendingFrame', () => {
+  pinClock()
   it('wraps children in a highlighted frame when the item is past-pending', () => {
     const longAgo = new Date(Date.now() - (PAST_PENDING_GRACE_HOURS + 1) * 3600_000).toISOString().slice(0, 19)
     const item = { kind: 'activity', status: 'pending', details: {}, scheduled_at: longAgo }

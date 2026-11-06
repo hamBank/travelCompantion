@@ -106,7 +106,7 @@ frontend gates UI affordances for UX only:
 ## Migration of existing data
 
 On startup, `_backfill_trip_ownership()` (in `database.py`) gives every trip with no
-membership an `owner` row using `ALLOWED_EMAIL`. If `ALLOWED_EMAIL` is unset nothing
+membership an `owner` row using `ALLOWED_EMAILS`. If `ALLOWED_EMAILS` is unset nothing
 is assigned (auth-disabled dev, where everything is allowed anyway).
 
 ## Known limitations / future work
@@ -115,6 +115,6 @@ is assigned (auth-disabled dev, where everything is allowed anyway).
 - Access keyed by email only — no `User` table / display names for members.
 - Inviting an email that never logs in just sits as a pending membership (it
   activates the moment that Google account signs in).
-- `ALLOWED_EMAIL` still gates *who may authenticate at all*; per-trip membership
-  gates *what they can see*. To let other Google accounts in, `ALLOWED_EMAIL` must
+- `ALLOWED_EMAILS` still gates *who may authenticate at all*; per-trip membership
+  gates *what they can see*. To let other Google accounts in, `ALLOWED_EMAILS` must
   be cleared or widened (otherwise only that one account can log in).

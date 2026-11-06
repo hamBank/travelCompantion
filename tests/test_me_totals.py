@@ -1,12 +1,12 @@
 """Tests for GET /me/travel-totals (plan 17b: personal cross-trip totals —
 trips/days/countries/distance — all keyed on being a **traveler** on a trip,
 D6, docs/plans/plan-17-travelers.md). Auth is disabled in this suite (see
-tests/conftest.py), so every request is dev@local-as-owner; a trip only
-counts once dev@local is explicitly added as a traveler on it (D1 — creating
+tests/conftest.py), so every request is dev@localhost-as-owner; a trip only
+counts once dev@localhost is explicitly added as a traveler on it (D1 — creating
 a trip does not auto-add you as a traveler)."""
 from fastapi.testclient import TestClient
 
-DEV_EMAIL = "dev@local"
+DEV_EMAIL = "dev@localhost"
 
 
 def _add_traveler(client: TestClient, trip_id: int, email=DEV_EMAIL, display_name=None):

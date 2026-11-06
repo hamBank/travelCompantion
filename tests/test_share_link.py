@@ -15,7 +15,7 @@ from backend.models import TripMembership, TripRole
 
 VIEWER = "viewer@example.com"
 EDITOR = "editor@example.com"
-OWNER = "dev@local"   # get_current_user's default identity when auth is disabled
+OWNER = "dev@localhost"   # get_current_user's default identity when auth is disabled
 
 
 @pytest.fixture

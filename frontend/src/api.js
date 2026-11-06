@@ -156,7 +156,7 @@ async function req(path, opts = {}) {
 }
 
 export const getAuthConfig  = ()       => req('/auth/config')
-// Who the current token (or, with auth disabled, dev@local) resolves to —
+// Who the current token (or, with auth disabled, dev@localhost) resolves to —
 // used client-side to compare against a Traveler row's user_email (e.g.
 // DistanceSummary's "you're not a traveler on this trip" hint) without
 // re-deriving identity from a locally-stored JWT.

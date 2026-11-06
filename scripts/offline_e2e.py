@@ -14,7 +14,7 @@ the two scenarios the plan's design hinges on:
 
 This starts its own uvicorn against a throwaway SQLite DB, so it doesn't
 touch dev/prod data. Auth is left disabled (no GOOGLE_CLIENT_ID), which is
-this repo's normal local/CI setup — the app auto-logs in as dev@local.
+this repo's normal local/CI setup — the app auto-logs in as dev@localhost.
 
 Requires:
   - The frontend already built into backend/static/ (`cd frontend && npm

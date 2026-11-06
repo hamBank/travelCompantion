@@ -37,7 +37,7 @@ def test_import_from_sheets_creates_trip_and_owner_membership(client: TestClient
         select(TripMembership).where(TripMembership.trip_id == data["id"])
     ).first()
     assert membership is not None
-    assert membership.user_email == "dev@local"
+    assert membership.user_email == "dev@localhost"
     assert membership.role == "owner"
 
 

@@ -8,6 +8,7 @@ from jose import JWTError, jwt
 from sqlmodel import Session
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from .allowlist import parse_allowed_emails
 from .database import get_session
 from .metrics import record_external_call
 
@@ -22,7 +23,9 @@ _DEFAULT_JWT_SECRET = "dev-secret-change-in-production"
 JWT_SECRET       = os.environ.get("JWT_SECRET", _DEFAULT_JWT_SECRET)
 JWT_ALGORITHM    = "HS256"
 JWT_EXPIRE_DAYS  = int(os.environ.get("JWT_EXPIRE_DAYS", "30"))
-ALLOWED_EMAIL    = os.environ.get("ALLOWED_EMAIL", "").lower()
+ALLOWED_EMAILS  = parse_allowed_emails(os.environ)
+# Identity used when auth is disabled (local dev / tests). Fleet spec CFG-5.
+DEV_USER_EMAIL  = "dev@localhost"
 
 
 def resolve_auth_enabled(env) -> bool:
@@ -106,13 +109,13 @@ def create_jwt(user: dict) -> str:
 
 
 def email_authorised(session, email: str) -> bool:
-    """The sign-in gate: the bootstrap admin (ALLOWED_EMAIL), or anyone who has
-    been shared at least one trip (any TripMembership). When ALLOWED_EMAIL is
+    """The sign-in gate: anyone on the ALLOWED_EMAILS list, or anyone who has
+    been shared at least one trip (any TripMembership). When ALLOWED_EMAILS is
     unset, anyone with a Google account may sign in (membership then gates
     access). Shared by /auth/google, /auth/refresh and the sliding refresh in
     get_current_user, so revoking someone's access stops all three."""
     email = email.lower()
-    if not ALLOWED_EMAIL or email == ALLOWED_EMAIL:
+    if not ALLOWED_EMAILS or email in ALLOWED_EMAILS:
         return True
     from sqlmodel import select
     from .models import TripMembership
@@ -191,7 +194,7 @@ def get_current_user(
     request: Request = None,
 ) -> dict:
     if not AUTH_ENABLED:
-        return {"email": "dev@local", "name": "Dev", "picture": ""}
+        return {"email": DEV_USER_EMAIL, "name": "Dev", "picture": ""}
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:

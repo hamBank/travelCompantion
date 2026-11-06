@@ -657,7 +657,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 # Google OAuth (required for authentication)
 AUTH_ENABLED=true
 GOOGLE_CLIENT_ID=
-ALLOWED_EMAIL=
+ALLOWED_EMAILS=
 JWT_SECRET=$(openssl rand -hex 32)
 
 # Google Sheets (required for sheet import)

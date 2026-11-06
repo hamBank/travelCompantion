@@ -10,7 +10,7 @@
 #   sudo travelCompantion/scripts/install-debian13.sh --domain trips.example.com \
 #        --admin-email you@example.com --with-https --with-mail
 #
-# Then edit /opt/travelcomp/.env (GOOGLE_CLIENT_ID, ALLOWED_EMAIL) and:
+# Then edit /opt/travelcomp/.env (GOOGLE_CLIENT_ID, ALLOWED_EMAILS) and:
 #   sudo systemctl start travelcomp
 #
 # Flags:
@@ -249,7 +249,7 @@ ok "Install complete."
 echo ""
 echo "  Next steps:"
 echo "    1. Add required secrets:   sudo nano $ENV_FILE"
-echo "         GOOGLE_CLIENT_ID, ALLOWED_EMAIL   (auth)"
+echo "         GOOGLE_CLIENT_ID, ALLOWED_EMAILS  (auth)"
 $WITH_MAIL && echo "         MAIL_INGEST_SECRET / MAIL_DOMAIN were generated for you"
 echo "    2. Start the service:      sudo systemctl start ${SERVICE_NAME}"
 echo "    3. Tail logs:              sudo journalctl -u ${SERVICE_NAME} -f"

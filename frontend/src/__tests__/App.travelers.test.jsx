@@ -75,7 +75,7 @@ describe('Travelers menu item', () => {
     await waitFor(() => expect(TravelersModal).toHaveBeenCalled())
     const modal = screen.getByTestId('travelers-modal')
     expect(modal.dataset.tripId).toBe('1')
-    expect(modal.dataset.userEmail).toBe('dev@local')
+    expect(modal.dataset.userEmail).toBe('dev@localhost')
 
     // onClose now goes through historyNav's back() (plan-18a D4) — the
     // resulting popstate (and so the state change that unmounts the modal)

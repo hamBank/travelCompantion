@@ -26,7 +26,7 @@ def test_subscribe_creates_row(client, session):
     rows = session.exec(select(PushSubscription)).all()
     assert len(rows) == 1
     assert rows[0].endpoint == "https://push.example/1"
-    assert rows[0].user_email == "dev@local"   # auth disabled → dev user
+    assert rows[0].user_email == "dev@localhost"   # auth disabled → dev user
 
 
 def test_subscribe_upserts_on_same_endpoint(client, session):

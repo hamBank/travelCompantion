@@ -39,7 +39,7 @@ def _headers(email: str) -> dict:
 @pytest.fixture
 def real_auth(monkeypatch):
     """Flip on real, membership-scoped auth so owner/editor/viewer actually
-    differ — by default (auth disabled) every request is dev@local-as-owner,
+    differ — by default (auth disabled) every request is dev@localhost-as-owner,
     same pattern as test_expenses.py's test_viewer_cannot_create_expense."""
     monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(permissions, "AUTH_ENABLED", True)
