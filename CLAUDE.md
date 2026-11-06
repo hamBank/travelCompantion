@@ -167,21 +167,31 @@ Datetime values must have timezone information`, identical on SQLite and
 Postgres — it's a SQLAlchemy-level type check, not a driver quirk). Fixing
 it meant sorting every field into one of the two categories above, not just
 silencing the error — an `AwareDatetime`/blanket rewrite would have quietly
-corrupted every wall-clock field's meaning (see below). No Alembic
-migration was needed either way: the actual Postgres columns were already
-`TIMESTAMP WITHOUT TIME ZONE` and stay that way — `UTCDateTime` attaches
-UTC tzinfo on read regardless of the column's own timezone-awareness, so
-this is a Python-side typing fix only.
+corrupted every wall-clock field's meaning (see below).
 
-**`requirements.txt` now floors `sqlmodel>=0.0.45`, and that floor matters in
-the other direction too.** `NaiveDatetime` only maps to a column type from 0.0.45
-on. With the old `>=0.0.19` floor, `pip install -r` treated prod's long-lived
+**The instant columns are `timestamptz` (fleet spec DB-8).** The first version of
+that fix claimed it was "a Python-side typing fix only" — wrong, and it went
+unnoticed for six weeks. Against a plain `timestamp` column Postgres stores an
+aware value as the wall clock in the *session's* TimeZone (prod: Europe/Berlin),
+and SQLModel reads it back labelled UTC, so every instant came back 1–2h ahead
+(2026-11-06: 05:14 UTC written, 06:14 stored). It is invisible on a UTC server and on
+SQLite. Migration `a3f1c8d2e7b4` converts the 27 instant columns to `timestamptz`,
+era-aware: rows stored before 2026-09-24 (naive UTC, pre-#194) are read as UTC, later
+rows in the session zone — Postgres's own cast, no hard-coded zone. Wall-clock
+(`NaiveDatetime`) columns stay `timestamp`. When you add a Category 1 field, the
+migration must create it as `sa.DateTime(timezone=True)`; `tests/test_instants_timestamptz.py`
+runs the migration on Postgres under a non-UTC session zone and fails if the migrated
+schema drifts from the models (the SQLite drift test cannot see this).
+
+**`requirements.txt` floors `sqlmodel` (now `>=0.0.48,<0.0.49`, the fleet range; the code itself
+needs `>=0.0.45`), and a floor matters in the other direction too.** `NaiveDatetime` only maps to a
+column type from 0.0.45 on. With the old `>=0.0.19` floor, `pip install -r` treated prod's long-lived
 venv (0.0.39) as already satisfied and never upgraded it, so the 2026-10-28
 deploy died in `alembic upgrade head` importing `models.py` (`ValueError:
 <class 'pydantic.types.NaiveDatetime'> has no matching SQLAlchemy type`) —
 before the service restart, so prod stayed up on the old code. CI never saw it
 because CI builds a fresh venv every run. `tests/test_requirements_floor.py`
-guards the declared floor **and the cap** (`<0.0.49`, fleet spec STK-5: sqlmodel is pre-1.0, so
+guards the declared range (fleet spec STK-5/DB-8: sqlmodel is pre-1.0, so
 the next release is untested until the suite has run on it — bump the cap on purpose, in the
 same commit that proves it); if models.py ever starts needing a newer SQLModel
 feature, raise the floor (and that test's `MIN_SQLMODEL`) in the same commit.
