@@ -68,12 +68,29 @@ journalctl -u travelcomp-pull-backup.service -n 20      # expect "✓ ok: N dump
 systemctl list-timers travelcomp-pull-backup.timer
 ```
 
+## Keeping the backups on another disk
+
+The service is sandboxed: it can write only to its own state directory, so a `DEST` elsewhere fails
+under systemd with `chmod: … Read-only file system` even though the same script works when you run it
+by hand as `tcpull`. Set it with the installer, which does everything needed (idempotent, re-run any time):
+
+```bash
+sudo deploy/backup-server/install.sh --dest /lklBackup/sites_apps/travelcomp
+```
+
+The directory must already exist and be mounted. It sets `DEST=` in the config, makes `tcpull` the owner,
+and writes `travelcomp-pull-backup.service.d/dest.conf` with `ReadWritePaths=` (the sandbox exception)
+and `RequiresMountsFor=` (the pull waits for the mount, and fails if the disk is absent, instead of
+quietly filling the root filesystem). By hand, that drop-in is `sudo systemctl edit
+travelcomp-pull-backup.service` with those two lines.
+
 ## What a failed run means
 
 The unit exits non-zero (and shows in `systemctl --failed`) when:
 
 | Message | Cause |
 |---|---|
+| `… is not writable by tcpull … read-only sandbox` | `DEST` is outside the unit's state directory: `install.sh --dest <path>` (above) |
 | `rsync of backups failed (exit …)` | ssh/key/host-key/permission problem; the line above it says which |
 | `not a pg_dump file` / `incomplete SQL dump` | A file was caught mid-write or truncated. It is moved to `quarantine/` and fetched again next run |
 | `newest dump is Nh old … backup job may have stopped` | **The app server's own backup stopped.** Check `systemctl status travelcomp-backup.service` and `/var/log/travelcomp/pg-backup.log` there |
