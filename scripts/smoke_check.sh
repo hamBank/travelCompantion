@@ -221,8 +221,13 @@ else
     return 0
   }
 
+  # Every timer deploy.sh installs for a job (the update path unit is not a job). The flight
+  # reconcile one matters most: it is the metered-API job, and its credit refill failing
+  # for weeks went unnoticed because nothing here read its result.
   for pair in "travelcomp-weather.timer:travelcomp-weather.service" \
               "travelcomp-notifications.timer:travelcomp-notifications.service" \
+              "travelcomp-flight-reconcile.timer:travelcomp-flight-reconcile.service" \
+              "travelcomp-loctz.timer:travelcomp-loctz.service" \
               "travelcomp-backup.timer:travelcomp-backup.service"; do
     TIMER="${pair%%:*}"; SERVICE="${pair##*:}"
     ENABLED="$(unit_enabled "$TIMER")"
