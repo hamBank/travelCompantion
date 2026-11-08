@@ -53,6 +53,7 @@ EXPECTED_SHA="${2:-}"
 CURL_TIMEOUT="${SMOKE_CHECK_TIMEOUT:-10}"
 WAIT_SECS="${SMOKE_CHECK_WAIT:-60}"
 APP_DIR="${APP_DIR:-/opt/travelcomp}"
+APP_USER="${APP_USER:-travelcomp}"
 
 # Strip a trailing slash so "$BASE_URL/health" never ends up "//health".
 BASE_URL="${BASE_URL%/}"
@@ -220,8 +221,13 @@ else
     return 0
   }
 
+  # Every timer deploy.sh installs for a job (the update path unit is not a job). The flight
+  # reconcile one matters most: it is the metered-API job, and its credit refill failing
+  # for weeks went unnoticed because nothing here read its result.
   for pair in "travelcomp-weather.timer:travelcomp-weather.service" \
               "travelcomp-notifications.timer:travelcomp-notifications.service" \
+              "travelcomp-flight-reconcile.timer:travelcomp-flight-reconcile.service" \
+              "travelcomp-loctz.timer:travelcomp-loctz.service" \
               "travelcomp-backup.timer:travelcomp-backup.service"; do
     TIMER="${pair%%:*}"; SERVICE="${pair##*:}"
     ENABLED="$(unit_enabled "$TIMER")"
@@ -234,6 +240,32 @@ else
       pass "$TIMER enabled, $SERVICE last result: ${RESULT:-not yet run}"
     fi
   done
+
+  # Legacy cron next to a timer. These scripts used to be run from the app user's
+  # crontab; deploy.sh now installs systemd timers for them, and an old cron entry
+  # left behind runs the job a second time: two backups a night, two weather
+  # refreshes, and the notifications job every 15 minutes with only the variables
+  # the cron line exported (no AERODATABOX_KEY, so its flight alerts silently did
+  # nothing). A hard FAIL, because nothing else would ever surface it.
+  LEGACY_RE='pg_backup\.sh|refresh_weather\.py|send_notifications\.py|reconcile_flight_alerts\.py|refresh_location_timezones\.py'
+  CRON_FILES="${SMOKE_CRON_FILES-/etc/crontab /etc/cron.d/*}"
+  LEGACY=""
+  if command -v crontab &>/dev/null; then
+    LEGACY+="$(crontab -l -u "$APP_USER" 2>/dev/null | grep -Ev '^[[:space:]]*(#|$)' | grep -E "$LEGACY_RE" | sed 's/^/  [crontab -u '"$APP_USER"'] /' || true)"
+  fi
+  for f in $CRON_FILES; do
+    [[ -f "$f" ]] || continue
+    LEGACY+="$(grep -Ev '^[[:space:]]*(#|$)' "$f" 2>/dev/null | grep -E "$LEGACY_RE" | sed "s|^|  [$f] |" || true)"
+    LEGACY+=$'\n'
+  done
+  LEGACY="$(echo "$LEGACY" | sed '/^[[:space:]]*$/d')"
+  if [[ -n "$LEGACY" ]]; then
+    fail "A cron entry runs a job that already has a systemd timer, so it runs twice:"
+    echo "$LEGACY"
+    echo "    Remove it (sudo crontab -u $APP_USER -e, or the /etc/cron.d file) and keep the timer."
+  else
+    pass "No legacy cron entries duplicate the systemd timers"
+  fi
 
   # Backup freshness: only meaningful when Postgres is actually configured —
   # pg_backup.sh intentionally no-ops (exit 0, no dump written) on a

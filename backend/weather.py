@@ -50,12 +50,13 @@ def utc_today() -> date:
     end_date validity window is anchored to (confirmed directly against
     their API). `date.today()` returns the date in whatever timezone the
     *process* happens to be running under, which is not reliably UTC —
-    the production server's OS clock is Europe/Berlin, not UTC, so
+    the production server's OS clock is not UTC (Europe/Berlin when this was
+    first fixed in July 2026; Australia/Sydney, UTC+11, as of 2026-11-09), so
     `date.today()` there silently reintroduces the exact non-UTC-"today"
     bug already fixed once for destination-local time (see get_weather's
-    docstring below): during the ~2-hour window each evening after Berlin's
-    local date has rolled over but UTC's hasn't, the horizon would be
-    computed one day ahead of Open-Meteo's real boundary.
+    docstring below): during the hours each day after the server's local
+    date has rolled over but UTC's hasn't (~2 in Berlin, ~11 in Sydney), the
+    horizon would be computed one day ahead of Open-Meteo's real boundary.
     """
     return datetime.now(timezone.utc).date()
 

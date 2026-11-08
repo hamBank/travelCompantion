@@ -84,7 +84,8 @@ def weather_lookup(
     # Same "today" reference as get_weather()'s horizon calculation (UTC,
     # matching Open-Meteo's own UTC-anchored validity window — NOT
     # date.today(), which follows the server process's own OS timezone;
-    # production runs Europe/Berlin, not UTC) — the TTL buckets model how
+    # production's OS timezone is not UTC: Europe/Berlin originally,
+    # Australia/Sydney as of 2026-11-09) — the TTL buckets model how
     # close a date is to that same boundary, so they need to agree on what
     # "today" means.
     today = utc_today()

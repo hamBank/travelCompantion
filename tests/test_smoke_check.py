@@ -60,17 +60,30 @@ def _serve(port: int, delay: float = 0.0) -> HTTPServer:
     return holder
 
 
-def _stub_systemctl(tmp_path: Path, result: str) -> dict:
+def _stub_systemctl(tmp_path: Path, result: str, only_unit: str = None) -> dict:
+    """`only_unit`: report `result` just for that service (others succeed)."""
     bindir = tmp_path / "bin"
     bindir.mkdir()
     stub = bindir / "systemctl"
+    show = (f'if [[ "$1" == "show" ]]; then if [[ "$2" == "{only_unit}" ]]; then echo "{result}"; else echo success; fi; exit 0; fi\n'
+            if only_unit else f'if [[ "$1" == "show" ]]; then echo "{result}"; exit 0; fi\n')
     stub.write_text(
         "#!/usr/bin/env bash\n"
         'if [[ "$1" == "is-enabled" ]]; then echo enabled; exit 0; fi\n'
-        f'if [[ "$1" == "show" ]]; then echo "{result}"; exit 0; fi\n'
+        + show
     )
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
-    return {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "APP_DIR": str(tmp_path)}
+    # `crontab -l -u <user>` prints $TMP/crontab.txt when a test wrote one, else "no crontab".
+    cron = bindir / "crontab"
+    cron.write_text(
+        "#!/usr/bin/env bash\n"
+        f'if [[ -f "{tmp_path}/crontab.txt" ]]; then cat "{tmp_path}/crontab.txt"; exit 0; fi\n'
+        'echo "no crontab for $3" >&2; exit 1\n'
+    )
+    cron.chmod(cron.stat().st_mode | stat.S_IEXEC)
+    # SMOKE_CRON_FILES="" keeps the real /etc/cron.d out of the tests.
+    return {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "APP_DIR": str(tmp_path),
+            "SMOKE_CRON_FILES": ""}
 
 
 def _run(port, env, *extra_args, wait="20"):
@@ -155,3 +168,83 @@ def test_build_check_is_skipped_without_an_expected_sha(tmp_path, monkeypatch):
     _serve(port)
     r = _run(port, _stub_systemctl(tmp_path, "success"))
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ── legacy cron entries that duplicate a systemd timer ───────────────────────
+
+def _env_with_cron(tmp_path, crontab: str = None, cron_files: str = ""):
+    env = _stub_systemctl(tmp_path, "success")
+    if crontab is not None:
+        (tmp_path / "crontab.txt").write_text(crontab)
+    env["SMOKE_CRON_FILES"] = cron_files
+    return env
+
+
+def test_no_legacy_cron_entries_passes(tmp_path):
+    port = _free_port()
+    _serve(port)
+    r = _run(port, _env_with_cron(tmp_path), SHA)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "No legacy cron entries" in r.stdout
+
+
+@pytest.mark.parametrize("script", [
+    "pg_backup.sh", "refresh_weather.py", "send_notifications.py",
+    "reconcile_flight_alerts.py", "refresh_location_timezones.py",
+])
+def test_a_crontab_entry_for_a_timer_job_fails_the_check(tmp_path, script):
+    port = _free_port()
+    _serve(port)
+    cron = f"15 3 * * * cd /opt/travelcomp && bash scripts/{script} >> backups/x.log 2>&1\n"
+    r = _run(port, _env_with_cron(tmp_path, cron), SHA)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "runs twice" in r.stdout and script in r.stdout
+    assert "crontab -u travelcomp -e" in r.stdout
+
+
+def test_commented_out_and_unrelated_cron_lines_are_ignored(tmp_path):
+    port = _free_port()
+    _serve(port)
+    cron = (
+        "# 15 3 * * * bash scripts/pg_backup.sh   (disabled)\n"
+        "\n"
+        "0 4 * * * /usr/local/bin/some-other-job.sh\n"
+        "*/5 * * * * curl -s localhost/health\n"
+    )
+    r = _run(port, _env_with_cron(tmp_path, cron), SHA)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_an_etc_cron_d_entry_is_found_too(tmp_path):
+    port = _free_port()
+    _serve(port)
+    f = tmp_path / "travelcomp-cron"
+    f.write_text("MAILTO=root\n*/15 * * * * travelcomp /opt/travelcomp/.venv/bin/python /opt/travelcomp/scripts/send_notifications.py\n")
+    r = _run(port, _env_with_cron(tmp_path, cron_files=str(f)), SHA)
+    assert r.returncode == 1 and "send_notifications.py" in r.stdout and str(f) in r.stdout
+
+
+# ── every job timer is checked, not just three of them ───────────────────────
+
+ALL_TIMERS = ["weather", "notifications", "flight-reconcile", "loctz", "backup"]
+
+
+def test_all_five_job_timers_are_checked(tmp_path):
+    port = _free_port()
+    _serve(port)
+    r = _run(port, _stub_systemctl(tmp_path, "success"), SHA)
+    assert r.returncode == 0, r.stdout + r.stderr
+    for name in ALL_TIMERS:
+        assert f"travelcomp-{name}.timer enabled" in r.stdout, name
+
+
+@pytest.mark.parametrize("name", ["flight-reconcile", "loctz"])
+def test_a_failed_flight_reconcile_or_loctz_run_fails_the_check(tmp_path, name):
+    # The AeroDataBox credit refill failed for weeks (fixed in #207) because this
+    # check never read the flight-reconcile job's result.
+    port = _free_port()
+    _serve(port)
+    env = _stub_systemctl(tmp_path, "exit-code", only_unit=f"travelcomp-{name}.service")
+    r = _run(port, env, SHA)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert f"travelcomp-{name}.service's last run failed (Result=exit-code)" in r.stdout
