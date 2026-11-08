@@ -70,7 +70,17 @@ def _stub_systemctl(tmp_path: Path, result: str) -> dict:
         f'if [[ "$1" == "show" ]]; then echo "{result}"; exit 0; fi\n'
     )
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
-    return {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "APP_DIR": str(tmp_path)}
+    # `crontab -l -u <user>` prints $TMP/crontab.txt when a test wrote one, else "no crontab".
+    cron = bindir / "crontab"
+    cron.write_text(
+        "#!/usr/bin/env bash\n"
+        f'if [[ -f "{tmp_path}/crontab.txt" ]]; then cat "{tmp_path}/crontab.txt"; exit 0; fi\n'
+        'echo "no crontab for $3" >&2; exit 1\n'
+    )
+    cron.chmod(cron.stat().st_mode | stat.S_IEXEC)
+    # SMOKE_CRON_FILES="" keeps the real /etc/cron.d out of the tests.
+    return {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "APP_DIR": str(tmp_path),
+            "SMOKE_CRON_FILES": ""}
 
 
 def _run(port, env, *extra_args, wait="20"):
@@ -155,3 +165,57 @@ def test_build_check_is_skipped_without_an_expected_sha(tmp_path, monkeypatch):
     _serve(port)
     r = _run(port, _stub_systemctl(tmp_path, "success"))
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ── legacy cron entries that duplicate a systemd timer ───────────────────────
+
+def _env_with_cron(tmp_path, crontab: str = None, cron_files: str = ""):
+    env = _stub_systemctl(tmp_path, "success")
+    if crontab is not None:
+        (tmp_path / "crontab.txt").write_text(crontab)
+    env["SMOKE_CRON_FILES"] = cron_files
+    return env
+
+
+def test_no_legacy_cron_entries_passes(tmp_path):
+    port = _free_port()
+    _serve(port)
+    r = _run(port, _env_with_cron(tmp_path), SHA)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "No legacy cron entries" in r.stdout
+
+
+@pytest.mark.parametrize("script", [
+    "pg_backup.sh", "refresh_weather.py", "send_notifications.py",
+    "reconcile_flight_alerts.py", "refresh_location_timezones.py",
+])
+def test_a_crontab_entry_for_a_timer_job_fails_the_check(tmp_path, script):
+    port = _free_port()
+    _serve(port)
+    cron = f"15 3 * * * cd /opt/travelcomp && bash scripts/{script} >> backups/x.log 2>&1\n"
+    r = _run(port, _env_with_cron(tmp_path, cron), SHA)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "runs twice" in r.stdout and script in r.stdout
+    assert "crontab -u travelcomp -e" in r.stdout
+
+
+def test_commented_out_and_unrelated_cron_lines_are_ignored(tmp_path):
+    port = _free_port()
+    _serve(port)
+    cron = (
+        "# 15 3 * * * bash scripts/pg_backup.sh   (disabled)\n"
+        "\n"
+        "0 4 * * * /usr/local/bin/some-other-job.sh\n"
+        "*/5 * * * * curl -s localhost/health\n"
+    )
+    r = _run(port, _env_with_cron(tmp_path, cron), SHA)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_an_etc_cron_d_entry_is_found_too(tmp_path):
+    port = _free_port()
+    _serve(port)
+    f = tmp_path / "travelcomp-cron"
+    f.write_text("MAILTO=root\n*/15 * * * * travelcomp /opt/travelcomp/.venv/bin/python /opt/travelcomp/scripts/send_notifications.py\n")
+    r = _run(port, _env_with_cron(tmp_path, cron_files=str(f)), SHA)
+    assert r.returncode == 1 and "send_notifications.py" in r.stdout and str(f) in r.stdout

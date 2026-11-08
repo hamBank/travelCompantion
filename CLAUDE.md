@@ -206,7 +206,8 @@ corrupted every wall-clock field's meaning (see below).
 **The instant columns are `timestamptz` (fleet spec DB-8).** The first version of
 that fix claimed it was "a Python-side typing fix only" — wrong, and it went
 unnoticed for six weeks. Against a plain `timestamp` column Postgres stores an
-aware value as the wall clock in the *session's* TimeZone (prod: Europe/Berlin),
+aware value as the wall clock in the *session's* TimeZone (prod's Postgres `TimeZone` is
+Europe/Berlin, which is its own setting, not the OS zone),
 and SQLModel reads it back labelled UTC, so every instant came back 1–2h ahead
 (2026-11-06: 05:14 UTC written, 06:14 stored). It is invisible on a UTC server and on
 SQLite. Migration `a3f1c8d2e7b4` converts the 27 instant columns to `timestamptz`,
@@ -247,7 +248,9 @@ touching any of the following:
   `start_date`/`end_date` validity window is anchored to *their* clock (UTC),
   not the queried location's timezone, despite `timezone=auto` making the
   *returned* data locally-bucketed. **Do not use `date.today()` here** — the
-  production server's OS timezone is Europe/Berlin, not UTC, and `date.today()`
+  production server's OS timezone is not UTC (Europe/Berlin when this bit in
+  July 2026; Australia/Sydney, UTC+11, as of 2026-11-09 — so the window is now
+  ~11 hours a day, not ~2), and `date.today()`
   silently reintroduces an hours-wide daily window where the computed horizon
   overreaches Open-Meteo's real boundary, causing an entire batched request to
   be rejected and every date in it to fall back to climatology (not just the
