@@ -1,0 +1,23 @@
+# /etc/travelcomp-pull-backup.conf   (on the BACKUP server; root:tcpull, mode 0640)
+# Shell KEY=VALUE, read by travelcomp-pull-backup.sh. Only SRC_HOST is required.
+
+# The app server and the restricted user scripts/add_backup_reader.sh created there.
+SRC_HOST=tcbackup@tripplan.example.com
+
+# Where the copies go (default /var/lib/travelcomp-backup/data). A different path also
+# needs `ReadWritePaths=` for it in a systemd drop-in.
+#DEST=/var/lib/travelcomp-backup/data
+
+# Our retention. The app server keeps 14 days; we keep longer, but never fewer than
+# MIN_KEEP dumps (so a broken source can't make us prune everything).
+#KEEP_DAYS=90
+#MIN_KEEP=7
+
+# Fail if the newest dump is older than this: the app server's backup job has stopped.
+#MAX_AGE_HOURS=30
+
+# Skip the on-disk ingested-email store (rare; the database is the main thing).
+#SRC_MAIL=
+
+#SSH_KEY=/var/lib/travelcomp-backup/.ssh/id_ed25519
+#KNOWN_HOSTS=/var/lib/travelcomp-backup/.ssh/known_hosts
