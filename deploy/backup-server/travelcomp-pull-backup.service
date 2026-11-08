@@ -17,8 +17,9 @@ StateDirectory=travelcomp-backup
 StateDirectoryMode=0700
 ExecStart=/usr/local/sbin/travelcomp-pull-backup.sh
 TimeoutStartSec=2h
-# Hardening: it only needs the network and its own state directory. If you point DEST
-# at another disk, add ReadWritePaths=<that path> in a drop-in.
+# Hardening: it only needs the network and its own state directory; everything else is
+# read-only to it. If DEST is on another disk, run `install.sh --dest <path>`, which adds
+# the drop-in with ReadWritePaths=<path> (without it the pull fails: "Read-only file system").
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

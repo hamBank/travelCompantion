@@ -4,8 +4,9 @@
 # The app server and the restricted user scripts/add_backup_reader.sh created there.
 SRC_HOST=tcbackup@tripplan.example.com
 
-# Where the copies go (default /var/lib/travelcomp-backup/data). A different path also
-# needs `ReadWritePaths=` for it in a systemd drop-in.
+# Where the copies go (default /var/lib/travelcomp-backup/data). For another disk run
+# `sudo deploy/backup-server/install.sh --dest <path>` rather than editing this alone: the
+# unit is sandboxed and also needs ReadWritePaths= for the path (install.sh adds it).
 #DEST=/var/lib/travelcomp-backup/data
 
 # Our retention. The app server keeps 14 days; we keep longer, but never fewer than

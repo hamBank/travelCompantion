@@ -43,6 +43,11 @@ trap 'log "✗ failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 command -v rsync >/dev/null || die "rsync is not installed"
 
+# Under systemd the unit is sandboxed (ProtectSystem=strict): everything but its state
+# directory is read-only, so a DEST on another disk fails here unless the unit allows it.
+if ! mkdir -p "$DEST" 2>/dev/null || [[ ! -w "$DEST" ]]; then
+  die "$DEST is not writable by $(id -un). Run by systemd this is the unit's read-only sandbox: allow the path with 'sudo deploy/backup-server/install.sh --dest $DEST' (adds ReadWritePaths= and RequiresMountsFor=). Run by hand, check the directory's owner."
+fi
 mkdir -p "$DEST/dumps" "$DEST/mail_store" "$DEST/quarantine"
 chmod 700 "$DEST"
 exec 9>"$DEST/.lock"

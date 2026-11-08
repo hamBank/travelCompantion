@@ -206,6 +206,37 @@ def test_two_runs_at_once_do_not_overlap(world):
         holder.kill()
 
 
+def _can_make_a_readonly_mount(tmp_path: Path) -> bool:
+    """A private mount namespace with a read-only tmpfs needs root (or user namespaces)."""
+    d = tmp_path / "probe"
+    d.mkdir()
+    r = subprocess.run(["unshare", "-m", "sh", "-c", f"mount -t tmpfs tmpfs {d} && mount -o remount,ro {d}"],
+                       capture_output=True)
+    return r.returncode == 0
+
+
+def test_a_destination_on_a_read_only_filesystem_says_how_to_fix_it(world, tmp_path):
+    # What the systemd sandbox (ProtectSystem=strict) does to a DEST on another disk:
+    # the directory exists and looks fine, but nothing can be written to it. Before the fix
+    # this surfaced as a bare "chmod: … Read-only file system".
+    if shutil.which("unshare") is None or not _can_make_a_readonly_mount(tmp_path):
+        pytest.skip("cannot create a read-only mount here")
+    _dump(world["app"] / "backups" / "travelcomp-20261106-000501.dump")
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    dest = ro / "dest"
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "TC_PULL_CONF": "/nonexistent",
+           "SRC_ROOT": str(world["app"]), "SRC_HOST": "", "DEST": str(dest)}
+    r = subprocess.run(
+        ["unshare", "-m", "sh", "-c",
+         f"mount -t tmpfs tmpfs {ro} && mkdir {dest} && mount -o remount,ro {ro} && exec bash {SCRIPT}"],
+        env=env, capture_output=True, text=True, timeout=60)
+    out = r.stdout + r.stderr
+    assert r.returncode == 1, out
+    assert "is not writable" in out and "install.sh --dest" in out
+    assert "chmod:" not in out                       # the failure is explained, not a bare chmod error
+
+
 # ── scripts/add_backup_reader.sh (the app-server side) ───────────────────────
 
 KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UVd1G1ZS+8YHvVE9KlUE2HQkvZ5G backup@vault"
@@ -254,6 +285,9 @@ def test_the_installer_and_units_agree():
     service = (d / "travelcomp-pull-backup.service").read_text()
     assert "ExecStart=/usr/local/sbin/travelcomp-pull-backup.sh" in service
     assert "Type=oneshot" in service and "User=tcpull" in service
+    # --dest: the sandbox exception and the mount dependency must both be written.
+    assert "ReadWritePaths=$DEST_DIR" in installer and "RequiresMountsFor=$DEST_DIR" in installer
+    assert "--dest" in installer and "ReadWritePaths=" in service
     timer = (d / "travelcomp-pull-backup.timer").read_text()
     assert "Persistent=true" in timer and "OnCalendar=" in timer
     for script in (SCRIPT, d / "install.sh", ADD_READER):
