@@ -11,6 +11,17 @@ from backend import passport_ocr
 
 # A real, checksum-valid ICAO Doc 9303 TD3 specimen (the standard published
 # example — "Anna Maria Eriksson"), used throughout as known-good input.
+@pytest.fixture(autouse=True)
+def _isolate_tesseract_language_probe(monkeypatch):
+    """_tess_configs() is cached and probes the host's tesseract for installed
+    languages; without this, call-count assertions would depend on whether the
+    machine running the tests happens to have the MRZ model installed."""
+    monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", lambda config="": ["eng", "osd"])
+    passport_ocr._tess_configs.cache_clear()
+    yield
+    passport_ocr._tess_configs.cache_clear()
+
+
 _VALID_LINE1 = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<"
 _VALID_LINE2 = "L898902C36UTO7408122F1204159ZE184226B<<<<<10"
 
@@ -460,31 +471,31 @@ def test_extract_mrz_returns_best_imperfect_candidate_when_no_perfect_exists(mon
 
 def test_tess_config_prefers_mrz_traineddata_when_installed(monkeypatch):
     monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", lambda config="": ["eng", "mrz", "osd"])
-    passport_ocr._tess_config.cache_clear()
+    passport_ocr._tess_configs.cache_clear()
     try:
         assert passport_ocr._tess_config().startswith("-l mrz ")
     finally:
-        passport_ocr._tess_config.cache_clear()
+        passport_ocr._tess_configs.cache_clear()
 
 
 def test_tess_config_falls_back_to_default_without_mrz_traineddata(monkeypatch):
     monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", lambda config="": ["eng", "osd"])
-    passport_ocr._tess_config.cache_clear()
+    passport_ocr._tess_configs.cache_clear()
     try:
         assert passport_ocr._tess_config() == passport_ocr._TESS_CONFIG
     finally:
-        passport_ocr._tess_config.cache_clear()
+        passport_ocr._tess_configs.cache_clear()
 
 
 def test_tess_config_survives_language_probe_failure(monkeypatch):
     def boom(config=""):
         raise RuntimeError("tesseract exploded")
     monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", boom)
-    passport_ocr._tess_config.cache_clear()
+    passport_ocr._tess_configs.cache_clear()
     try:
         assert passport_ocr._tess_config() == passport_ocr._TESS_CONFIG
     finally:
-        passport_ocr._tess_config.cache_clear()
+        passport_ocr._tess_configs.cache_clear()
 
 
 def test_ocr_text_retries_with_default_config_when_mrz_model_broken(monkeypatch):
@@ -711,3 +722,103 @@ def test_ocr_text_treats_a_tesseract_timeout_as_no_text_without_retrying(monkeyp
     assert passport_ocr._ocr_text(Image.new("L", (10, 10))) == ""
     # One call only: a timeout is not a broken model, so no second (eng) attempt.
     assert seen == [passport_ocr._OCR_CALL_TIMEOUT_S]
+
+
+# ── Trying every configured model ─────────────────────────────────────────────
+# A purpose-trained MRZ model is an accuracy upgrade on the inputs it was trained
+# for, but can return confident garbage on others. The stock model is therefore
+# always tried too, and the better-scoring read wins.
+
+def _with_mrz_model(monkeypatch):
+    monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", lambda config="": ["eng", "mrz", "osd"])
+    passport_ocr._tess_configs.cache_clear()
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+
+
+def test_tess_configs_always_ends_with_the_stock_model(monkeypatch):
+    _with_mrz_model(monkeypatch)
+    configs = passport_ocr._tess_configs()
+    assert configs[0].startswith("-l mrz ")
+    assert configs[-1] == passport_ocr._TESS_CONFIG
+
+
+def test_a_garbage_producing_mrz_model_does_not_beat_the_stock_model(monkeypatch):
+    _with_mrz_model(monkeypatch)
+
+    def fake(path, config=None, **kw):
+        if "-l mrz" in config:
+            return _NOISE_LINE1 + "\n" + _NOISE_LINE2     # MRZ-shaped junk
+        return _VALID_LINE1 + "\n" + _VALID_LINE2
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["document_number"] == "L898902C3"
+    assert result["overall_valid"] is True
+
+
+def test_stock_model_read_wins_when_it_scores_higher_than_the_mrz_model(monkeypatch):
+    _with_mrz_model(monkeypatch)
+    imperfect = _VALID_LINE2[:4] + "X" + _VALID_LINE2[5:]   # breaks one check digit
+
+    def fake(path, config=None, **kw):
+        return _VALID_LINE1 + "\n" + (imperfect if "-l mrz" in config else _VALID_LINE2)
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["overall_valid"] is True
+
+
+def test_a_perfect_first_read_does_not_spend_a_second_model_pass(monkeypatch):
+    _with_mrz_model(monkeypatch)
+    configs_seen = []
+
+    def fake(path, config=None, **kw):
+        configs_seen.append(config)
+        return _VALID_LINE1 + "\n" + _VALID_LINE2
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+    passport_ocr.extract_mrz(_fake_image_bytes())
+    assert len(configs_seen) == 1 and "-l mrz" in configs_seen[0]
+
+
+def test_failure_is_logged_with_counts_but_never_recognized_text(monkeypatch, caplog):
+    _with_mrz_model(monkeypatch)
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string",
+                        lambda *a, **k: _NOISE_LINE1 + "\n" + _NOISE_LINE2)
+    import logging
+    # Other tests in the suite (alembic's fileConfig) can disable existing
+    # loggers; re-enable this one so the test doesn't depend on run order.
+    monkeypatch.setattr(passport_ocr.logger, "disabled", False)
+    monkeypatch.setattr(passport_ocr.logger, "propagate", True)
+    with caplog.at_level(logging.WARNING, logger=passport_ocr.logger.name):
+        with pytest.raises(passport_ocr.PassportOcrError):
+            passport_ocr.extract_mrz(_fake_image_bytes())
+    msg = " ".join(r.getMessage() for r in caplog.records)
+    assert "found no MRZ" in msg
+    assert "mrz:rejected_as_noise" in msg and "eng:rejected_as_noise" in msg
+    # Passport data must never reach the log, even OCR noise that looked like it.
+    assert _NOISE_LINE1[:20] not in msg and _NOISE_LINE2[:20] not in msg
+
+
+# --- line-1 repair (name has no check digit, so OCR errors there are silent) ---
+
+def test_repair_line1_restores_filler_after_document_type():
+    assert passport_ocr._repair_line1("PSAUSDOE<<JANE<<<<<<<<")[:5] == "P<AUS"
+
+
+def test_repair_line1_drops_stray_letters_in_trailing_filler():
+    fixed = passport_ocr._repair_line1("P<AUSDOE<<JANE<<<<<<<K<K<")
+    assert fixed == "P<AUSDOE<<JANE"
+
+
+def test_repair_line1_leaves_clean_line_alone():
+    assert passport_ocr._repair_line1(_VALID_LINE1) == _VALID_LINE1.rstrip("<")
+
+
+def test_extract_mrz_recovers_name_from_corrupted_line1(monkeypatch):
+    corrupted = "PSAUSDOE<<JANE<<<<<<<K<K<"
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(passport_ocr, "_ocr_text", lambda img, config=None: f"{corrupted}\n{_VALID_LINE2}")
+    monkeypatch.setattr(passport_ocr, "_estimate_skew_deg", lambda *a, **k: 0.0)
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["holder_name"] == "JANE DOE"
