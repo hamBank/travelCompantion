@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 from datetime import date
 from typing import List, Optional
 
@@ -248,15 +249,21 @@ def _ocr_text(image: Image.Image) -> str:
         image.save(tmp_path)
         config = _tess_config()
         try:
-            return pytesseract.image_to_string(tmp_path, config=config)
-        except Exception:
+            return pytesseract.image_to_string(tmp_path, config=config, timeout=_OCR_CALL_TIMEOUT_S)
+        except Exception as e:
+            # pytesseract raises RuntimeError("Tesseract process timeout") when
+            # the per-call cap is hit. That's "no text from this pass", not a
+            # broken traineddata -- don't retry it with eng (that would just
+            # spend a second timeout on the same image).
+            if isinstance(e, RuntimeError) and "timeout" in str(e).lower():
+                return ""
             # A broken/corrupt MRZ traineddata on the server must degrade to
             # the stock eng model, not take the whole feature down -- the
             # traineddata is a deploy-time download (see deploy.sh), so a
             # truncated file is a real possibility the code has to absorb.
             if config == _TESS_CONFIG:
                 raise
-            return pytesseract.image_to_string(tmp_path, config=_TESS_CONFIG)
+            return pytesseract.image_to_string(tmp_path, config=_TESS_CONFIG, timeout=_OCR_CALL_TIMEOUT_S)
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -273,6 +280,15 @@ def _checksum_score(checker: TD3CodeChecker) -> int:
 
 
 _PERFECT_SCORE = 4
+
+# Hard bounds so a bad photo can never hold a request open for a minute behind
+# the reverse proxy. Measured against real tesseract: a photo with no MRZ
+# fails in ~5s, but a featureless/noisy one ran 35-60s because tesseract spends
+# seconds per pass on whole-photo noise. Each call is capped, and once the
+# overall budget is spent the ladder stops and returns the best read found so
+# far (or the caller's honest 422).
+_OCR_CALL_TIMEOUT_S = 10
+_OCR_BUDGET_S = 20.0
 
 
 def _is_plausible(checker: TD3CodeChecker) -> bool:
@@ -300,7 +316,93 @@ def _is_plausible(checker: TD3CodeChecker) -> bool:
     )
 
 
-def _best_candidate(gray: Image.Image, regions) -> Optional[TD3CodeChecker]:
+def _estimate_skew_deg(gray: Image.Image, max_deg: float = 10.0, step: float = 0.5) -> float:
+    """Angle (degrees, PIL's counter-clockwise-positive convention, i.e. the
+    value to pass to Image.rotate) that levels the text lines in the bottom
+    strip, or 0.0 when there's no clear improvement over the photo as-is.
+
+    Classic projection-profile deskew: binarize the strip so ink is white,
+    rotate it through a range of small angles, and score each by the variance
+    of its per-row ink totals -- when the two MRZ lines are exactly
+    horizontal their rows are dense and the gaps between are empty, so the
+    row profile is at its most "peaky". PIL-only (resize-to-one-column is a
+    C-speed row average), no numpy/OpenCV dependency.
+
+    Real phone photos are rarely level, and the OCR ladder only tolerates
+    about +-1 degree of tilt (measured against real tesseract: beyond that it
+    either finds nothing or returns a plausible but wrong read), so this is
+    what makes handheld photos readable at all."""
+    strip = _bottom_strip(gray)
+    w, h = strip.size
+    if w > 700:
+        strip = strip.resize((700, max(1, int(h * 700 / w))))
+    # Local-adaptive binarize, NOT a global threshold: a global one counts the
+    # dark table/background around a tilted page as "ink", and its huge flat
+    # triangle swamps the two text lines (measured: the estimate was 0 at
+    # every tilt). Adaptive keeps only strokes and edges.
+    ink = ImageChops.invert(_adaptive_mean_binarize(strip)).point(lambda v: 255 if v > 127 else 0)
+
+    def row_variance(angle: float) -> float:
+        r = ink.rotate(angle, resample=Image.BILINEAR, expand=True, fillcolor=0)
+        rows = r.resize((1, r.size[1]), Image.BOX).tobytes()
+        mean = sum(rows) / len(rows)
+        return sum((v - mean) ** 2 for v in rows) / len(rows)
+
+    base = row_variance(0.0)
+    best_angle, best_var = 0.0, base
+    n = int(max_deg / step)
+    for i in range(1, n + 1):
+        for angle in (i * step, -i * step):
+            v = row_variance(angle)
+            if v > best_var:
+                best_angle, best_var = angle, v
+    # Demand a real improvement so a blank/featureless image, or one that is
+    # already level, isn't rotated on noise.
+    if abs(best_angle) < step or best_var < base * 1.05:
+        return 0.0
+    return best_angle
+
+
+def _deskew(gray: Image.Image, angle: float) -> Image.Image:
+    """Rotate by `angle` (see _estimate_skew_deg), filling the new corners
+    with the photo's median brightness so they don't read as ink."""
+    hist = gray.histogram()
+    total, acc, median = sum(hist), 0, 255
+    for i, c in enumerate(hist):
+        acc += c
+        if acc >= total / 2:
+            median = i
+            break
+    return gray.rotate(angle, resample=Image.BICUBIC, expand=True, fillcolor=median)
+
+
+def _better(a: Optional[TD3CodeChecker], b: Optional[TD3CodeChecker]) -> Optional[TD3CodeChecker]:
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return b if _checksum_score(b) > _checksum_score(a) else a
+
+
+def _read_orientation(gray: Image.Image, regions, deadline: float = float("inf")) -> Optional[TD3CodeChecker]:
+    """Best read of one orientation: as-is first (cheap, and right for a level
+    photo), then -- unless that was already a fully checksum-valid read --
+    again after straightening the estimated tilt, keeping whichever scores
+    higher. A tilted photo typically yields a wrong-but-plausible read at the
+    as-is rung, which is why a non-perfect score (not just 'nothing found')
+    triggers the deskewed retry."""
+    best = _best_candidate(gray, regions, deadline)
+    if best is not None and _checksum_score(best) == _PERFECT_SCORE:
+        return best
+    if time.monotonic() > deadline:
+        return best
+    angle = _estimate_skew_deg(gray)
+    if angle:
+        best = _better(best, _best_candidate(_deskew(gray, angle), regions, deadline))
+    return best
+
+
+def _best_candidate(gray: Image.Image, regions, deadline: float = float("inf")) -> Optional[TD3CodeChecker]:
     """Run the region x preprocessing ladder over one orientation of the photo
     and return the best-scoring parsed MRZ candidate, or None.
 
@@ -324,6 +426,8 @@ def _best_candidate(gray: Image.Image, regions) -> Optional[TD3CodeChecker]:
     best_score = -1
     for region in regions(gray):
         for variant in _preprocess_variants(region):
+            if time.monotonic() > deadline:
+                return best
             lines = _find_mrz_lines(_ocr_text(variant))
             if len(lines) < 2:
                 continue
@@ -359,7 +463,8 @@ def extract_mrz(image_bytes: bytes) -> dict:
     # never found, and the scan 422s on a photo that looks fine on screen.
     gray = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("L")
 
-    best = _best_candidate(gray, regions=lambda g: (_bottom_strip(g), g))
+    deadline = time.monotonic() + _OCR_BUDGET_S
+    best = _read_orientation(gray, regions=lambda g: (_bottom_strip(g), g), deadline=deadline)
     if best is None:
         # No usable MRZ upright. The EXIF flag may have been stripped (an
         # upload resizer, a screenshot, a messaging app's re-encode) leaving
@@ -369,8 +474,10 @@ def extract_mrz(image_bytes: bytes) -> dict:
         # on inputs that would otherwise 422, so it costs nothing on the
         # common path.
         for angle in (90, 270, 180):
+            if time.monotonic() > deadline:
+                break
             rotated = gray.rotate(angle, expand=True)
-            best = _best_candidate(rotated, regions=lambda g: (_bottom_strip(g),))
+            best = _read_orientation(rotated, regions=lambda g: (_bottom_strip(g),), deadline=deadline)
             if best is not None:
                 break
     if best is None:
