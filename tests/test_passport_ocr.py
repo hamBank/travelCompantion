@@ -294,7 +294,7 @@ def test_extract_mrz_falls_back_through_the_preprocessing_ladder(monkeypatch):
     ocr_text = _VALID_LINE1 + "\n" + _VALID_LINE2
     calls = []
 
-    def fake_image_to_string(path, config=None):
+    def fake_image_to_string(path, config=None, **kwargs):
         calls.append(path)
         # First two attempts (raw, autocontrast) find nothing; the third
         # (binarized) variant succeeds.
@@ -312,7 +312,7 @@ def test_extract_mrz_stops_at_first_successful_variant(monkeypatch):
     ocr_text = _VALID_LINE1 + "\n" + _VALID_LINE2
     calls = []
 
-    def fake_image_to_string(path, config=None):
+    def fake_image_to_string(path, config=None, **kwargs):
         calls.append(path)
         return ocr_text
 
@@ -359,7 +359,7 @@ def test_extract_mrz_tries_bottom_strip_region_before_full_image(monkeypatch):
     ocr_text = _VALID_LINE1 + "\n" + _VALID_LINE2
     calls = []
 
-    def fake_image_to_string(path, config=None):
+    def fake_image_to_string(path, config=None, **kwargs):
         calls.append(path)
         # The crop region's 4 attempts find nothing; the 5th call (the first
         # variant of the full-image fallback) succeeds.
@@ -417,7 +417,7 @@ def test_extract_mrz_prefers_checksum_valid_candidate_over_earlier_invalid(monke
     corrupted_l2 = "L898902C86UTO7408122F1204159ZE184226B<<<<<10"  # digit 3->8
     calls = []
 
-    def fake_image_to_string(path, config=None):
+    def fake_image_to_string(path, config=None, **kwargs):
         calls.append(path)
         if len(calls) == 1:
             return _VALID_LINE1 + "\n" + corrupted_l2
@@ -441,7 +441,7 @@ def test_extract_mrz_returns_best_imperfect_candidate_when_no_perfect_exists(mon
     corrupted_l2 = "L898902C86UTO7408122F1204159ZE184226B<<<<<10"
     calls = []
 
-    def fake_image_to_string(path, config=None):
+    def fake_image_to_string(path, config=None, **kwargs):
         calls.append(path)
         return _VALID_LINE1 + "\n" + corrupted_l2
 
@@ -494,7 +494,7 @@ def test_ocr_text_retries_with_default_config_when_mrz_model_broken(monkeypatch)
     monkeypatch.setattr(passport_ocr, "_tess_config", lambda: "-l mrz " + passport_ocr._TESS_CONFIG)
     seen = []
 
-    def fake_image_to_string(path, config=None):
+    def fake_image_to_string(path, config=None, **kwargs):
         seen.append(config)
         if "-l mrz" in config:
             raise RuntimeError("failed to load language 'mrz'")
@@ -616,3 +616,98 @@ def test_extract_mrz_keeps_looking_past_noise_to_a_real_read(monkeypatch):
     result = passport_ocr.extract_mrz(_fake_image_bytes())
     assert result["document_number"] == "L898902C3"
     assert result["overall_valid"] is True
+
+
+# ── Deskew ────────────────────────────────────────────────────────────────────
+# Measured against real tesseract, the ladder only tolerated ~+-1 degree of tilt
+# (2/15 exact reads across +-10 degrees); handheld photos are rarely level.
+
+def _text_like_image(tilt=0.0, size=(900, 600), dark_surround=True):
+    """Two rows of small 'character' blocks near the bottom (stand-ins for the
+    MRZ lines; no fonts needed), page then rotated by `tilt` degrees onto a
+    dark table -- the case that defeated a global-threshold estimator."""
+    from PIL import Image, ImageDraw
+    w, h = size
+    page = Image.new("L", size, 225)
+    d = ImageDraw.Draw(page)
+    for row_y in (h - 150, h - 90):
+        for i in range(44):
+            x = 30 + i * 19
+            d.rectangle([x, row_y, x + 11, row_y + 34], fill=25)
+    if tilt:
+        page = page.rotate(tilt, expand=True, fillcolor=40 if dark_surround else 225)
+    return page
+
+
+@pytest.mark.parametrize("tilt", [-8, -4, -2, 2, 4, 8])
+def test_estimate_skew_recovers_the_tilt(tilt):
+    # Correction is the negative of the applied tilt, to within the 0.5 step.
+    est = passport_ocr._estimate_skew_deg(_text_like_image(tilt))
+    assert abs(est - (-tilt)) <= 0.5
+
+
+def test_estimate_skew_is_zero_for_a_level_image():
+    assert passport_ocr._estimate_skew_deg(_text_like_image(0)) == 0.0
+
+
+def test_estimate_skew_is_zero_for_a_blank_image():
+    from PIL import Image
+    # Must not rotate on noise: a featureless image has no peaky row profile.
+    assert passport_ocr._estimate_skew_deg(Image.new("L", (600, 400), 200)) == 0.0
+
+
+def test_read_orientation_retries_deskewed_when_first_read_is_imperfect(monkeypatch):
+    # A tilted photo's typical failure is a plausible-but-wrong read (some check
+    # digits still validate), not "nothing found" -- so an imperfect score, not
+    # only a miss, must trigger the deskewed retry, and the better read wins.
+    from PIL import Image
+    wrong_line2 = _VALID_LINE2[:4] + "X" + _VALID_LINE2[5:]   # breaks the doc-number check digit only
+
+    def fake(path, config=None, **kw):
+        with Image.open(path) as im:
+            level = passport_ocr._estimate_skew_deg(im.convert("L")) == 0.0
+        return _VALID_LINE1 + "\n" + (_VALID_LINE2 if level else wrong_line2)
+
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+
+    import io
+    buf = io.BytesIO()
+    _text_like_image(5).save(buf, format="PNG")
+    result = passport_ocr.extract_mrz(buf.getvalue())
+    assert result["document_number"] == "L898902C3"
+    assert result["overall_valid"] is True
+
+
+# ── Time bounds ───────────────────────────────────────────────────────────────
+
+def test_extract_mrz_stops_trying_once_the_time_budget_is_spent(monkeypatch):
+    # A bad photo must not hold a request open (a noisy image measured 35-60s
+    # against real tesseract). With the budget already spent, no OCR pass runs.
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(passport_ocr, "_OCR_BUDGET_S", -1.0)
+    calls = {"n": 0}
+
+    def fake(*a, **k):
+        calls["n"] += 1
+        return "nothing"
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+    with pytest.raises(passport_ocr.PassportOcrError):
+        passport_ocr.extract_mrz(_fake_image_bytes())
+    assert calls["n"] == 0
+
+
+def test_ocr_text_treats_a_tesseract_timeout_as_no_text_without_retrying(monkeypatch):
+    from PIL import Image
+    monkeypatch.setattr(passport_ocr, "_tess_config", lambda: "-l mrz " + passport_ocr._TESS_CONFIG)
+    seen = []
+
+    def fake(path, config=None, **kw):
+        seen.append(kw.get("timeout"))
+        raise RuntimeError("Tesseract process timeout")
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+    assert passport_ocr._ocr_text(Image.new("L", (10, 10))) == ""
+    # One call only: a timeout is not a broken model, so no second (eng) attempt.
+    assert seen == [passport_ocr._OCR_CALL_TIMEOUT_S]
