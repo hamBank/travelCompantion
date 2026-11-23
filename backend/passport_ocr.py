@@ -14,8 +14,10 @@ clean wheels, and have a much lighter dependency footprint. The tradeoff:
 no automatic region cropping, so this looks for MRZ-shaped lines anywhere
 in the recognized text rather than pre-locating the strip in the photo.
 """
+import collections
 import functools
 import io
+import logging
 import os
 import re
 import shutil
@@ -28,6 +30,8 @@ import pytesseract
 from PIL import Image, ImageChops, ImageFilter, ImageOps
 from mrz.base.countries_ops import is_code as _is_country_code
 from mrz.checker.td3 import TD3CodeChecker
+
+logger = logging.getLogger(__name__)
 
 _MRZ_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
 _TESS_CONFIG = f"--psm 6 -c tessedit_char_whitelist={_MRZ_CHARSET}"
@@ -67,19 +71,31 @@ def tesseract_available() -> bool:
 
 
 @functools.lru_cache(maxsize=1)
-def _tess_config() -> str:
-    """The tesseract config string, preferring an installed MRZ/OCR-B
-    traineddata over the generic `eng` model (see _MRZ_TRAINEDDATA_PREFERENCE).
-    Cached: the installed-language list only changes on redeploy, and probing
-    it costs a tesseract subprocess spawn per call otherwise."""
+def _tess_configs() -> tuple:
+    """Tesseract configs to try, best-guess first: an installed MRZ/OCR-B
+    traineddata (see _MRZ_TRAINEDDATA_PREFERENCE), then ALWAYS the stock `eng`
+    model as a last entry.
+
+    The stock model is kept in the list on purpose, not just as a fallback for
+    when tesseract errors: a purpose-trained model is an accuracy *upgrade* on
+    the inputs it was trained for, but it can also return confident garbage
+    on others (a full-page or loosely-cropped photo, a different tesseract
+    build). Trying both and keeping whichever read scores best by ICAO check
+    digits means a misbehaving MRZ model can never do worse than the stock
+    one. Cached: the installed-language list only changes on redeploy, and
+    probing it costs a tesseract subprocess spawn per call otherwise."""
     try:
         langs = set(pytesseract.get_languages(config=""))
     except Exception:
         langs = set()
-    for lang in _MRZ_TRAINEDDATA_PREFERENCE:
-        if lang in langs:
-            return f"-l {lang} {_TESS_CONFIG}"
-    return _TESS_CONFIG
+    configs = [f"-l {lang} {_TESS_CONFIG}" for lang in _MRZ_TRAINEDDATA_PREFERENCE if lang in langs]
+    configs.append(_TESS_CONFIG)
+    return tuple(configs)
+
+
+def _tess_config() -> str:
+    """The preferred (first) config -- what a single-pass caller should use."""
+    return _tess_configs()[0]
 
 
 def _find_mrz_lines(text: str) -> List[str]:
@@ -122,6 +138,29 @@ def _find_mrz_lines(text: str) -> List[str]:
 
 def _pad44(s: str) -> str:
     return (s + "<" * 44)[:44]
+
+
+def _repair_line1(line1: str) -> str:
+    """Fix the two OCR errors line 1 of a TD3 MRZ routinely suffers, neither
+    of which has a check digit to catch it (so the checksum score is blind to
+    them and the holder name just comes back empty):
+
+    * the `<` after the `P` document type read as a letter ("P<AUS" ->
+      "PSAUS"). Passports are type `P` with filler as the second character
+      (the issuing-state variants `PD`/`PO` are rare enough that a wrong
+      repair there costs only the name, which was unparseable anyway);
+    * the trailing filler read as `<` mixed with stray letters
+      ("<<<<<<<K<K<"). The names field is SURNAME<<GIVEN<NAMES and a run of
+      three `<` can only be the start of the filler, so everything after the
+      first `<<<` is filler by definition."""
+    line1 = line1.strip()
+    if len(line1) > 1 and line1[0] == "P" and line1[1] != "<" and line1[1].isalpha() and line1[1] in "SKCEGLIJ":
+        line1 = "P<" + line1[2:]
+    head, names = line1[:5], line1[5:]
+    cut = names.find("<<<")
+    if cut != -1:
+        names = names[:cut]
+    return head + names
 
 
 def _mrz_date_to_iso(yymmdd: str, *, is_birth: bool) -> Optional[str]:
@@ -235,7 +274,7 @@ def _bottom_strip(gray: Image.Image, fraction: float = 0.35) -> Image.Image:
     return crop
 
 
-def _ocr_text(image: Image.Image) -> str:
+def _ocr_text(image: Image.Image, config: Optional[str] = None) -> str:
     """Write the image to a temp file (pytesseract needs a path or PIL
     image, and a temp file also matches the pattern used everywhere else in
     this module) and run tesseract against it. When called on the original
@@ -247,7 +286,7 @@ def _ocr_text(image: Image.Image) -> str:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp_path = tmp.name
         image.save(tmp_path)
-        config = _tess_config()
+        config = config or _tess_config()
         try:
             return pytesseract.image_to_string(tmp_path, config=config, timeout=_OCR_CALL_TIMEOUT_S)
         except Exception as e:
@@ -384,25 +423,25 @@ def _better(a: Optional[TD3CodeChecker], b: Optional[TD3CodeChecker]) -> Optiona
     return b if _checksum_score(b) > _checksum_score(a) else a
 
 
-def _read_orientation(gray: Image.Image, regions, deadline: float = float("inf")) -> Optional[TD3CodeChecker]:
+def _read_orientation(gray: Image.Image, regions, deadline: float = float("inf"), stats=None) -> Optional[TD3CodeChecker]:
     """Best read of one orientation: as-is first (cheap, and right for a level
     photo), then -- unless that was already a fully checksum-valid read --
     again after straightening the estimated tilt, keeping whichever scores
     higher. A tilted photo typically yields a wrong-but-plausible read at the
     as-is rung, which is why a non-perfect score (not just 'nothing found')
     triggers the deskewed retry."""
-    best = _best_candidate(gray, regions, deadline)
+    best = _best_candidate(gray, regions, deadline, stats)
     if best is not None and _checksum_score(best) == _PERFECT_SCORE:
         return best
     if time.monotonic() > deadline:
         return best
     angle = _estimate_skew_deg(gray)
     if angle:
-        best = _better(best, _best_candidate(_deskew(gray, angle), regions, deadline))
+        best = _better(best, _best_candidate(_deskew(gray, angle), regions, deadline, stats))
     return best
 
 
-def _best_candidate(gray: Image.Image, regions, deadline: float = float("inf")) -> Optional[TD3CodeChecker]:
+def _best_candidate(gray: Image.Image, regions, deadline: float = float("inf"), stats=None) -> Optional[TD3CodeChecker]:
     """Run the region x preprocessing ladder over one orientation of the photo
     and return the best-scoring parsed MRZ candidate, or None.
 
@@ -424,23 +463,36 @@ def _best_candidate(gray: Image.Image, regions, deadline: float = float("inf")) 
     rungs try to beat it."""
     best: Optional[TD3CodeChecker] = None
     best_score = -1
+    configs = _tess_configs()
     for region in regions(gray):
         for variant in _preprocess_variants(region):
-            if time.monotonic() > deadline:
-                return best
-            lines = _find_mrz_lines(_ocr_text(variant))
-            if len(lines) < 2:
-                continue
-            mrz_text = f"{_pad44(lines[-2])}\n{_pad44(lines[-1])}"
-            try:
-                candidate = TD3CodeChecker(mrz_text, check_expiry=False, compute_warnings=True)
-            except Exception:
-                continue  # unparseable candidate; a later variant may do better
-            if not _is_plausible(candidate):
-                continue  # MRZ-shaped noise, not a real read; keep looking
-            score = _checksum_score(candidate)
-            if score > best_score:
-                best, best_score = candidate, score
+            for config in configs:
+                if time.monotonic() > deadline:
+                    return best
+                model = config.split()[1] if config.startswith("-l ") else "eng"
+                lines = _find_mrz_lines(_ocr_text(variant, config))
+                if stats is not None:
+                    stats[f"{model}:passes"] += 1
+                if len(lines) < 2:
+                    continue
+                if stats is not None:
+                    stats[f"{model}:mrz_shaped"] += 1
+                mrz_text = f"{_pad44(_repair_line1(lines[-2]))}\n{_pad44(lines[-1])}"
+                try:
+                    candidate = TD3CodeChecker(mrz_text, check_expiry=False, compute_warnings=True)
+                except Exception:
+                    continue  # unparseable candidate; a later pass may do better
+                if not _is_plausible(candidate):
+                    if stats is not None:
+                        stats[f"{model}:rejected_as_noise"] += 1
+                    continue  # MRZ-shaped noise, not a real read; keep looking
+                score = _checksum_score(candidate)
+                if stats is not None:
+                    stats[f"{model}:plausible"] += 1
+                if score > best_score:
+                    best, best_score = candidate, score
+                if best_score == _PERFECT_SCORE:
+                    break
             if best_score == _PERFECT_SCORE:
                 break
         if best is not None:
@@ -463,8 +515,10 @@ def extract_mrz(image_bytes: bytes) -> dict:
     # never found, and the scan 422s on a photo that looks fine on screen.
     gray = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("L")
 
-    deadline = time.monotonic() + _OCR_BUDGET_S
-    best = _read_orientation(gray, regions=lambda g: (_bottom_strip(g), g), deadline=deadline)
+    started = time.monotonic()
+    deadline = started + _OCR_BUDGET_S
+    stats: collections.Counter = collections.Counter()
+    best = _read_orientation(gray, regions=lambda g: (_bottom_strip(g), g), deadline=deadline, stats=stats)
     if best is None:
         # No usable MRZ upright. The EXIF flag may have been stripped (an
         # upload resizer, a screenshot, a messaging app's re-encode) leaving
@@ -477,10 +531,19 @@ def extract_mrz(image_bytes: bytes) -> dict:
             if time.monotonic() > deadline:
                 break
             rotated = gray.rotate(angle, expand=True)
-            best = _read_orientation(rotated, regions=lambda g: (_bottom_strip(g),), deadline=deadline)
+            best = _read_orientation(rotated, regions=lambda g: (_bottom_strip(g),), deadline=deadline, stats=stats)
             if best is not None:
                 break
     if best is None:
+        # Diagnostics only -- counts and timings, never recognized text (it's
+        # passport data). Tells an operator whether the MRZ model was in use,
+        # whether it produced anything MRZ-shaped, and whether the time budget
+        # was spent, without having to reproduce the photo.
+        logger.warning(
+            "passport scan found no MRZ: image=%dx%d models=%s elapsed=%.1fs budget_spent=%s stats=%s",
+            gray.size[0], gray.size[1], [c.split()[1] if c.startswith("-l ") else "eng" for c in _tess_configs()],
+            time.monotonic() - started, time.monotonic() > deadline, dict(stats),
+        )
         raise PassportOcrError("Could not locate a machine-readable zone in this image.")
     checker = best
 
