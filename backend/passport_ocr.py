@@ -275,35 +275,29 @@ def _checksum_score(checker: TD3CodeChecker) -> int:
 _PERFECT_SCORE = 4
 
 
-def extract_mrz(image_bytes: bytes) -> dict:
-    """Run local OCR + MRZ parsing against a decrypted passport photo.
-    Raises PassportOcrNotAvailable if tesseract isn't installed,
-    PassportOcrError if no valid-looking MRZ was found or it failed to
-    parse. Returns a dict of extracted fields plus per-field check-digit
-    validity (see docs/plans/plan-13-passport-ocr.md)."""
-    if not tesseract_available():
-        raise PassportOcrNotAvailable()
+def _best_candidate(gray: Image.Image, regions) -> Optional[TD3CodeChecker]:
+    """Run the region x preprocessing ladder over one orientation of the photo
+    and return the best-scoring parsed MRZ candidate, or None.
 
-    gray = Image.open(io.BytesIO(image_bytes)).convert("L")
+    Bottom-strip crop first (see _bottom_strip) -- cheap, and correct for
+    the overwhelming majority of real photos, since it's where the MRZ
+    always is. `regions` lets the caller add the full photo as a fallback
+    for unusual framing (e.g. already cropped tight to just the MRZ, where
+    cropping again could clip real content) -- but only when the strip
+    produced *nothing*, so the expensive whole-photo OCR pass stays off the
+    common path.
 
-    # Bottom-strip crop first (see _bottom_strip) -- cheap, and correct for
-    # the overwhelming majority of real photos, since it's where the MRZ
-    # always is. Full photo stays as a fallback for unusual framing (e.g.
-    # already cropped tight to just the MRZ, where cropping again could
-    # clip real content) -- but only when the strip produced *nothing*, so
-    # the expensive whole-photo OCR pass stays off the common path.
-    #
-    # Checksum-guided selection: the old ladder stopped at the first variant
-    # that produced two MRZ-shaped lines, even when every check digit failed
-    # -- benchmarked, that early stop left recoverable accuracy on the table
-    # (a glare case stopped at ~90% char accuracy when a later rung read the
-    # same strip at ~98%). The ICAO check digits are a free runtime quality
-    # signal, so: stop immediately only on a fully checksum-valid read;
-    # otherwise remember the best-scoring candidate and let the remaining
-    # rungs try to beat it.
+    Checksum-guided selection: the old ladder stopped at the first variant
+    that produced two MRZ-shaped lines, even when every check digit failed
+    -- benchmarked, that early stop left recoverable accuracy on the table
+    (a glare case stopped at ~90% char accuracy when a later rung read the
+    same strip at ~98%). The ICAO check digits are a free runtime quality
+    signal, so: stop immediately only on a fully checksum-valid read;
+    otherwise remember the best-scoring candidate and let the remaining
+    rungs try to beat it."""
     best: Optional[TD3CodeChecker] = None
     best_score = -1
-    for region in (_bottom_strip(gray), gray):
+    for region in regions(gray):
         for variant in _preprocess_variants(region):
             lines = _find_mrz_lines(_ocr_text(variant))
             if len(lines) < 2:
@@ -320,6 +314,38 @@ def extract_mrz(image_bytes: bytes) -> dict:
                 break
         if best is not None:
             break
+    return best
+
+
+def extract_mrz(image_bytes: bytes) -> dict:
+    """Run local OCR + MRZ parsing against a decrypted passport photo.
+    Raises PassportOcrNotAvailable if tesseract isn't installed,
+    PassportOcrError if no valid-looking MRZ was found or it failed to
+    parse. Returns a dict of extracted fields plus per-field check-digit
+    validity (see docs/plans/plan-13-passport-ocr.md)."""
+    if not tesseract_available():
+        raise PassportOcrNotAvailable()
+
+    # Phone cameras usually store a portrait/landscape shot sideways and set an
+    # EXIF Orientation flag instead of rotating the pixels. PIL ignores that
+    # flag unless asked, so without this the MRZ is OCR'd on its side and
+    # never found, and the scan 422s on a photo that looks fine on screen.
+    gray = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("L")
+
+    best = _best_candidate(gray, regions=lambda g: (_bottom_strip(g), g))
+    if best is None:
+        # No usable MRZ upright. The EXIF flag may have been stripped (an
+        # upload resizer, a screenshot, a messaging app's re-encode) leaving
+        # a sideways or upside-down photo -- try the other three orientations
+        # before giving up. Only the bottom strip is tried per rotation (the
+        # expensive whole-photo pass stays upright-only), and this runs only
+        # on inputs that would otherwise 422, so it costs nothing on the
+        # common path.
+        for angle in (90, 270, 180):
+            rotated = gray.rotate(angle, expand=True)
+            best = _best_candidate(rotated, regions=lambda g: (_bottom_strip(g),))
+            if best is not None:
+                break
     if best is None:
         raise PassportOcrError("Could not locate a machine-readable zone in this image.")
     checker = best

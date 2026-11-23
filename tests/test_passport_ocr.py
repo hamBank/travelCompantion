@@ -503,3 +503,74 @@ def test_ocr_text_retries_with_default_config_when_mrz_model_broken(monkeypatch)
     monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake_image_to_string)
     assert passport_ocr._ocr_text(Image.new("L", (10, 10))) == "recovered"
     assert seen == ["-l mrz " + passport_ocr._TESS_CONFIG, passport_ocr._TESS_CONFIG]
+
+
+# ── Orientation handling ──────────────────────────────────────────────────────
+# A wide image (width > 2x height) stands in for "upright": the stubbed OCR
+# below only "reads" the MRZ off such an image, so which orientation extract_mrz
+# actually feeds tesseract is observable without a real tesseract install.
+
+def _tall_image_bytes(*, exif_orientation=None):
+    from PIL import Image
+    import io
+    img = Image.new("L", (100, 400), color=255)
+    buf = io.BytesIO()
+    if exif_orientation is not None:
+        exif = img.getexif()
+        exif[0x0112] = exif_orientation
+        img.save(buf, format="JPEG", exif=exif)
+    else:
+        img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _ocr_reads_only_wide_images(monkeypatch):
+    """Stub tesseract: returns the valid MRZ only for a wide (upright-ish)
+    image. Returns the list of (w, h) sizes it was called with."""
+    from PIL import Image
+    seen = []
+
+    def fake(path, config=None, **k):
+        with Image.open(path) as im:
+            seen.append(im.size)
+            wide = im.size[0] > 2 * im.size[1]
+        return (_VALID_LINE1 + "\n" + _VALID_LINE2) if wide else "no mrz here"
+
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+    return seen
+
+
+def test_extract_mrz_honors_exif_orientation(monkeypatch):
+    # Stored sideways (tall) with EXIF "rotate to display": the very first
+    # OCR call must already see the corrected, wide image — i.e. it must not
+    # need the rotation fallback to get there.
+    seen = _ocr_reads_only_wide_images(monkeypatch)
+    result = passport_ocr.extract_mrz(_tall_image_bytes(exif_orientation=6))
+    assert result["document_number"] == "L898902C3"
+    w, h = seen[0]
+    assert w > h
+
+
+def test_extract_mrz_rotation_fallback_when_exif_flag_is_missing(monkeypatch):
+    # Same sideways pixels but no EXIF flag (stripped by a resizer/re-encode):
+    # the upright attempts find nothing, then a rotated retry does.
+    seen = _ocr_reads_only_wide_images(monkeypatch)
+    result = passport_ocr.extract_mrz(_tall_image_bytes())
+    assert result["document_number"] == "L898902C3"
+    assert any(w > 2 * h for w, h in seen)
+
+
+def test_extract_mrz_still_raises_when_no_orientation_has_an_mrz(monkeypatch):
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    calls = {"n": 0}
+
+    def fake(*a, **k):
+        calls["n"] += 1
+        return "nothing"
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+    with pytest.raises(passport_ocr.PassportOcrError):
+        passport_ocr.extract_mrz(_tall_image_bytes())
+    # upright strip+full (2 regions x 4 variants) + 3 rotations x strip (4 each)
+    assert calls["n"] == 8 + 12
