@@ -822,3 +822,17 @@ def test_extract_mrz_recovers_name_from_corrupted_line1(monkeypatch):
     monkeypatch.setattr(passport_ocr, "_estimate_skew_deg", lambda *a, **k: 0.0)
     result = passport_ocr.extract_mrz(_fake_image_bytes())
     assert result["holder_name"] == "JANE DOE"
+
+
+def test_mrz_model_config_has_no_character_whitelist(monkeypatch):
+    # A real photo read perfectly with `-l mrz --psm 6` but failed in the app,
+    # which added a char whitelist on top of the MRZ model.
+    monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", lambda config="": ["eng", "mrz"])
+    passport_ocr._tess_configs.cache_clear()
+    try:
+        configs = passport_ocr._tess_configs()
+    finally:
+        passport_ocr._tess_configs.cache_clear()
+    assert configs[0] == "-l mrz --psm 6"
+    assert "whitelist" not in configs[0]
+    assert "whitelist" in configs[-1]  # the stock model keeps it

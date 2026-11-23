@@ -35,6 +35,12 @@ logger = logging.getLogger(__name__)
 
 _MRZ_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
 _TESS_CONFIG = f"--psm 6 -c tessedit_char_whitelist={_MRZ_CHARSET}"
+# The purpose-trained MRZ models get NO character whitelist. They already only
+# emit the MRZ alphabet, and a whitelist on top of them degrades the read:
+# reported on a real passport photo where `tesseract photo.jpg - -l mrz --psm 6`
+# returned both MRZ lines perfectly while the app (same model, plus this
+# whitelist) failed. The whitelist stays on the stock `eng` model, which needs it.
+_MRZ_MODEL_CONFIG = "--psm 6"
 # Real MRZs are printed in OCR-B; tesseract's generic `eng` model was never
 # trained on it. If a purpose-trained MRZ traineddata is installed on the
 # server (deploy.sh downloads DoubangoTelecom's `mrz.traineddata` — see the
@@ -88,7 +94,7 @@ def _tess_configs() -> tuple:
         langs = set(pytesseract.get_languages(config=""))
     except Exception:
         langs = set()
-    configs = [f"-l {lang} {_TESS_CONFIG}" for lang in _MRZ_TRAINEDDATA_PREFERENCE if lang in langs]
+    configs = [f"-l {lang} {_MRZ_MODEL_CONFIG}" for lang in _MRZ_TRAINEDDATA_PREFERENCE if lang in langs]
     configs.append(_TESS_CONFIG)
     return tuple(configs)
 
