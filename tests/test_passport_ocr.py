@@ -574,3 +574,45 @@ def test_extract_mrz_still_raises_when_no_orientation_has_an_mrz(monkeypatch):
         passport_ocr.extract_mrz(_tall_image_bytes())
     # upright strip+full (2 regions x 4 variants) + 3 rotations x strip (4 each)
     assert calls["n"] == 8 + 12
+
+
+# ── Rejecting MRZ-shaped noise ────────────────────────────────────────────────
+# Reported: a scan "succeeded" but every field was garbage (every check digit
+# failing, country codes like "SSS"/"NNS"), because OCR noise from a busy part
+# of the page happened to be the right length/alphabet to pass the line filter.
+
+_NOISE_LINE1 = "SNWMNMWGGSRSENNSSCNNENSEESNWMNMWGGSRSENNSSCN"[:44]
+_NOISE_LINE2 = "EENSENEBD3SSSNNSENEWNMWGGSRS8NNSSCNNENSEESNWM"[:44]
+
+
+def test_is_plausible_rejects_shape_only_noise():
+    from mrz.checker.td3 import TD3CodeChecker
+    c = TD3CodeChecker(f"{_NOISE_LINE1}\n{_NOISE_LINE2}", check_expiry=False, compute_warnings=True)
+    assert passport_ocr._checksum_score(c) == 0
+    assert passport_ocr._is_plausible(c) is False
+
+
+def test_is_plausible_accepts_a_real_mrz():
+    from mrz.checker.td3 import TD3CodeChecker
+    c = TD3CodeChecker(f"{passport_ocr._pad44(_VALID_LINE1)}\n{passport_ocr._pad44(_VALID_LINE2)}", check_expiry=False, compute_warnings=True)
+    assert passport_ocr._is_plausible(c) is True
+
+
+def test_extract_mrz_raises_instead_of_returning_garbage(monkeypatch):
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string",
+                        lambda *a, **k: _NOISE_LINE1 + "\n" + _NOISE_LINE2)
+    with pytest.raises(passport_ocr.PassportOcrError):
+        passport_ocr.extract_mrz(_fake_image_bytes())
+
+
+def test_extract_mrz_keeps_looking_past_noise_to_a_real_read(monkeypatch):
+    # First rung returns noise, a later one the real MRZ: the noise must not
+    # be accepted as "best" (it would score 0) nor stop the ladder.
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    outputs = iter([_NOISE_LINE1 + "\n" + _NOISE_LINE2, _VALID_LINE1 + "\n" + _VALID_LINE2])
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string",
+                        lambda *a, **k: next(outputs, "nothing"))
+    result = passport_ocr.extract_mrz(_fake_image_bytes())
+    assert result["document_number"] == "L898902C3"
+    assert result["overall_valid"] is True
