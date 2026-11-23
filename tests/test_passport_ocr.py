@@ -863,3 +863,64 @@ def test_mrz_model_reads_the_untouched_full_image_first(monkeypatch):
     assert sizes[0][1] == "-l mrz --psm 6"
     assert sizes[0][0] == Image.open(io.BytesIO(_fake_image_bytes())).size
     assert len(sizes) == 1  # perfect first read: nothing else spent
+
+
+def _capture_first_mrz_call(monkeypatch, image_bytes):
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", lambda config="": ["eng", "mrz"])
+    passport_ocr._tess_configs.cache_clear()
+    seen = []
+
+    def fake(path, config="", **k):
+        with open(path, "rb") as fh:
+            seen.append((fh.read(), config, k.get("timeout")))
+        return _VALID_LINE1 + "\n" + _VALID_LINE2
+
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+    try:
+        passport_ocr.extract_mrz(image_bytes)
+    finally:
+        passport_ocr._tess_configs.cache_clear()
+    return seen
+
+
+def test_mrz_model_first_pass_gets_the_uploaded_file_byte_for_byte(monkeypatch):
+    # The CLI call that read a real photo perfectly was given the original
+    # file; the app used to hand the model a re-encoded grayscale PNG.
+    from PIL import Image
+    import io
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 48), (200, 190, 180)).save(buf, "JPEG")
+    jpeg = buf.getvalue()
+    seen = _capture_first_mrz_call(monkeypatch, jpeg)
+    assert seen[0][0] == jpeg
+    assert seen[0][1] == "-l mrz --psm 6"
+    assert seen[0][2] == passport_ocr._OCR_ORIGINAL_TIMEOUT_S
+
+
+def test_original_file_is_not_used_when_exif_rotation_is_pending(monkeypatch):
+    # With an EXIF orientation flag the file's pixels are sideways; the
+    # transposed image must be read instead.
+    from PIL import Image
+    import io
+    img = Image.new("RGB", (64, 48), (200, 190, 180))
+    exif = img.getexif()
+    exif[0x0112] = 6
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", exif=exif)
+    seen = _capture_first_mrz_call(monkeypatch, buf.getvalue())
+    assert seen[0][0] != buf.getvalue()
+
+
+def test_failure_log_reports_output_sizes_and_timing_not_text(monkeypatch, caplog):
+    import logging
+    monkeypatch.setattr(passport_ocr.logger, "disabled", False)
+    monkeypatch.setattr(passport_ocr.logger, "propagate", True)
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", lambda *a, **k: "HELLO WORLD SECRET")
+    with caplog.at_level(logging.WARNING, logger=passport_ocr.logger.name):
+        with pytest.raises(passport_ocr.PassportOcrError):
+            passport_ocr.extract_mrz(_fake_image_bytes())
+    msg = " ".join(r.getMessage() for r in caplog.records)
+    assert "eng:chars" in msg and "eng:longest_line" in msg
+    assert "SECRET" not in msg

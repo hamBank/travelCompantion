@@ -280,7 +280,7 @@ def _bottom_strip(gray: Image.Image, fraction: float = 0.35) -> Image.Image:
     return crop
 
 
-def _ocr_text(image: Image.Image, config: Optional[str] = None) -> str:
+def _ocr_text(image, config: Optional[str] = None, timeout: Optional[float] = None) -> str:
     """Write the image to a temp file (pytesseract needs a path or PIL
     image, and a temp file also matches the pattern used everywhere else in
     this module) and run tesseract against it. When called on the original
@@ -289,12 +289,22 @@ def _ocr_text(image: Image.Image, config: Optional[str] = None) -> str:
     or failure."""
     tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        # `image` is normally a PIL image (re-encoded as PNG here); raw bytes
+        # are written out untouched, so tesseract sees exactly the file the
+        # user uploaded -- see _best_candidate's "original file" pass.
+        raw = isinstance(image, (bytes, bytearray))
+        suffix = (".jpg" if image[:2] == b"\xff\xd8" else ".png") if raw else ".png"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp_path = tmp.name
-        image.save(tmp_path)
+        if raw:
+            with open(tmp_path, "wb") as fh:
+                fh.write(image)
+        else:
+            image.save(tmp_path)
         config = config or _tess_config()
+        timeout = timeout or _OCR_CALL_TIMEOUT_S
         try:
-            return pytesseract.image_to_string(tmp_path, config=config, timeout=_OCR_CALL_TIMEOUT_S)
+            return pytesseract.image_to_string(tmp_path, config=config, timeout=timeout)
         except Exception as e:
             # pytesseract raises RuntimeError("Tesseract process timeout") when
             # the per-call cap is hit. That's "no text from this pass", not a
@@ -308,7 +318,7 @@ def _ocr_text(image: Image.Image, config: Optional[str] = None) -> str:
             # truncated file is a real possibility the code has to absorb.
             if config == _TESS_CONFIG:
                 raise
-            return pytesseract.image_to_string(tmp_path, config=_TESS_CONFIG, timeout=_OCR_CALL_TIMEOUT_S)
+            return pytesseract.image_to_string(tmp_path, config=_TESS_CONFIG, timeout=timeout)
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -333,7 +343,10 @@ _PERFECT_SCORE = 4
 # overall budget is spent the ladder stops and returns the best read found so
 # far (or the caller's honest 422).
 _OCR_CALL_TIMEOUT_S = 10
-_OCR_BUDGET_S = 20.0
+# The single untouched-original pass reads a full-resolution phone photo
+# (12MP+), which legitimately takes longer than a cropped strip.
+_OCR_ORIGINAL_TIMEOUT_S = 15
+_OCR_BUDGET_S = 30.0
 
 
 # Two independent check digits validating is the floor for "this is a real MRZ".
@@ -431,14 +444,14 @@ def _better(a: Optional[TD3CodeChecker], b: Optional[TD3CodeChecker]) -> Optiona
     return b if _checksum_score(b) > _checksum_score(a) else a
 
 
-def _read_orientation(gray: Image.Image, regions, deadline: float = float("inf"), stats=None) -> Optional[TD3CodeChecker]:
+def _read_orientation(gray: Image.Image, regions, deadline: float = float("inf"), stats=None, original: Optional[bytes] = None) -> Optional[TD3CodeChecker]:
     """Best read of one orientation: as-is first (cheap, and right for a level
     photo), then -- unless that was already a fully checksum-valid read --
     again after straightening the estimated tilt, keeping whichever scores
     higher. A tilted photo typically yields a wrong-but-plausible read at the
     as-is rung, which is why a non-perfect score (not just 'nothing found')
     triggers the deskewed retry."""
-    best = _best_candidate(gray, regions, deadline, stats)
+    best = _best_candidate(gray, regions, deadline, stats, original)
     if best is not None and _checksum_score(best) == _PERFECT_SCORE:
         return best
     if time.monotonic() > deadline:
@@ -449,7 +462,7 @@ def _read_orientation(gray: Image.Image, regions, deadline: float = float("inf")
     return best
 
 
-def _best_candidate(gray: Image.Image, regions, deadline: float = float("inf"), stats=None) -> Optional[TD3CodeChecker]:
+def _best_candidate(gray: Image.Image, regions, deadline: float = float("inf"), stats=None, original: Optional[bytes] = None) -> Optional[TD3CodeChecker]:
     """Run the region x preprocessing ladder over one orientation of the photo
     and return the best-scoring parsed MRZ candidate, or None.
 
@@ -478,6 +491,12 @@ def _best_candidate(gray: Image.Image, regions, deadline: float = float("inf"), 
         lines = _find_mrz_lines(text)
         if stats is not None:
             stats[f"{model}:passes"] += 1
+            # Sizes only, never content: was the output empty, or text that
+            # just didn't look like an MRZ?
+            stats[f"{model}:chars"] += len(text)
+            stats[f"{model}:longest_line"] = max(
+                stats[f"{model}:longest_line"], max((len(l.replace(" ", "")) for l in text.splitlines()), default=0)
+            )
         if len(lines) < 2:
             return
         if stats is not None:
@@ -507,7 +526,17 @@ def _best_candidate(gray: Image.Image, regions, deadline: float = float("inf"), 
     for config in configs:
         if config == _TESS_CONFIG or time.monotonic() > deadline:
             continue
-        consider(_ocr_text(gray, config), model_of(config))
+        t0 = time.monotonic()
+        if original is not None:
+            # The original file, byte for byte -- the same input the CLI
+            # got. (Re-encoding to a grayscale PNG is the one thing the app
+            # did differently from the invocation known to work.)
+            text = _ocr_text(original, config, timeout=_OCR_ORIGINAL_TIMEOUT_S)
+        else:
+            text = _ocr_text(gray, config)
+        if stats is not None:
+            stats[f"{model_of(config)}:raw_seconds"] += round(time.monotonic() - t0, 1)
+        consider(text, model_of(config))
         if best_score == _PERFECT_SCORE:
             return best
 
@@ -539,12 +568,19 @@ def extract_mrz(image_bytes: bytes) -> dict:
     # EXIF Orientation flag instead of rotating the pixels. PIL ignores that
     # flag unless asked, so without this the MRZ is OCR'd on its side and
     # never found, and the scan 422s on a photo that looks fine on screen.
-    gray = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("L")
+    source = Image.open(io.BytesIO(image_bytes))
+    # The untouched upload can be handed to tesseract as-is only when no EXIF
+    # rotation is pending; otherwise its pixels are sideways and the corrected
+    # PIL image is what must be read.
+    original = image_bytes if source.getexif().get(0x0112, 1) in (0, 1) else None
+    gray = ImageOps.exif_transpose(source).convert("L")
 
     started = time.monotonic()
     deadline = started + _OCR_BUDGET_S
     stats: collections.Counter = collections.Counter()
-    best = _read_orientation(gray, regions=lambda g: (_bottom_strip(g), g), deadline=deadline, stats=stats)
+    best = _read_orientation(
+        gray, regions=lambda g: (_bottom_strip(g), g), deadline=deadline, stats=stats, original=original,
+    )
     if best is None:
         # No usable MRZ upright. The EXIF flag may have been stripped (an
         # upload resizer, a screenshot, a messaging app's re-encode) leaving
