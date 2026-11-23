@@ -275,6 +275,31 @@ def _checksum_score(checker: TD3CodeChecker) -> int:
 _PERFECT_SCORE = 4
 
 
+def _is_plausible(checker: TD3CodeChecker) -> bool:
+    """Is this parse evidence of a real MRZ, or just text that happens to be
+    the right *shape*?
+
+    The line filter (_find_mrz_lines) only checks length/alphabet and the
+    digit-free-line-1 rule, so OCR noise from a patterned or busy region
+    (guilloche, hologram, printed names) can pass it -- reported: a scan
+    "succeeded" with a document number, name, nationality and issuing
+    country that were all garbage, with every check digit failing.
+
+    A genuine MRZ, even a noisy read, leaves at least one of two signals
+    intact: some ICAO check digit still validates, or a country code still
+    matches the bundled ICAO list (random letters hit a valid 3-letter code
+    only ~1% of the time per field). Neither => treat as not found, so the
+    ladder moves on to the next variant/rotation and ultimately the caller
+    gets an honest 422 instead of junk to review."""
+    if _checksum_score(checker) > 0:
+        return True
+    f = checker.fields()
+    return any(
+        code and _is_country_code(code)
+        for code in (f.nationality.rstrip("<"), f.country.rstrip("<"))
+    )
+
+
 def _best_candidate(gray: Image.Image, regions) -> Optional[TD3CodeChecker]:
     """Run the region x preprocessing ladder over one orientation of the photo
     and return the best-scoring parsed MRZ candidate, or None.
@@ -307,6 +332,8 @@ def _best_candidate(gray: Image.Image, regions) -> Optional[TD3CodeChecker]:
                 candidate = TD3CodeChecker(mrz_text, check_expiry=False, compute_warnings=True)
             except Exception:
                 continue  # unparseable candidate; a later variant may do better
+            if not _is_plausible(candidate):
+                continue  # MRZ-shaped noise, not a real read; keep looking
             score = _checksum_score(candidate)
             if score > best_score:
                 best, best_score = candidate, score
