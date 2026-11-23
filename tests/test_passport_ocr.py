@@ -94,23 +94,16 @@ def test_find_mrz_lines_fails_closed_when_no_digit_free_candidate_exists():
     assert lines == []
 
 
-def test_extract_mrz_recovers_holder_name_when_line2_is_fragmented(monkeypatch):
-    """Full regression test replaying the exact reported symptom: the
-    holder's name must come back correct even when line 2 gets OCR'd as two
-    separate lines, rather than a garbled mix of letters and digits."""
+def test_extract_mrz_does_not_return_a_garbled_read_when_line2_is_fragmented(monkeypatch):
+    """Original symptom: line 2 OCR'd as two fragments produced a "name" full
+    of digits. _find_mrz_lines no longer pairs fragments (test above); and the
+    resulting fragment-only parse has almost no valid check digits, so it must
+    be refused (422) rather than shown for review as if it were a scan."""
     monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
-    line2_frag_a = _VALID_LINE2[:23]
-    line2_frag_b = _VALID_LINE2[23:]
-    ocr_text = "PASSPORT\n" + _VALID_LINE1 + "\n" + line2_frag_a + "\n" + line2_frag_b
+    ocr_text = "PASSPORT\n" + _VALID_LINE1 + "\n" + _VALID_LINE2[:23] + "\n" + _VALID_LINE2[23:]
     monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", lambda *a, **k: ocr_text)
-
-    result = passport_ocr.extract_mrz(_fake_image_bytes())
-    assert result["holder_name"] == "ANNA MARIA ERIKSSON"
-    assert result["issuing_country"] == "UTO"
-    assert result["issuing_country_valid"] is True
-    # The digit-based fields only got a fragment of line 2 -- they should be
-    # visibly wrong/incomplete, not silently plausible-looking.
-    assert result["document_number_valid"] is False
+    with pytest.raises(passport_ocr.PassportOcrError):
+        passport_ocr.extract_mrz(_fake_image_bytes())
 
 
 def test_extract_mrz_holder_name_empty_rather_than_none_none_on_malformed_identifier(monkeypatch):
@@ -836,3 +829,37 @@ def test_mrz_model_config_has_no_character_whitelist(monkeypatch):
     assert configs[0] == "-l mrz --psm 6"
     assert "whitelist" not in configs[0]
     assert "whitelist" in configs[-1]  # the stock model keeps it
+
+
+def test_single_valid_check_digit_with_valid_country_codes_is_not_plausible():
+    # Reported garbage scan: document number `P<AUS1<<N`, random-letter name, no
+    # dates, yet one check digit and two country codes happened to look valid.
+    c = passport_ocr.TD3CodeChecker(
+        passport_ocr._pad44("P<AUSWUTH<<NICOLE<TRACY") + "\n" + passport_ocr._pad44("P<AUS1<<N"),
+        check_expiry=False, compute_warnings=True,
+    )
+    assert passport_ocr._checksum_score(c) < 2
+    assert passport_ocr._is_plausible(c) is False
+
+
+def test_mrz_model_reads_the_untouched_full_image_first(monkeypatch):
+    # `tesseract photo.jpg - -l mrz --psm 6` on the raw photo is the proven
+    # path, so the first OCR call must be that: the mrz model, un-preprocessed.
+    monkeypatch.setattr(passport_ocr, "tesseract_available", lambda: True)
+    monkeypatch.setattr(passport_ocr.pytesseract, "get_languages", lambda config="": ["eng", "mrz"])
+    passport_ocr._tess_configs.cache_clear()
+    sizes = []
+    def fake(path, config="", **k):
+        from PIL import Image
+        sizes.append((Image.open(path).size, config))
+        return _VALID_LINE1 + "\n" + _VALID_LINE2
+    monkeypatch.setattr(passport_ocr.pytesseract, "image_to_string", fake)
+    try:
+        passport_ocr.extract_mrz(_fake_image_bytes())
+    finally:
+        passport_ocr._tess_configs.cache_clear()
+    from PIL import Image
+    import io
+    assert sizes[0][1] == "-l mrz --psm 6"
+    assert sizes[0][0] == Image.open(io.BytesIO(_fake_image_bytes())).size
+    assert len(sizes) == 1  # perfect first read: nothing else spent
