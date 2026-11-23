@@ -336,6 +336,14 @@ _OCR_CALL_TIMEOUT_S = 10
 _OCR_BUDGET_S = 20.0
 
 
+# Two independent check digits validating is the floor for "this is a real MRZ".
+# One is not enough: a reported scan of a real passport returned a "document
+# number" of `P<AUS1<<N`, a name of random letters and no dates, yet looked
+# plausible because one check digit over an empty field and two valid-by-chance
+# country codes got it through. Better an honest 422 than that.
+_MIN_PLAUSIBLE_SCORE = 2
+
+
 def _is_plausible(checker: TD3CodeChecker) -> bool:
     """Is this parse evidence of a real MRZ, or just text that happens to be
     the right *shape*?
@@ -352,13 +360,7 @@ def _is_plausible(checker: TD3CodeChecker) -> bool:
     only ~1% of the time per field). Neither => treat as not found, so the
     ladder moves on to the next variant/rotation and ultimately the caller
     gets an honest 422 instead of junk to review."""
-    if _checksum_score(checker) > 0:
-        return True
-    f = checker.fields()
-    return any(
-        code and _is_country_code(code)
-        for code in (f.nationality.rstrip("<"), f.country.rstrip("<"))
-    )
+    return _checksum_score(checker) >= _MIN_PLAUSIBLE_SCORE
 
 
 def _estimate_skew_deg(gray: Image.Image, max_deg: float = 10.0, step: float = 0.5) -> float:
@@ -470,33 +472,51 @@ def _best_candidate(gray: Image.Image, regions, deadline: float = float("inf"), 
     best: Optional[TD3CodeChecker] = None
     best_score = -1
     configs = _tess_configs()
+
+    def consider(text: str, model: str) -> None:
+        nonlocal best, best_score
+        lines = _find_mrz_lines(text)
+        if stats is not None:
+            stats[f"{model}:passes"] += 1
+        if len(lines) < 2:
+            return
+        if stats is not None:
+            stats[f"{model}:mrz_shaped"] += 1
+        mrz_text = f"{_pad44(_repair_line1(lines[-2]))}\n{_pad44(lines[-1])}"
+        try:
+            candidate = TD3CodeChecker(mrz_text, check_expiry=False, compute_warnings=True)
+        except Exception:
+            return  # unparseable candidate; a later pass may do better
+        if not _is_plausible(candidate):
+            if stats is not None:
+                stats[f"{model}:rejected_as_noise"] += 1
+            return  # MRZ-shaped noise, not a real read; keep looking
+        score = _checksum_score(candidate)
+        if stats is not None:
+            stats[f"{model}:plausible"] += 1
+        if score > best_score:
+            best, best_score = candidate, score
+
+    def model_of(config: str) -> str:
+        return config.split()[1] if config.startswith("-l ") else "eng"
+
+    # A purpose-trained MRZ model is built to read the whole page untouched:
+    # on a real photo `tesseract photo.jpg - -l mrz --psm 6` returned both MRZ
+    # lines perfectly while the preprocessed-strip ladder below did not. So
+    # give each such model that exact input first, and stop if it's perfect.
+    for config in configs:
+        if config == _TESS_CONFIG or time.monotonic() > deadline:
+            continue
+        consider(_ocr_text(gray, config), model_of(config))
+        if best_score == _PERFECT_SCORE:
+            return best
+
     for region in regions(gray):
         for variant in _preprocess_variants(region):
             for config in configs:
                 if time.monotonic() > deadline:
                     return best
-                model = config.split()[1] if config.startswith("-l ") else "eng"
-                lines = _find_mrz_lines(_ocr_text(variant, config))
-                if stats is not None:
-                    stats[f"{model}:passes"] += 1
-                if len(lines) < 2:
-                    continue
-                if stats is not None:
-                    stats[f"{model}:mrz_shaped"] += 1
-                mrz_text = f"{_pad44(_repair_line1(lines[-2]))}\n{_pad44(lines[-1])}"
-                try:
-                    candidate = TD3CodeChecker(mrz_text, check_expiry=False, compute_warnings=True)
-                except Exception:
-                    continue  # unparseable candidate; a later pass may do better
-                if not _is_plausible(candidate):
-                    if stats is not None:
-                        stats[f"{model}:rejected_as_noise"] += 1
-                    continue  # MRZ-shaped noise, not a real read; keep looking
-                score = _checksum_score(candidate)
-                if stats is not None:
-                    stats[f"{model}:plausible"] += 1
-                if score > best_score:
-                    best, best_score = candidate, score
+                consider(_ocr_text(variant, config), model_of(config))
                 if best_score == _PERFECT_SCORE:
                     break
             if best_score == _PERFECT_SCORE:
