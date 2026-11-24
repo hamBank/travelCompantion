@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlmodel import select
 
-from backend.models import Trip, TripMembership, TripRole, PushSubscription, UserDocument
+from backend.models import Trip, TripMembership, TripRole, PushSubscription, UserDocument, Traveler
 from backend.notifications import send_document_expiry_reminders, send_due_notifications
 from backend.push import PushSendError
 from tests.conftest import make_test_session
@@ -155,3 +155,77 @@ def test_send_due_notifications_unaffected(session):
     trip = _trip(session, end_date=NOW + timedelta(days=30))
     _member(session, "a@x.com", trip)
     assert send_due_notifications(session, now=NOW) == 0
+
+
+def _traveler(session, trip, name, email=None):
+    session.add(Traveler(trip_id=trip.id, display_name=name, user_email=email))
+    session.commit()
+
+
+def test_body_says_the_passport_outlasts_the_trip_not_that_it_expires_before(session):
+    # Reported: a passport expiring 2027-06-28 alerted for a trip ending
+    # 2027-03-22 with text claiming it expired "before your trip ends". It
+    # expires 98 days AFTER; the reason to warn is the 6-month-validity rule.
+    now = datetime(2026, 11, 24)
+    trip = _trip(session, name="Spring trip", end_date=datetime(2027, 3, 22))
+    _member(session, "a@x.com", trip)
+    _doc(session, "a@x.com", expiry_date=datetime(2027, 6, 28))
+
+    sent, sender = _sender()
+    assert send_document_expiry_reminders(session, now=now, sender=sender) == 1
+    body = sent[0][1]["body"]
+    assert "98 days after your trip ends" in body
+    assert "Spring trip" in body and "Mar 22, 2027" in body
+    assert "before your trip" not in body
+    assert "6 months" in body
+
+
+def test_member_who_is_not_a_traveler_gets_no_reminder(session):
+    trip = _trip(session, end_date=NOW + timedelta(days=30))
+    _member(session, "partner@x.com", trip, role=TripRole.editor)
+    _member(session, "me@x.com", trip)
+    _traveler(session, trip, "Me", "me@x.com")           # trip lists travelers; partner isn't one
+    _doc(session, "partner@x.com", expiry_date=NOW + timedelta(days=60))
+
+    sent, sender = _sender()
+    assert send_document_expiry_reminders(session, now=NOW, sender=sender) == 0
+    assert sent == []
+
+
+def test_member_who_is_a_traveler_still_gets_the_reminder(session):
+    trip = _trip(session, end_date=NOW + timedelta(days=30))
+    _member(session, "me@x.com", trip)
+    _traveler(session, trip, "Me", "ME@x.com")            # case-insensitive match
+    _doc(session, "me@x.com", expiry_date=NOW + timedelta(days=60))
+
+    sent, sender = _sender()
+    assert send_document_expiry_reminders(session, now=NOW, sender=sender) == 1
+
+
+def test_trip_with_no_travelers_recorded_falls_back_to_membership(session):
+    trip = _trip(session, end_date=NOW + timedelta(days=30))
+    _member(session, "a@x.com", trip)
+    _doc(session, "a@x.com", expiry_date=NOW + timedelta(days=60))
+
+    sent, sender = _sender()
+    assert send_document_expiry_reminders(session, now=NOW, sender=sender) == 1
+
+
+def test_trip_that_already_ended_gets_no_reminder(session):
+    trip = _trip(session, end_date=NOW - timedelta(days=10))
+    _member(session, "a@x.com", trip)
+    _doc(session, "a@x.com", expiry_date=NOW + timedelta(days=60))
+
+    sent, sender = _sender()
+    assert send_document_expiry_reminders(session, now=NOW, sender=sender) == 0
+
+
+def test_only_the_document_owner_is_notified_not_other_trip_members(session):
+    trip = _trip(session, end_date=NOW + timedelta(days=30))
+    _member(session, "owner@x.com", trip)
+    _member(session, "other@x.com", trip, role=TripRole.editor)
+    _doc(session, "owner@x.com", expiry_date=NOW + timedelta(days=60))
+
+    sent, sender = _sender()
+    assert send_document_expiry_reminders(session, now=NOW, sender=sender) == 1
+    assert [info["endpoint"] for info, _ in sent] == ["https://push/owner@x.com"]
