@@ -23,7 +23,7 @@ from ..auth import get_current_user
 from ..permissions import require_trip_role, require_traveler_access
 from ..models import (
     Traveler, TravelerRead, TravelerCreate, TravelerUpdate,
-    TravelerProfile, TravelerProfileUpdate, Trip, TripRole,
+    TravelerProfile, TravelerProfileUpdate, Trip, TripMembership, TripRole,
 )
 
 router = APIRouter()
@@ -67,6 +67,27 @@ def _profile_response(session: Session, traveler: Traveler) -> TravelerProfile:
         except ValueError:
             age = None
     return TravelerProfile(**data, passport_expiry=traveler.passport_expiry, age_at_trip_start=age)
+
+
+@router.get("/me/travelers")
+def my_known_travelers(session: Session = Depends(get_session), user: dict = Depends(get_current_user)):
+    """The distinct people on any trip the signed-in user belongs to, for the
+    "whose document is this?" dropdown. A person on several trips appears once
+    (matched by email when they have one, else by name). Names and emails only:
+    nothing from the encrypted profiles."""
+    me = user["email"].lower()
+    trip_ids = [m.trip_id for m in session.exec(select(TripMembership).where(TripMembership.user_email == me)).all()]
+    if not trip_ids:
+        return []
+    rows = session.exec(select(Traveler).where(Traveler.trip_id.in_(trip_ids)).order_by(Traveler.display_name)).all()
+    seen, out = set(), []
+    for t in rows:
+        key = (t.user_email or "").lower() or t.display_name.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"display_name": t.display_name, "user_email": t.user_email, "is_me": (t.user_email or "").lower() == me})
+    return out
 
 
 @router.get("/trips/{trip_id}/travelers", response_model=List[TravelerRead])

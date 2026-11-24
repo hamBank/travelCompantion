@@ -7,6 +7,7 @@ import ThemePicker from './components/ThemePicker.jsx'
 import LoginPage from './components/LoginPage.jsx'
 import OfflineQueueBanner from './components/OfflineQueueBanner.jsx'
 import MenuDropdown from './components/MenuDropdown.jsx'
+import TravelersBar from './components/TravelersBar.jsx'
 import { itemDateKey } from './components/StopCard.jsx'
 import { lazyComponent } from './lazyWithReload.jsx'
 import { shiftPeriod, emptyDraft, draftChangeCount, draftToRequest } from './calendarModel.js'
@@ -787,6 +788,13 @@ function AppShell({ user, onLogout }) {
         <PendingReview
           onClose={() => { back(); refreshPending() }}
           onChanged={refreshPending}
+        />
+      )}
+
+      {selectedTrip && !editing && (
+        <TravelersBar
+          tripId={selectedTrip.id} refreshKey={showTravelers}
+          onOpen={() => { setShowTravelers(true); pushSnapshot({ showTravelers: true }) }}
         />
       )}
 

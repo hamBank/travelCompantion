@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from ..travelers import add_creator_as_traveler
 from sqlmodel import Session, SQLModel, select
 from ..database import get_session
 from ..auth import get_current_user
@@ -35,6 +36,7 @@ def import_from_sheets(req: SheetsImportRequest, session: Session = Depends(get_
     # Creator becomes the owner of the imported trip.
     session.add(TripMembership(trip_id=trip.id, user_email=user["email"].lower(), role=TripRole.owner))
     session.commit()
+    add_creator_as_traveler(session, data["id"], user)
 
     return SheetsImportResult(**data, stops_imported=len(stop_count))
 

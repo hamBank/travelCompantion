@@ -84,3 +84,16 @@ def trip_ids_traveled_by(session: Session, email: str) -> Set[int]:
         select(Traveler.trip_id).where(Traveler.user_email == email.lower())
     ).all()
     return set(rows)
+
+
+def add_creator_as_traveler(session: Session, trip_id: int, user: dict) -> None:
+    """A trip's creator is usually going on it, so they start on its travelers
+    list instead of every trip beginning with nobody on it (an empty list made
+    reminders and totals fall back to guessing from membership). Owners can
+    remove themselves in the Travelers screen when they are only planning."""
+    email = (user.get("email") or "").lower()
+    if not email:
+        return
+    name = (user.get("name") or "").strip() or email.split("@")[0]
+    session.add(Traveler(trip_id=trip_id, user_email=email, display_name=name))
+    session.commit()

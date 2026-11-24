@@ -25,8 +25,18 @@ def _add_traveler(client: TestClient, trip_id: int, email=DEV_EMAIL, display_nam
     r = client.post(f"/trips/{trip_id}/travelers", json={
         "display_name": display_name or email, "user_email": email,
     })
+    if r.status_code == 409:
+        # The trip's creator is added as a traveler automatically; a test asking
+        # for that same person again just wants them present.
+        return next(t for t in client.get(f"/trips/{trip_id}/travelers").json() if (t["user_email"] or "").lower() == email.lower())
     assert r.status_code == 201, r.text
     return r.json()
+
+
+def _not_traveling(client: TestClient, trip_id: int):
+    """Take the auto-added creator off the trip's travelers (owner only planning)."""
+    for t in client.get(f"/trips/{trip_id}/travelers").json():
+        assert client.delete(f"/trips/{trip_id}/travelers/{t['id']}").status_code == 204
 
 
 def test_trip_distance_empty_trip(client: TestClient):
@@ -91,6 +101,7 @@ def test_owner_not_traveler_excluded_traveler_included(client: TestClient):
     # Trip A: dev@localhost is owner (auto-membership on create) but never added
     # as a traveler.
     trip_a, stop_a = _trip_with_stop(client)
+    _not_traveling(client, trip_a["id"])
     client.post(f"/stops/{stop_a['id']}/items", json={
         "kind": "cycling", "name": "Ride A", "status": "pending",
         "details": {"gpx_distance_m": 10000},
@@ -123,6 +134,7 @@ def test_non_member_traveler_row_never_contributes(client: TestClient):
     """A Traveler row with no linked account (user_email None — a child, a
     partner without the app) must never match any user's totals."""
     trip, stop = _trip_with_stop(client)
+    _not_traveling(client, trip["id"])
     client.post(f"/trips/{trip['id']}/travelers", json={"display_name": "No Account"})
     client.post(f"/stops/{stop['id']}/items", json={
         "kind": "cycling", "name": "Ride", "status": "pending",

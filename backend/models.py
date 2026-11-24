@@ -864,6 +864,11 @@ class UserDocument(SQLModel, table=True):
     # manual entry. Same tier as document_number_encrypted: never queried
     # directly, never in UserDocumentRead, decrypted only via GET .../holder.
     holder_data_encrypted: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
+    # Whose document this is when it isn't the signed-in user's own: the
+    # display_name of a traveler on one of their trips (a child, a partner).
+    # None = the owner's own. The vault stays owner-only either way; this only
+    # says whose expiry a reminder is about and which trip it applies to.
+    traveler_name: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -879,6 +884,7 @@ class UserDocumentRead(SQLModel):
     issued_date: Optional[datetime]
     expiry_date: Optional[datetime]
     notes: str
+    traveler_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
