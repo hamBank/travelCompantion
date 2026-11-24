@@ -25,8 +25,48 @@ function emptyDocForm() {
   }
 }
 
-function DocumentForm({ initial, onSave, onCancel, saving }) {
+// Photo picker for the add-document form: "Take photo" opens the phone camera
+// directly (capture), "Choose file" is the normal picker (on iOS that also
+// offers Take Photo / Photo Library). Both feed the same selected file.
+function PhotoPicker({ file, onChange, docType }) {
+  const hint = docType === 'passport'
+    ? 'A passport photo is scanned for its details once saved, so you can review and fill the fields from it.'
+    : 'The photo is stored encrypted with the document.'
+  return (
+    <div className="space-y-1 pt-1">
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide">Photo or scan</p>
+      <div className="flex items-center gap-3 text-sm">
+        <label style={{ color: 'var(--accent)' }} className="hover:underline cursor-pointer">
+          Take photo
+          <input
+            type="file" accept="image/*" capture="environment" data-testid="doc-photo-camera"
+            onChange={e => { onChange(e.target.files?.[0] || null); e.target.value = '' }}
+            style={{ display: 'none' }}
+          />
+        </label>
+        <label style={{ color: 'var(--accent)' }} className="hover:underline cursor-pointer">
+          Choose file
+          <input
+            type="file" accept="image/*,application/pdf" data-testid="doc-photo-file"
+            onChange={e => { onChange(e.target.files?.[0] || null); e.target.value = '' }}
+            style={{ display: 'none' }}
+          />
+        </label>
+      </div>
+      {file && (
+        <p style={{ color: 'var(--text)' }} className="text-xs flex items-center gap-2">
+          <span className="truncate">📎 {file.name}</span>
+          <button type="button" onClick={() => onChange(null)} style={{ color: 'var(--text-faint)' }} className="hover:opacity-70">✕</button>
+        </p>
+      )}
+      <p style={{ color: 'var(--text-faint)' }} className="text-xs">{hint}</p>
+    </div>
+  )
+}
+
+function DocumentForm({ initial, onSave, onCancel, saving, withPhoto = false }) {
   const [form, setForm] = useState(initial)
+  const [photo, setPhoto] = useState(null)
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
   return (
     <div className="space-y-2 mt-2 p-3 rounded-lg" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
@@ -73,6 +113,8 @@ function DocumentForm({ initial, onSave, onCancel, saving }) {
         rows={2}
       />
 
+      {withPhoto && <PhotoPicker file={photo} onChange={setPhoto} docType={form.doc_type} />}
+
       <p style={{ color: 'var(--text-faint)' }} className="text-xs uppercase tracking-wide pt-1">
         Holder details {'(from "Scan passport" or entered manually)'}
       </p>
@@ -111,7 +153,7 @@ function DocumentForm({ initial, onSave, onCancel, saving }) {
           Never mind
         </button>
         <button
-          onClick={() => onSave(form)}
+          onClick={() => onSave(form, photo)}
           disabled={saving || !form.doc_type}
           style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
           className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50"
@@ -446,6 +488,17 @@ function DocumentRow({ doc, onChanged }) {
             >
               {uploading ? 'Uploading…' : '+ Add file'}
             </label>
+            <input
+              id={`vault-camera-${doc.id}`}
+              type="file" accept="image/*" capture="environment" onChange={handleFileChange} style={{ display: 'none' }}
+            />
+            <label
+              htmlFor={`vault-camera-${doc.id}`}
+              style={{ color: 'var(--accent)' }}
+              className="text-sm hover:underline cursor-pointer inline-block mt-1 ml-4"
+            >
+              Take photo
+            </label>
 
             {files.length > 0 && (
               <div className="mt-2">
@@ -474,6 +527,9 @@ export default function DocumentsModal({ onClose }) {
   const [loaded, setLoaded] = useState(false)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [newScan, setNewScan] = useState(null)   // { docId, label, data }: scan of a just-added document awaiting review
+  const [applyingScan, setApplyingScan] = useState(false)
   const [error, setError] = useState(null)
 
   function refresh() {
@@ -482,16 +538,47 @@ export default function DocumentsModal({ onClose }) {
 
   useEffect(() => { refresh() }, [])
 
-  async function addDocument(form) {
+  async function addDocument(form, photo) {
     setSaving(true); setError(null)
+    let created = null
     try {
-      await createDocument(form)
+      created = await createDocument(form)
       setAdding(false)
+    } catch (e) {
+      setError(e.message)
+      setSaving(false)
+      return
+    }
+    // The document now exists; a failure past this point must not look like the
+    // save failed (a retry would create a duplicate), so report it separately.
+    try {
+      if (photo) {
+        const uploaded = await uploadDocumentFile(created.id, photo)
+        if (form.doc_type === 'passport' && (uploaded.content_type || photo.type || '').startsWith('image/')) {
+          setScanning(true)
+          const data = await scanPassportFile(created.id, uploaded.id)
+          setNewScan({ docId: created.id, label: form.label, data })
+        }
+      }
+    } catch (e) {
+      setError(`Document saved, but the photo step failed: ${e.message}`)
+    } finally {
+      setScanning(false)
+      await refresh()
+      setSaving(false)
+    }
+  }
+
+  async function applyNewScan(patch) {
+    setApplyingScan(true); setError(null)
+    try {
+      await updateDocument(newScan.docId, patch)
+      setNewScan(null)
       await refresh()
     } catch (e) {
       setError(e.message)
     } finally {
-      setSaving(false)
+      setApplyingScan(false)
     }
   }
 
@@ -519,8 +606,18 @@ export default function DocumentsModal({ onClose }) {
 
               {documents.map(doc => <DocumentRow key={doc.id} doc={doc} onChanged={refresh} />)}
 
+              {scanning && <p style={{ color: 'var(--text-muted)' }} className="text-xs mt-2">Scanning photo…</p>}
+              {newScan && (
+                <ScanReview
+                  result={newScan.data}
+                  onApply={applyNewScan}
+                  onDismiss={() => setNewScan(null)}
+                  applying={applyingScan}
+                />
+              )}
+
               {adding ? (
-                <DocumentForm initial={emptyDocForm()} onSave={addDocument} onCancel={() => setAdding(false)} saving={saving} />
+                <DocumentForm initial={emptyDocForm()} onSave={addDocument} onCancel={() => setAdding(false)} saving={saving} withPhoto />
               ) : (
                 <button onClick={() => setAdding(true)} style={{ color: 'var(--accent)' }} className="text-sm hover:underline mt-2">
                   + Add document
