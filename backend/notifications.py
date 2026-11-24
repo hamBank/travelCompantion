@@ -15,7 +15,7 @@ from . import flight_live, rail_live
 from .config import get_settings
 from .models import (
     ItineraryItem, ItemKind, ItemStatus, Stop, Trip, TripMembership, PushSubscription,
-    NotificationLog, UserDocument,
+    NotificationLog, UserDocument, Traveler,
 )
 from .push import send_push, PushSendError
 from .tzutil import approx_utc_offset_hours
@@ -406,24 +406,55 @@ def send_document_expiry_reminders(session: Session, *, now: Optional[datetime] 
             select(Trip).where(Trip.id.in_(trip_ids), Trip.end_date.is_not(None))
         ).all()
 
+        # Membership only says who may edit a trip (plan-17 D1), not who is
+        # going: a partner who plans a trip from home is a member. Where the
+        # trip records its travelers, the document's owner has to be one of
+        # them; a trip with no travelers recorded yet falls back to
+        # membership, as before.
+        def owner_is_traveling(trip) -> bool:
+            travelers = session.exec(select(Traveler).where(Traveler.trip_id == trip.id)).all()
+            if not travelers:
+                return True
+            return any((t.user_email or "").lower() == doc.user_email.lower() for t in travelers)
+
         # The trip must end before (or on) the document's expiry, and not so
         # far before that the expiry isn't actually "soon" relative to it —
         # a document already expired before the trip even starts isn't
         # "expiring soon", it's already invalid, so it's excluded rather than
-        # treated as an even-more-urgent match.
-        matching = [t for t in trips if doc.expiry_date - lookahead <= t.end_date <= doc.expiry_date]
+        # treated as an even-more-urgent match. A trip that has already ended
+        # is not worth a warning either.
+        matching = [
+            t for t in trips
+            if doc.expiry_date - lookahead <= t.end_date <= doc.expiry_date
+            and t.end_date >= now and owner_is_traveling(t)
+        ]
         if not matching:
             continue
         trip = min(matching, key=lambda t: t.end_date)
 
         label = doc.label or doc.doc_type
+        gap_days = (doc.expiry_date.date() - trip.end_date.date()).days
+        if gap_days <= 0:
+            when = "the day your trip ends"
+        else:
+            when = f"{gap_days} days after your trip ends"
         payload = {
             "title": f"{label} expiring soon",
-            "body": f"{label} expires {doc.expiry_date:%b %d, %Y} — before your trip to {trip.name} ends",
+            "body": (
+                f"{label} expires {doc.expiry_date:%b %d, %Y}, {when} "
+                f"({trip.name}, {trip.end_date:%b %d, %Y}). Many countries require "
+                f"6 months' validity beyond your travel dates."
+            ),
             "url": "/",
             "urgent": True,
         }
-        for sub in _recipients(session, trip.id):
+        # Only the document's owner is told: the vault is owner-only, and the
+        # other members of a shared trip have no business seeing someone's
+        # passport expiry on their lock screen.
+        recipients = session.exec(
+            select(PushSubscription).where(PushSubscription.user_email == doc.user_email.lower())
+        ).all()
+        for sub in recipients:
             info = {"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}
             try:
                 sender(info, payload, urgent=True)
