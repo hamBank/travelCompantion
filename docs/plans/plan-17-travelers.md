@@ -36,8 +36,10 @@ on it.
 `Traveler` rows (new) say who is going. `TripMembership` rows (existing) say
 who may view/edit. A traveler may have no account (`user_email` null: a
 child, a partner who doesn't use the app). A member may not travel. Creating
-a trip does **not** auto-add the creator as a traveler — that assumption is
-the bug this plan fixes. The UI offers an explicit "Add me as a traveler."
+a trip originally did **not** add the creator as a traveler (the assumption
+this plan fixed). Since 2026-11-24 it does: the creator starts on the list and
+can remove themselves in the Travelers screen when only planning. Traveler and
+membership remain independent tables.
 
 ### D2. Traveler PII is stored *on the trip*, encrypted, never read across from the vault
 The document vault (plan 12, `UserDocument`) is owner-only and "never

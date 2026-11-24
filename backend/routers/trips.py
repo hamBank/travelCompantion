@@ -18,6 +18,7 @@ from ..models import (
     RescheduleMove,
 )
 from ..compare_and_set import resolve_fields
+from ..travelers import add_creator_as_traveler
 from ..reschedule import shift_item, stop_delta_days, item_primary_dt
 from .stops import _stop_snapshot, _delete_stop_cascade
 from .items import record_item_history, _item_snapshot
@@ -52,6 +53,7 @@ def create_trip(trip_in: TripCreate, session: Session = Depends(get_session), us
     data = trip.model_dump()  # capture before the membership commit expires attributes
     session.add(TripMembership(trip_id=trip.id, user_email=user["email"].lower(), role=TripRole.owner))
     session.commit()
+    add_creator_as_traveler(session, data["id"], user)
     return TripReadWithRole(**data, role=TripRole.owner)
 
 

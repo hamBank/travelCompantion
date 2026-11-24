@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   listDocuments, createDocument, updateDocument, deleteDocument,
   listDocumentFiles, uploadDocumentFile, deleteDocumentFile, fetchDocumentFileBlob,
-  scanPassportFile, getDocumentHolder,
+  scanPassportFile, getDocumentHolder, getKnownTravelers,
 } from '../api.js'
 import { vaultOfflineStore } from '../vaultOfflineStore.js'
 import DocumentViewer from './DocumentViewer.jsx'
@@ -18,10 +18,10 @@ function isExpiringSoon(expiryDate) {
   return days <= EXPIRY_WARNING_DAYS
 }
 
-// A cleared <input type="date"> is "", which the API rejects as an invalid
+// A cleared <input type="date"> (or "Me" in the owner dropdown) is "", which the API rejects as an invalid
 // date (422 "input is too short") -- send null for blank dates instead, so a
 // document can be saved with only the photo filled in.
-const DATE_FIELDS = ['issued_date', 'expiry_date', 'date_of_birth']
+const DATE_FIELDS = ['issued_date', 'expiry_date', 'date_of_birth', 'traveler_name']
 export function cleanDocForm(form) {
   const out = { ...form }
   for (const k of DATE_FIELDS) if (!out[k]) out[k] = null
@@ -31,7 +31,7 @@ export function cleanDocForm(form) {
 function emptyDocForm() {
   return {
     doc_type: 'passport', label: '', country: '', issued_date: '', expiry_date: '', notes: '',
-    holder_name: '', nationality: '', date_of_birth: '', sex: '',
+    holder_name: '', nationality: '', date_of_birth: '', sex: '', traveler_name: '',
   }
 }
 
@@ -74,7 +74,16 @@ function PhotoPicker({ file, onChange, docType }) {
   )
 }
 
-function DocumentForm({ initial, onSave, onCancel, saving, withPhoto = false }) {
+// Names for the "Belongs to" dropdown: everyone on the user's trips except
+// themselves, plus the document's current assignee if they've since left every
+// trip (so editing never silently reassigns it to "Me").
+export function ownerOptions(people, current) {
+  const names = people.filter(p => !p.is_me).map(p => p.display_name)
+  if (current && !names.includes(current)) names.push(current)
+  return names
+}
+
+function DocumentForm({ initial, onSave, onCancel, saving, withPhoto = false, people = [] }) {
   const [form, setForm] = useState(initial)
   const [photo, setPhoto] = useState(null)
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
@@ -88,6 +97,19 @@ function DocumentForm({ initial, onSave, onCancel, saving, withPhoto = false }) 
       >
         {Object.entries(DOC_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
+      <label className="block text-xs" style={{ color: 'var(--text-faint)' }}>
+        Belongs to
+        <select
+          aria-label="Belongs to"
+          value={form.traveler_name || ''}
+          onChange={e => set('traveler_name', e.target.value)}
+          style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          className="w-full rounded-lg px-3 py-2 text-sm outline-none mt-1"
+        >
+          <option value="">Me</option>
+          {ownerOptions(people, form.traveler_name).map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </label>
       <input
         value={form.label} onChange={e => set('label', e.target.value)} placeholder="Label (e.g. US Passport)"
         style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
@@ -259,7 +281,7 @@ function ScanReview({ result, onApply, onDismiss, applying }) {
   )
 }
 
-function DocumentRow({ doc, onChanged }) {
+function DocumentRow({ doc, onChanged, people = [] }) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -408,6 +430,7 @@ function DocumentRow({ doc, onChanged }) {
         <button onClick={() => setEditing(v => !v)} className="flex-1 min-w-0 text-left">
           <div style={{ color: 'var(--text)' }} className="text-sm truncate">{doc.label || DOC_TYPE_LABEL[doc.doc_type]}</div>
           <div className="text-xs flex gap-2">
+            {doc.traveler_name && <span style={{ color: 'var(--text-muted)' }}>for {doc.traveler_name}</span>}
             {doc.country && <span style={{ color: 'var(--text-faint)' }}>{doc.country}</span>}
             {doc.expiry_date && (
               <span style={{ color: expiringSoon ? 'var(--warning)' : 'var(--text-faint)' }}>
@@ -439,12 +462,14 @@ function DocumentRow({ doc, onChanged }) {
               initial={{
                 doc_type: doc.doc_type, label: doc.label, country: doc.country,
                 issued_date: doc.issued_date || '', expiry_date: doc.expiry_date || '', notes: doc.notes,
+                traveler_name: doc.traveler_name || '',
                 holder_name: holder.holder_name || '', nationality: holder.nationality || '',
                 date_of_birth: holder.date_of_birth || '', sex: holder.sex || '',
               }}
               onSave={save}
               onCancel={() => setEditing(false)}
               saving={saving}
+              people={people}
             />
           )}
 
@@ -540,6 +565,7 @@ export default function DocumentsModal({ onClose }) {
   const [scanning, setScanning] = useState(false)
   const [newScan, setNewScan] = useState(null)   // { docId, label, data }: scan of a just-added document awaiting review
   const [applyingScan, setApplyingScan] = useState(false)
+  const [people, setPeople] = useState([])   // everyone on the user's trips, for "Belongs to"
   const [error, setError] = useState(null)
 
   function refresh() {
@@ -547,6 +573,7 @@ export default function DocumentsModal({ onClose }) {
   }
 
   useEffect(() => { refresh() }, [])
+  useEffect(() => { getKnownTravelers().then(setPeople).catch(() => {}) }, [])
 
   async function addDocument(form, photo) {
     setSaving(true); setError(null)
@@ -614,7 +641,7 @@ export default function DocumentsModal({ onClose }) {
                 Passport, licence, and visa scans — encrypted on the server. Toggle "Available offline" per document to view it without a network connection.
               </p>
 
-              {documents.map(doc => <DocumentRow key={doc.id} doc={doc} onChanged={refresh} />)}
+              {documents.map(doc => <DocumentRow key={doc.id} doc={doc} onChanged={refresh} people={people} />)}
 
               {scanning && <p style={{ color: 'var(--text-muted)' }} className="text-xs mt-2">Scanning photo…</p>}
               {newScan && (
@@ -627,7 +654,7 @@ export default function DocumentsModal({ onClose }) {
               )}
 
               {adding ? (
-                <DocumentForm initial={emptyDocForm()} onSave={addDocument} onCancel={() => setAdding(false)} saving={saving} withPhoto />
+                <DocumentForm initial={emptyDocForm()} onSave={addDocument} onCancel={() => setAdding(false)} saving={saving} withPhoto people={people} />
               ) : (
                 <button onClick={() => setAdding(true)} style={{ color: 'var(--accent)' }} className="text-sm hover:underline mt-2">
                   + Add document

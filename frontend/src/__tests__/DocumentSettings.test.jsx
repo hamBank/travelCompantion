@@ -24,6 +24,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   api.getImportAddress.mockResolvedValue({ address: 'import+x@example.com' })
   api.listDocuments.mockResolvedValue([])
+  api.getKnownTravelers.mockResolvedValue([])
   api.listDocumentFiles.mockResolvedValue([])
   const notFound = new Error('Not found')
   notFound.status = 404

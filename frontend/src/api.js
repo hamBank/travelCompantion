@@ -470,6 +470,7 @@ export async function fetchDocumentFileBlob(docId, fileId) {
 // Clear-field CRUD plus decrypt-on-demand profile — see
 // docs/plans/plan-17-travelers.md (D3/D4) and backend/routers/travelers.py.
 export const getTravelers  = (tripId)       => req(`/trips/${tripId}/travelers`)
+export const getKnownTravelers = ()         => req('/me/travelers')
 export const createTraveler = (tripId, data) =>
   req(`/trips/${tripId}/travelers`, { method: 'POST', body: JSON.stringify(data) })
 export const updateTraveler = (tripId, id, data) =>

@@ -413,6 +413,11 @@ def send_document_expiry_reminders(session: Session, *, now: Optional[datetime] 
         # membership, as before.
         def owner_is_traveling(trip) -> bool:
             travelers = session.exec(select(Traveler).where(Traveler.trip_id == trip.id)).all()
+            if doc.traveler_name:
+                # A document held for someone else counts for the trips that
+                # person is on, by name (a child has no account to match on).
+                wanted = doc.traveler_name.strip().lower()
+                return any(t.display_name.strip().lower() == wanted for t in travelers)
             if not travelers:
                 return True
             return any((t.user_email or "").lower() == doc.user_email.lower() for t in travelers)
@@ -433,6 +438,8 @@ def send_document_expiry_reminders(session: Session, *, now: Optional[datetime] 
         trip = min(matching, key=lambda t: t.end_date)
 
         label = doc.label or doc.doc_type
+        if doc.traveler_name:
+            label = f"{doc.traveler_name}'s {label}"
         gap_days = (doc.expiry_date.date() - trip.end_date.date()).days
         if gap_days <= 0:
             when = "the day your trip ends"

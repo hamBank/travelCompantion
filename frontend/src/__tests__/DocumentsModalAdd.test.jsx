@@ -18,6 +18,10 @@ beforeEach(() => {
   api.listDocumentFiles.mockResolvedValue([])
   api.createDocument.mockResolvedValue({ id: 7 })
   api.scanPassportFile.mockResolvedValue({})
+  api.getKnownTravelers.mockResolvedValue([
+    { display_name: 'Dev', user_email: 'dev@localhost', is_me: true },
+    { display_name: 'Mia', user_email: null, is_me: false },
+  ])
   api.uploadDocumentFile.mockResolvedValue({ id: 70, filename: 'passport.jpg', content_type: 'image/jpeg' })
 })
 
@@ -92,5 +96,35 @@ describe('add document with a photo', () => {
     fireEvent.click(screen.getByText('Save document'))
     await waitFor(() => expect(api.createDocument).toHaveBeenCalled())
     expect(api.createDocument.mock.calls[0][0].expiry_date).toBe('2030-01-02')
+  })
+})
+
+describe('assigning a document to a traveler', () => {
+  it('lists Me plus the other travelers (not the signed-in user twice)', async () => {
+    await openAddForm()
+    const select = screen.getByLabelText('Belongs to')
+    const options = Array.from(select.querySelectorAll('option')).map(o => o.textContent)
+    expect(options).toEqual(['Me', 'Mia'])
+  })
+
+  it('sends the chosen traveler, and null for Me', async () => {
+    await openAddForm()
+    fireEvent.change(screen.getByLabelText('Belongs to'), { target: { value: 'Mia' } })
+    fireEvent.click(screen.getByText('Save document'))
+    await waitFor(() => expect(api.createDocument).toHaveBeenCalled())
+    expect(api.createDocument.mock.calls[0][0].traveler_name).toBe('Mia')
+  })
+
+  it('sends null when left on Me', async () => {
+    await openAddForm()
+    fireEvent.click(screen.getByText('Save document'))
+    await waitFor(() => expect(api.createDocument).toHaveBeenCalled())
+    expect(api.createDocument.mock.calls[0][0].traveler_name).toBeNull()
+  })
+
+  it('shows who an existing document is for', async () => {
+    api.listDocuments.mockResolvedValue([{ id: 3, doc_type: 'passport', label: 'Passport', traveler_name: 'Mia', country: '', expiry_date: null }])
+    render(<DocumentsModal onClose={() => {}} />)
+    expect(await screen.findByText('for Mia')).toBeTruthy()
   })
 })

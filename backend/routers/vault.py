@@ -67,6 +67,7 @@ class UserDocumentWrite(SQLModel):
     issued_date: Optional[datetime] = None
     expiry_date: Optional[datetime] = None
     notes: str = ""
+    traveler_name: Optional[str] = None   # None = the signed-in user's own document
     holder_name: Optional[str] = None
     nationality: Optional[str] = None
     date_of_birth: Optional[str] = None   # ISO "YYYY-MM-DD", stored inside holder_data_encrypted
@@ -81,6 +82,7 @@ class UserDocumentPatch(SQLModel):
     issued_date: Optional[datetime] = None
     expiry_date: Optional[datetime] = None
     notes: Optional[str] = None
+    traveler_name: Optional[str] = None
     holder_name: Optional[str] = None
     nationality: Optional[str] = None
     date_of_birth: Optional[str] = None   # ISO "YYYY-MM-DD", stored inside holder_data_encrypted

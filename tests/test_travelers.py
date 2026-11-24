@@ -488,7 +488,8 @@ def test_programmatic_api_smoke_with_pat(client: TestClient):
     tid = created.json()["id"]
 
     listed = client.get(f"/trips/{trip['id']}/travelers", headers=auth_header)
-    assert listed.status_code == 200 and len(listed.json()) == 1
+    # the trip's creator is on the list already, plus the one just added
+    assert listed.status_code == 200 and len(listed.json()) == 2
 
     put = client.put(
         f"/trips/{trip['id']}/travelers/{tid}/profile", json={"full_name": "Traveler One"}, headers=auth_header

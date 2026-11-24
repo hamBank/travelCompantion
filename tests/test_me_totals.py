@@ -1,9 +1,9 @@
 """Tests for GET /me/travel-totals (plan 17b: personal cross-trip totals —
 trips/days/countries/distance — all keyed on being a **traveler** on a trip,
 D6, docs/plans/plan-17-travelers.md). Auth is disabled in this suite (see
-tests/conftest.py), so every request is dev@localhost-as-owner; a trip only
-counts once dev@localhost is explicitly added as a traveler on it (D1 — creating
-a trip does not auto-add you as a traveler)."""
+tests/conftest.py), so every request is dev@localhost-as-owner; a trip counts
+only while dev@localhost is one of its travelers. Creating a trip adds the
+creator as a traveler, so planning-only tests remove that row first."""
 from fastapi.testclient import TestClient
 
 DEV_EMAIL = "dev@localhost"
@@ -13,8 +13,18 @@ def _add_traveler(client: TestClient, trip_id: int, email=DEV_EMAIL, display_nam
     r = client.post(f"/trips/{trip_id}/travelers", json={
         "display_name": display_name or email, "user_email": email,
     })
+    if r.status_code == 409:
+        # The trip's creator is added as a traveler automatically; a test asking
+        # for that same person again just wants them present.
+        return next(t for t in client.get(f"/trips/{trip_id}/travelers").json() if (t["user_email"] or "").lower() == email.lower())
     assert r.status_code == 201, r.text
     return r.json()
+
+
+def _not_traveling(client: TestClient, trip_id: int):
+    """Take the auto-added creator off the trip's travelers (owner only planning)."""
+    for t in client.get(f"/trips/{trip_id}/travelers").json():
+        assert client.delete(f"/trips/{trip_id}/travelers/{t['id']}").status_code == 204
 
 
 def test_me_travel_totals_empty(client: TestClient):
@@ -28,6 +38,7 @@ def test_me_travel_totals_empty(client: TestClient):
 
 def test_me_travel_totals_trips_only_counts_trips_traveled_on(client: TestClient):
     trip_a = client.post("/trips/", json={"name": "Owner Only"}).json()   # not a traveler
+    _not_traveling(client, trip_a["id"])
     trip_b = client.post("/trips/", json={"name": "Traveling"}).json()
     _add_traveler(client, trip_b["id"])
 
@@ -87,6 +98,7 @@ def test_me_travel_totals_distance_matches_distance_totals_endpoint(client: Test
 
 def test_me_travel_totals_owner_without_traveler_row_contributes_nothing(client: TestClient):
     trip = client.post("/trips/", json={"name": "Not Traveling"}).json()
+    _not_traveling(client, trip["id"])
     client.post(f"/trips/{trip['id']}/stops", json={"location": "Paris", "country": "FR", "status": "planned"})
 
     body = client.get("/me/travel-totals").json()
