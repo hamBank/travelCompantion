@@ -18,6 +18,16 @@ function isExpiringSoon(expiryDate) {
   return days <= EXPIRY_WARNING_DAYS
 }
 
+// A cleared <input type="date"> is "", which the API rejects as an invalid
+// date (422 "input is too short") -- send null for blank dates instead, so a
+// document can be saved with only the photo filled in.
+const DATE_FIELDS = ['issued_date', 'expiry_date', 'date_of_birth']
+export function cleanDocForm(form) {
+  const out = { ...form }
+  for (const k of DATE_FIELDS) if (!out[k]) out[k] = null
+  return out
+}
+
 function emptyDocForm() {
   return {
     doc_type: 'passport', label: '', country: '', issued_date: '', expiry_date: '', notes: '',
@@ -153,7 +163,7 @@ function DocumentForm({ initial, onSave, onCancel, saving, withPhoto = false }) 
           Never mind
         </button>
         <button
-          onClick={() => onSave(form, photo)}
+          onClick={() => onSave(cleanDocForm(form), photo)}
           disabled={saving || !form.doc_type}
           style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
           className="px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50"

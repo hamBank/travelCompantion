@@ -17,6 +17,7 @@ beforeEach(() => {
   api.listDocuments.mockResolvedValue([])
   api.listDocumentFiles.mockResolvedValue([])
   api.createDocument.mockResolvedValue({ id: 7 })
+  api.scanPassportFile.mockResolvedValue({})
   api.uploadDocumentFile.mockResolvedValue({ id: 70, filename: 'passport.jpg', content_type: 'image/jpeg' })
 })
 
@@ -70,5 +71,26 @@ describe('add document with a photo', () => {
     fireEvent.click(screen.getByText('Save document'))
     await waitFor(() => expect(api.createDocument).toHaveBeenCalled())
     expect(api.uploadDocumentFile).not.toHaveBeenCalled()
+  })
+
+  it('sends null, not "", for blank dates so a photo-only document can be saved', async () => {
+    // Reported: saving with no details failed with 'Input should be a valid
+    // datetime or date, input is too short' because blank dates went as "".
+    await openAddForm()
+    fireEvent.change(screen.getByTestId('doc-photo-file'), { target: { files: [photo] } })
+    fireEvent.click(screen.getByText('Save document'))
+    await waitFor(() => expect(api.createDocument).toHaveBeenCalled())
+    const sent = api.createDocument.mock.calls[0][0]
+    expect(sent.issued_date).toBeNull()
+    expect(sent.expiry_date).toBeNull()
+    expect(sent.date_of_birth).toBeNull()
+  })
+
+  it('keeps dates that were entered', async () => {
+    await openAddForm()
+    fireEvent.change(screen.getByLabelText('Expires'), { target: { value: '2030-01-02' } })
+    fireEvent.click(screen.getByText('Save document'))
+    await waitFor(() => expect(api.createDocument).toHaveBeenCalled())
+    expect(api.createDocument.mock.calls[0][0].expiry_date).toBe('2030-01-02')
   })
 })
